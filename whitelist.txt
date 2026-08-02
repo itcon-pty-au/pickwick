@@ -1,0 +1,8 @@
+# SantaTube whitelist — one YouTube channel ID per line.
+# Host this file in a GitHub repo and point the app at its raw URL, e.g.
+# https://raw.githubusercontent.com/<you>/<repo>/main/whitelist.txt
+#
+# Format:  UC<22 chars>  [| Optional Display Name]   [# comment]
+UC4a-Gbdw7vOaccHmFo40b9g | Khan Academy
+UCsooa4yRKGN_zEE8iknghZA | TED-Ed
+UC6nSFpj9HTCZ5t-N3Rm3-HA | Vsauce
