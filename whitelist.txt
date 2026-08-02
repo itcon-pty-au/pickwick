@@ -1,7 +1,11 @@
+# SantaTube Settings
+@session 30m              # max watch time per session
+@weekday-sessions 2       # sessions allowed Mon–Fri
+@weekend-sessions 4       # sessions allowed Sat–Sun
+@break 60m                # required gap between sessions (default 60m)
+@bedtime 19:30-07:00      # no watching in this window
+
 # SantaTube whitelist — one YouTube channel ID per line.
-# Host this file in a GitHub repo and point the app at its raw URL, e.g.
-# https://raw.githubusercontent.com/itcon-pty-au/santatube/blob/main/whitelist.txt
-#
 # Format:  UC<22 chars>  [| Optional Display Name]   [# comment]
 https://www.youtube.com/@TEDEd
 UC4a-Gbdw7vOaccHmFo40b9g | Khan Academy
