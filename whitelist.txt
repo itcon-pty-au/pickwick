@@ -3,6 +3,7 @@
 # https://raw.githubusercontent.com/itcon-pty-au/santatube/blob/main/whitelist.txt
 #
 # Format:  UC<22 chars>  [| Optional Display Name]   [# comment]
+https://www.youtube.com/@TEDEd
 UC4a-Gbdw7vOaccHmFo40b9g | Khan Academy
 https://www.youtube.com/user/mathantics
 https://www.youtube.com/user/crashcoursekids
@@ -21,3 +22,19 @@ https://www.youtube.com/@BrainsOnShow
 https://youtube.com/@bbcearth?si=Xspc_fSiyO-NeARO # BBC Earth
 https://youtube.com/@bbcearthscience?si=NlUzyrYl2pSlHxat # BBC Earth Science
 https://www.youtube.com/@BillNyeTheScienceGuyHD
+https://www.youtube.com/c/microcosmos
+https://www.youtube.com/user/KQEDDeepLook
+https://www.youtube.com/c/HistoryoftheEarth
+https://www.youtube.com/c/AtlasPro1
+https://www.youtube.com/user/minutephysics
+https://www.youtube.com/c/veritasium
+https://www.youtube.com/c/TheActionLab
+https://www.youtube.com/c/BranchEducation
+https://www.youtube.com/user/scishow
+https://www.youtube.com/c/minuteearth
+https://www.youtube.com/c/realscience
+https://www.youtube.com/user/engineerguyvideo
+https://www.youtube.com/user/scishowspace
+https://www.youtube.com/user/astrumspace
+https://www.youtube.com/c/HistoryoftheUniverse
+https://www.youtube.com/channel/UC5_Y-BKzq1uW_2rexWkUzlA # New Mind
