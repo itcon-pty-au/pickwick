@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Auto Backup (API ≤ 30). Include-mode: only what's listed is backed up.
+     The precious, hand-curated state — config (channels, blocked videos,
+     parent safe-list, screen-time rules), AI verdicts, pairing, watch state.
+     Caches (video_cache, source_cache, thumbnails) rebuild themselves and
+     would blow the 25 MB quota, so they are deliberately absent. -->
+<full-backup-content>
+    <include domain="file" path="config.json" />
+    <include domain="file" path="screening.json" />
+    <include domain="file" path="watchlist.tsv" />
+    <include domain="file" path="watchlist_removed.tsv" />
+    <include domain="sharedpref" path="pairing.xml" />
+    <include domain="sharedpref" path="settings.xml" />
+    <include domain="sharedpref" path="watch_history.xml" />
+    <include domain="sharedpref" path="usage.xml" />
+    <include domain="sharedpref" path="channel_usage.xml" />
+    <include domain="sharedpref" path="limits.xml" />
+</full-backup-content>

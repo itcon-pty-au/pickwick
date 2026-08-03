@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- API 31+ twin of backup_rules.xml — same include set for cloud backup and
+     device-to-device transfer. Keep the two files in lockstep. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="file" path="config.json" />
+        <include domain="file" path="screening.json" />
+        <include domain="file" path="watchlist.tsv" />
+        <include domain="file" path="watchlist_removed.tsv" />
+        <include domain="sharedpref" path="pairing.xml" />
+        <include domain="sharedpref" path="settings.xml" />
+        <include domain="sharedpref" path="watch_history.xml" />
+        <include domain="sharedpref" path="usage.xml" />
+        <include domain="sharedpref" path="channel_usage.xml" />
+        <include domain="sharedpref" path="limits.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="file" path="config.json" />
+        <include domain="file" path="screening.json" />
+        <include domain="file" path="watchlist.tsv" />
+        <include domain="file" path="watchlist_removed.tsv" />
+        <include domain="sharedpref" path="pairing.xml" />
+        <include domain="sharedpref" path="settings.xml" />
+        <include domain="sharedpref" path="watch_history.xml" />
+        <include domain="sharedpref" path="usage.xml" />
+        <include domain="sharedpref" path="channel_usage.xml" />
+        <include domain="sharedpref" path="limits.xml" />
+    </device-transfer>
+</data-extraction-rules>

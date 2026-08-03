@@ -1,0 +1,29 @@
+# SantaTube whitelist — hosted on GitHub, the app refreshes it on every launch.
+#
+# Channels — paste any of these, whichever YouTube shows you:
+#   https://www.youtube.com/user/name      https://www.youtube.com/c/name
+#   https://www.youtube.com/@handle        https://www.youtube.com/channel/UC...
+#   @handle                                UC... (bare 24-char ID)
+#
+# Playlists — finer-grained than a channel; use for channels that mix kid and
+# mature content (e.g. TED-Ed):
+#   https://www.youtube.com/playlist?list=PL...    or a bare PL.../UU.../OLAK... ID
+#
+# Block one video even inside an allowed source:
+#   ! <videoId or video URL>
+#
+# Screen-time rules (all optional — omit for no limits):
+#   @session 30m              max watch time per session
+#   @weekday-sessions 2       sessions allowed Mon-Fri
+#   @weekend-sessions 4       sessions allowed Sat-Sun
+#   @break 60m                required gap between sessions (default 60m)
+#   @bedtime 19:30-07:00      no watching during this window
+#
+# Optional "| Display Name" after any entry. '#' starts a comment.
+
+https://www.youtube.com/user/crashcoursekids | Crash Course Kids
+UC4a-Gbdw7vOaccHmFo40b9g | Khan Academy
+PL8dPuuaLjXtNlUrzyH5r6jN9ulIgZBpdo | TED-Ed: Awesome Nature
+
+# Block a single video that slipped through:
+# ! dQw4w9WgXcQ
