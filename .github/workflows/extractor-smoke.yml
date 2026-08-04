@@ -1,0 +1,86 @@
+# Extractor canary: runs the live-YouTube smoke tests on a schedule so a
+# server-side breakage is detected here before families hit it. On failure it
+# opens (or updates) a single "extractor-breakage" issue; on recovery it closes it.
+name: Extractor canary
+
+on:
+  schedule:
+    - cron: "17 5 * * *"   # twice daily, offset from on-the-hour congestion
+    - cron: "17 17 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: extractor-canary
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Run extractor smoke tests against live YouTube
+        id: test
+        run: ./gradlew :app:testDebugUnitTest --tests "io.pickwick.app.ExtractorSmokeTest"
+
+      - name: Upload test report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: extractor-smoke-report
+          path: app/build/reports/tests/
+          if-no-files-found: ignore
+
+      - name: Open or update breakage issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          gh label create extractor-breakage \
+            --color D93F0B --description "Live YouTube extraction is failing in CI" --force
+          open=$(gh issue list --label extractor-breakage --state open --json number --jq '.[0].number // empty')
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --body "Canary still failing: $run_url"
+          else
+            gh issue create \
+              --title "Extractor canary failing — YouTube extraction may be broken" \
+              --label extractor-breakage \
+              --body "$(cat <<EOF
+          The scheduled \`ExtractorSmokeTest\` run against live YouTube failed: $run_url
+
+          If this persists across runs it is almost certainly a YouTube server-side
+          change. Follow the runbook in the README (**When YouTube extraction breaks**):
+
+          1. Check the [NewPipeExtractor issue tracker](https://github.com/TeamNewPipe/NewPipeExtractor/issues) for a fresh, active breakage issue.
+          2. Bump \`newpipeextractor\` in \`gradle/libs.versions.toml\` to the newest release — or the fix's commit SHA via JitPack.
+          3. Re-run this workflow (Actions → Extractor canary → Run workflow) to verify; it closes this issue automatically once green.
+          4. Ship a self-update release.
+
+          A single failure can also be CI-side throttling or a bot check — wait for the next scheduled run before acting on one red result.
+          EOF
+          )"
+          fi
+
+      - name: Close breakage issue on recovery
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          open=$(gh issue list --label extractor-breakage --state open --json number --jq '.[0].number // empty')
+          if [ -n "$open" ]; then
+            gh issue close "$open" --comment "Canary is green again: $run_url"
+          fi

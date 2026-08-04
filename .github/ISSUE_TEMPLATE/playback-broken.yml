@@ -1,0 +1,65 @@
+name: "⏰ Playback broken"
+description: Videos stop resolving (endless spinner, "Could not play video") while YouTube itself works
+title: "[breakage] Playback broken"
+labels: ["extractor-breakage-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks — early breakage reports are one of the most valuable contributions.
+        This is almost always a YouTube server-side change that the extractor hasn't
+        caught up with yet; your report helps confirm it's global and not just your network.
+  - type: dropdown
+    id: persists
+    attributes:
+      label: Does it persist after force-closing and reopening the app?
+      description: Transient throttling is retried automatically — real breakage survives restarts.
+      options:
+        - "Yes — still broken after force-close/reopen (and on retry)"
+        - "No — it recovered on its own"
+        - "Not sure"
+    validations:
+      required: true
+  - type: dropdown
+    id: scope
+    attributes:
+      label: How widespread is it?
+      options:
+        - "All videos, every channel"
+        - "Only some videos or channels"
+        - "Only one device (others in the house work)"
+    validations:
+      required: true
+  - type: checkboxes
+    id: sanity
+    attributes:
+      label: Sanity checks
+      options:
+        - label: YouTube itself works in a browser on the same network
+          required: true
+        - label: I looked at the [NewPipeExtractor issue tracker](https://github.com/TeamNewPipe/NewPipeExtractor/issues) for a fresh, active breakage issue
+  - type: input
+    id: upstream
+    attributes:
+      label: Related NewPipeExtractor issue (if you found one)
+      placeholder: "https://github.com/TeamNewPipe/NewPipeExtractor/issues/…"
+  - type: input
+    id: version
+    attributes:
+      label: Pickwick version
+      description: Parent settings shows the version at the bottom.
+      placeholder: "0.2.0"
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device and Android version
+      placeholder: "Chromecast with Google TV (Android 12) / Pixel 7 (Android 15)"
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Anything else
+      description: Exact error text, when it started, region/country, screenshots.

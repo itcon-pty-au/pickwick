@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: NewPipeExtractor issue tracker
+    url: https://github.com/TeamNewPipe/NewPipeExtractor/issues
+    about: Global YouTube extraction breakages are diagnosed and fixed upstream — check here first during an outage.

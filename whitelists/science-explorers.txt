@@ -1,0 +1,31 @@
+# Pickwick community whitelist — Science & nature explorers (ages ~7–12)
+# Import: copy this page's GitHub URL → parent settings → Channels & playlists → import from link.
+# Format: one channel/playlist per line; "| Name" sets the display label; "#" starts a comment.
+
+https://www.youtube.com/@TEDEd
+UC4a-Gbdw7vOaccHmFo40b9g | Khan Academy
+https://www.youtube.com/user/mathantics
+https://www.youtube.com/mashupmath
+https://www.youtube.com/@BrainsOnShow
+https://www.youtube.com/@bbcearth | BBC Earth
+https://www.youtube.com/@bbcearthscience | BBC Earth Science
+https://www.youtube.com/@BillNyeTheScienceGuyHD
+https://www.youtube.com/c/microcosmos
+https://www.youtube.com/user/KQEDDeepLook
+https://www.youtube.com/c/HistoryoftheEarth
+https://www.youtube.com/c/AtlasPro1
+https://www.youtube.com/user/minutephysics
+https://www.youtube.com/c/veritasium
+https://www.youtube.com/c/TheActionLab
+https://www.youtube.com/c/BranchEducation
+https://www.youtube.com/user/scishow
+https://www.youtube.com/c/minuteearth
+https://www.youtube.com/c/realscience
+https://www.youtube.com/user/engineerguyvideo
+https://www.youtube.com/user/scishowspace
+https://www.youtube.com/user/astrumspace
+https://www.youtube.com/c/HistoryoftheUniverse
+https://www.youtube.com/channel/UC5_Y-BKzq1uW_2rexWkUzlA # New Mind
+https://www.youtube.com/user/GeographyNow
+https://www.youtube.com/@maddiemoate
+https://www.youtube.com/@natgeokids

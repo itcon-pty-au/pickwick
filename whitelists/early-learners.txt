@@ -1,0 +1,20 @@
+# Pickwick community whitelist — Early learners (ages ~3–7)
+# Import: copy this page's GitHub URL → parent settings → Channels & playlists → import from link.
+# Format: one channel/playlist per line; "| Name" sets the display label; "#" starts a comment.
+
+https://www.youtube.com/user/crashcoursekids
+https://www.youtube.com/user/scishowkids
+https://www.youtube.com/channel/UCxEmDFo1yUbbxjEb9RjitVA # Wild Kratts
+https://www.youtube.com/channel/UCAOtE1V7Ots4DjM8JLlrYgg # Peppa Pig
+https://www.youtube.com/@StorytimewithRyanandCraig
+https://www.youtube.com/@natgeokids
+https://www.youtube.com/@maddiemoate
+
+# Ask the StoryBots — full seasons as playlists
+https://www.youtube.com/playlist?list=PLlYVsNakSKcflqZo8Fvmu3XlLqLz6prJt | Ask the StoryBots: Season 1
+https://www.youtube.com/playlist?list=PLlYVsNakSKccbPMCHiUb8ic3Gpl5vcXCa | Ask the StoryBots: Season 2
+https://www.youtube.com/playlist?list=PLlYVsNakSKcdGQs2ZB97XZwmSnKaCB3Ne | Ask the StoryBots: Season 3
+https://www.youtube.com/playlist?list=PLlYVsNakSKcesFfNRz7tG5yMUJCLmSsg- | A StoryBots Space Adventure
+https://www.youtube.com/playlist?list=PLlYVsNakSKce9V9JGQEhtU913NeXIRK_g | StoryBots Christmas
+https://www.youtube.com/playlist?list=PLlYVsNakSKccrlaeDaClYJRaa9MSMRMz0 | StoryBots Answer Time: Season 1
+https://www.youtube.com/playlist?list=PLlYVsNakSKcergeuy1sAOkRZQsyPJTgK7 | StoryBots Answer Time: Season 2

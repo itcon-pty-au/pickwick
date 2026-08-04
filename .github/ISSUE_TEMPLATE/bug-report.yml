@@ -1,0 +1,52 @@
+name: "🐛 Bug report"
+description: Something misbehaves — UI, focus/remote issues, screen time, pairing, sync
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Reports from devices the maintainer doesn't own are gold — especially
+        D-pad/remote focus issues on TV models. If videos won't play at all,
+        use the **Playback broken** template instead.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open …
+        2. Press … on the remote
+        3. …
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device model and Android version
+      placeholder: "TCL 55C745 Google TV (Android 11) / Samsung A54 (Android 14)"
+    validations:
+      required: true
+  - type: dropdown
+    id: role
+    attributes:
+      label: Which device is affected?
+      options:
+        - "Kid device (TV)"
+        - "Kid device (phone/tablet)"
+        - "Parent/admin phone"
+        - "Several"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Pickwick version
+      placeholder: "0.2.0"
+    validations:
+      required: true

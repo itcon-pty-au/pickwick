@@ -1,0 +1,35 @@
+name: "📋 Suggest a channel list"
+description: Share a curated whitelist without using git — a maintainer will add it to whitelists/
+labels: ["community-whitelist"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Curated lists are the contribution every parent is an expert in. If you're
+        comfortable with git, a PR adding a file to `whitelists/` is even better —
+        see [whitelists/README.md](https://github.com/itcon-pty-au/pickwick/blob/main/whitelists/README.md)
+        for the format.
+  - type: input
+    id: theme
+    attributes:
+      label: List theme and rough age range
+      placeholder: "Space & astronomy, ages 8–12"
+    validations:
+      required: true
+  - type: textarea
+    id: channels
+    attributes:
+      label: Channels and playlists
+      description: One per line — any YouTube channel/playlist link, optionally followed by "| Display Name".
+      placeholder: |
+        https://www.youtube.com/@veritasium
+        https://www.youtube.com/playlist?list=PL… | Some Playlist Name
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why these are kid-appropriate
+      description: A sentence or two — has your family actually watched them?
+    validations:
+      required: true

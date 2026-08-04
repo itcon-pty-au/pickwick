@@ -127,6 +127,12 @@ Symptom: videos stop resolving app-wide (spinners, "Could not play video") while
 YouTube itself works. Cause is almost always a server-side change that
 NewPipeExtractor hasn't caught up with yet.
 
+A scheduled CI canary ([extractor-smoke](.github/workflows/extractor-smoke.yml))
+runs the smoke tests against live YouTube twice a day and automatically opens an
+`extractor-breakage` issue when they fail (and closes it on recovery) — check
+[open issues](https://github.com/itcon-pty-au/pickwick/issues) before diagnosing
+locally.
+
 1. Check [NewPipeExtractor issues](https://github.com/TeamNewPipe/NewPipeExtractor/issues)
    — a global breakage will have a fresh, very active issue, usually with a fix
    merged within days.
@@ -143,6 +149,14 @@ NewPipeExtractor hasn't caught up with yet.
 Transient failures (throttling, flaky Wi-Fi, bot checks) are already retried with
 escalating backoff inside `YouTubeRepository` — a real breakage is one that
 persists across retries and app restarts.
+
+## Contributing
+
+The most valuable contributions aren't code: early breakage reports, bug reports
+from TV models we've never seen, translations — and **channel lists**. Curated,
+themed whitelists live in [`whitelists/`](whitelists/) and can be imported
+straight into the app; sharing yours is the easiest way to help other families.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Support Pickwick ❤️
 
@@ -174,6 +188,7 @@ come with support guarantees.
 ## Roadmap
 
 - [ ] First public GitHub release (signed APK + self-update live)
+- [x] Contribution scaffolding (CI canary, community whitelists, issue templates)
 - [ ] AI-assisted curation (under discussion)
 - [x] Donations / sustainability (Stripe link pending)
 - [x] Everything above
