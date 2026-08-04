@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Support Pickwick 🏮</title>
+<style>
+  :root {
+    --bg: #faf7f2;
+    --card: #ffffff;
+    --text: #2b2620;
+    --muted: #7a7166;
+    --accent: #e8890c;
+    --accent-dark: #c97507;
+    --track: #eadfd0;
+    --pill-bg: #f1eae0;
+    --shadow: 0 8px 30px rgba(80, 60, 20, .12);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1915;
+      --card: #262119;
+      --text: #f2ece3;
+      --muted: #a89c8c;
+      --accent: #f59e1b;
+      --accent-dark: #e8890c;
+      --track: #3a332a;
+      --pill-bg: #332d24;
+      --shadow: 0 8px 30px rgba(0, 0, 0, .4);
+    }
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .card {
+    background: var(--card);
+    border-radius: 20px;
+    box-shadow: var(--shadow);
+    padding: 36px 32px;
+    max-width: 460px;
+    width: 100%;
+    text-align: center;
+  }
+  .lantern { font-size: 44px; line-height: 1; }
+  h1 { font-size: 24px; margin: 10px 0 6px; }
+  .sub { color: var(--muted); font-size: 14px; line-height: 1.5; margin-bottom: 24px; }
+
+  .toggle {
+    display: inline-flex;
+    background: var(--pill-bg);
+    border-radius: 999px;
+    padding: 4px;
+    margin-bottom: 28px;
+  }
+  .toggle button {
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-weight: 600;
+    font-size: 14px;
+    padding: 8px 20px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: all .15s ease;
+  }
+  .toggle button.active {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  .amount {
+    font-size: 44px;
+    font-weight: 800;
+    letter-spacing: -1px;
+    min-height: 56px;
+  }
+  .amount .per { font-size: 16px; font-weight: 600; color: var(--muted); letter-spacing: 0; }
+  .amount.custom-label { font-size: 28px; line-height: 56px; }
+
+  input[type="range"] {
+    width: 100%;
+    margin: 18px 0 6px;
+    appearance: none;
+    -webkit-appearance: none;
+    height: 8px;
+    border-radius: 4px;
+    background: var(--track);
+    outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 3px solid #fff;
+    box-shadow: 0 2px 8px rgba(0,0,0,.25);
+    cursor: pointer;
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 3px solid #fff;
+    box-shadow: 0 2px 8px rgba(0,0,0,.25);
+    cursor: pointer;
+  }
+  .ticks {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 26px;
+    padding: 0 4px;
+  }
+
+  .donate-btn {
+    display: block;
+    width: 100%;
+    border: 0;
+    background: var(--accent);
+    color: #fff;
+    font: inherit;
+    font-size: 17px;
+    font-weight: 700;
+    padding: 15px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background .15s ease, transform .1s ease;
+  }
+  .donate-btn:hover { background: var(--accent-dark); }
+  .donate-btn:active { transform: scale(.98); }
+
+  .fine {
+    margin-top: 18px;
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+  .fine a { color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="lantern">🏮</div>
+  <h1>Support Pickwick</h1>
+  <p class="sub">
+    Pickwick is free and open source, but YouTube changes its internals every few
+    weeks — donations fund the ongoing work of keeping playback alive for every family.
+  </p>
+
+  <div class="toggle" role="tablist">
+    <button id="btn-monthly" class="active" onclick="setMode('monthly')">Monthly ❤️</button>
+    <button id="btn-once" onclick="setMode('once')">One-time</button>
+  </div>
+
+  <div class="amount" id="amount-display"></div>
+
+  <input type="range" id="slider" min="0" max="4" step="1" value="1"
+         oninput="render()" aria-label="Donation amount">
+  <div class="ticks" id="ticks"></div>
+
+  <button class="donate-btn" id="donate" onclick="donate()"></button>
+
+  <p class="fine">
+    Payments handled by Stripe — card, Apple&nbsp;Pay or Google&nbsp;Pay, no account needed.<br>
+    Donations support a hobby project; they aren't a purchase, aren't tax-deductible,
+    and come with no support guarantees.<br>
+    <a href="https://github.com/itcon-pty-au/pickwick">← Back to Pickwick on GitHub</a>
+  </p>
+</div>
+
+<script>
+  // ── Stripe payment links ─────────────────────────────────────────────
+  // Paste the URL for each link. One-time fixed amounts are optional:
+  // any amount left null falls back to ONE_TIME_CUSTOM (the donor
+  // confirms the amount on Stripe's page).
+  const MONTHLY = {
+    "4.99":  "https://buy.stripe.com/fZu7sNa986MC6YQeSybjW00",
+    "9.99":  "https://buy.stripe.com/3cI6oJ5SSef4ab26m2bjW01",
+    "19.99": "https://buy.stripe.com/9B6eVf3KK9YO6YQcKqbjW02",
+    "29.99": "https://buy.stripe.com/4gMdRb6WW6MC2IA11IbjW03",
+    "49.99": "https://buy.stripe.com/6oU3cx8109YO2IA6m2bjW04",
+  };
+  const ONE_TIME_CUSTOM = "https://buy.stripe.com/3cI7sNepo1si3MEh0GbjW05";
+  const ONE_TIME = {
+    "4.99":  "https://buy.stripe.com/9B68wRgxwfj86YQ9yebjW06",
+    "9.99":  "https://buy.stripe.com/3cI00l2GG0oebf6aCibjW07",
+    "19.99": "https://buy.stripe.com/28E8wRbdc4Euab2aCibjW08",
+    "29.99": "https://buy.stripe.com/00wbJ3dlkdb0bf6h0GbjW09",
+    "49.99": "https://buy.stripe.com/3cIfZj0yy9YO82UfWCbjW0a",
+  };
+  // ─────────────────────────────────────────────────────────────────────
+
+  const AMOUNTS = ["4.99", "9.99", "19.99", "29.99", "49.99"];
+  let mode = "monthly";
+
+  const slider  = document.getElementById("slider");
+  const display = document.getElementById("amount-display");
+  const button  = document.getElementById("donate");
+  const ticks   = document.getElementById("ticks");
+
+  function setMode(m) {
+    mode = m;
+    document.getElementById("btn-monthly").classList.toggle("active", m === "monthly");
+    document.getElementById("btn-once").classList.toggle("active", m === "once");
+    // one-time gets an extra "custom" stop at the end
+    slider.max = m === "once" ? 5 : 4;
+    if (+slider.value > +slider.max) slider.value = slider.max;
+    render();
+  }
+
+  function isCustom() { return mode === "once" && +slider.value === 5; }
+
+  function render() {
+    const labels = AMOUNTS.map(a => "$" + a).concat(mode === "once" ? ["Custom"] : []);
+    ticks.innerHTML = labels.map(l => "<span>" + l + "</span>").join("");
+
+    if (isCustom()) {
+      display.textContent = "You choose the amount";
+      display.classList.add("custom-label");
+      button.textContent = "Donate — pick amount on next page";
+    } else {
+      const amt = AMOUNTS[+slider.value];
+      display.classList.remove("custom-label");
+      display.innerHTML = "$" + amt + (mode === "monthly" ? ' <span class="per">/ month</span>' : "");
+      button.textContent = mode === "monthly"
+        ? "Donate $" + amt + " monthly ❤️"
+        : "Donate $" + amt;
+    }
+  }
+
+  function donate() {
+    let url;
+    if (mode === "monthly") {
+      url = MONTHLY[AMOUNTS[+slider.value]];
+    } else if (isCustom()) {
+      url = ONE_TIME_CUSTOM;
+    } else {
+      url = ONE_TIME[AMOUNTS[+slider.value]] || ONE_TIME_CUSTOM;
+    }
+    if (!url || url.startsWith("REPLACE")) {
+      alert("This donation link isn't configured yet — please use the GitHub page instead.");
+      return;
+    }
+    window.open(url, "_blank", "noopener");
+  }
+
+  setMode("monthly");
+</script>
+</body>
+</html>

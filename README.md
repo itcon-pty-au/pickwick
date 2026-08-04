@@ -169,11 +169,11 @@ If Pickwick is part of your family's routine, a small **monthly donation** is
 the most useful way to help — it's the recurring nature of the maintenance that
 makes recurring support matter. One-off donations are appreciated too.
 
-**[Donate via Stripe](https://donate.stripe.com/REPLACE_ME)** — card,
-Apple Pay or Google Pay; no account needed.
+**[❤️ Donate](https://itcon-pty-au.github.io/pickwick/donate.html)** — monthly or
+one-time, via Stripe; card, Apple Pay or Google Pay; no account needed.
 
-Donations fund maintenance of a hobby project; they aren't a purchase and don't
-come with support guarantees.
+Donations fund maintenance of a hobby project; they aren't a purchase, aren't
+tax-deductible, and don't come with support guarantees.
 
 ## Privacy & good-citizen notes
 
