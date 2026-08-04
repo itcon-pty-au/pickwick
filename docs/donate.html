@@ -6,27 +6,32 @@
 <title>Support Pickwick 🏮</title>
 <style>
   :root {
-    --bg: #faf7f2;
+    /* Pickwick brand teals — see app Theme.kt (#00695C logo, #4DB6AC primary) */
+    --bg: #eef6f4;
     --card: #ffffff;
-    --text: #2b2620;
-    --muted: #7a7166;
-    --accent: #e8890c;
-    --accent-dark: #c97507;
-    --track: #eadfd0;
-    --pill-bg: #f1eae0;
-    --shadow: 0 8px 30px rgba(80, 60, 20, .12);
+    --text: #12211e;
+    --muted: #5c7370;
+    --accent: #00897b;
+    --accent-dark: #00695c;
+    --accent-text: #ffffff;
+    --track: #d5e8e4;
+    --pill-bg: #e2efec;
+    --thumb-ring: #ffffff;
+    --shadow: 0 8px 30px rgba(0, 80, 68, .14);
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #1c1915;
-      --card: #262119;
-      --text: #f2ece3;
-      --muted: #a89c8c;
-      --accent: #f59e1b;
-      --accent-dark: #e8890c;
-      --track: #3a332a;
-      --pill-bg: #332d24;
-      --shadow: 0 8px 30px rgba(0, 0, 0, .4);
+      --bg: #0f1a18;
+      --card: #1b2825;
+      --text: #cce8e3;
+      --muted: #8fa8a3;
+      --accent: #4db6ac;
+      --accent-dark: #26a69a;
+      --accent-text: #00352f;
+      --track: #2c3f3b;
+      --pill-bg: #24342f;
+      --thumb-ring: #1b2825;
+      --shadow: 0 8px 30px rgba(0, 0, 0, .45);
     }
   }
   * { box-sizing: border-box; margin: 0; }
@@ -49,7 +54,17 @@
     width: 100%;
     text-align: center;
   }
-  .lantern { font-size: 44px; line-height: 1; }
+  .logo {
+    width: 56px; height: 56px;
+    margin: 0 auto;
+    border-radius: 14px;
+    background: #00695c;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 14px rgba(0, 80, 68, .3);
+  }
+  .logo svg { width: 24px; height: 24px; margin-left: 3px; }
   h1 { font-size: 24px; margin: 10px 0 6px; }
   .sub { color: var(--muted); font-size: 14px; line-height: 1.5; margin-bottom: 24px; }
 
@@ -74,7 +89,7 @@
   }
   .toggle button.active {
     background: var(--accent);
-    color: #fff;
+    color: var(--accent-text);
   }
 
   .amount {
@@ -102,7 +117,7 @@
     width: 26px; height: 26px;
     border-radius: 50%;
     background: var(--accent);
-    border: 3px solid #fff;
+    border: 3px solid var(--thumb-ring);
     box-shadow: 0 2px 8px rgba(0,0,0,.25);
     cursor: pointer;
   }
@@ -110,7 +125,7 @@
     width: 22px; height: 22px;
     border-radius: 50%;
     background: var(--accent);
-    border: 3px solid #fff;
+    border: 3px solid var(--thumb-ring);
     box-shadow: 0 2px 8px rgba(0,0,0,.25);
     cursor: pointer;
   }
@@ -128,7 +143,7 @@
     width: 100%;
     border: 0;
     background: var(--accent);
-    color: #fff;
+    color: var(--accent-text);
     font: inherit;
     font-size: 17px;
     font-weight: 700;
@@ -151,7 +166,9 @@
 </head>
 <body>
 <div class="card">
-  <div class="lantern">🏮</div>
+  <div class="logo" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="#ffffff"><path d="M6 3.5v17l14-8.5z"/></svg>
+  </div>
   <h1>Support Pickwick</h1>
   <p class="sub">
     Pickwick is free and open source, but YouTube changes its internals every few
@@ -175,7 +192,7 @@
     Payments handled by Stripe — card, Apple&nbsp;Pay or Google&nbsp;Pay, no account needed.<br>
     Donations support a hobby project; they aren't a purchase, aren't tax-deductible,
     and come with no support guarantees.<br>
-    <a href="https://github.com/itcon-pty-au/pickwick">← Back to Pickwick on GitHub</a>
+    <a href="./">← Back to Pickwick</a>
   </p>
 </div>
 

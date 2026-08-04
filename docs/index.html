@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pickwick — kid-safe, whitelist-only YouTube for Android & Google TV</title>
+<meta name="description" content="Pickwick is a free, open-source, whitelist-only YouTube app for kids. Parents choose exactly which channels exist — no ads, no Shorts, no recommendations, no accounts, no cloud.">
+<style>
+  :root {
+    /* Pickwick brand teals — see app Theme.kt (#00695C logo, #4DB6AC primary) */
+    --bg: #eef6f4;
+    --card: #ffffff;
+    --text: #12211e;
+    --muted: #5c7370;
+    --accent: #00897b;
+    --accent-dark: #00695c;
+    --accent-text: #ffffff;
+    --pill-bg: #e2efec;
+    --shadow: 0 8px 30px rgba(0, 80, 68, .14);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1a18;
+      --card: #1b2825;
+      --text: #cce8e3;
+      --muted: #8fa8a3;
+      --accent: #4db6ac;
+      --accent-dark: #26a69a;
+      --accent-text: #00352f;
+      --pill-bg: #24342f;
+      --shadow: 0 8px 30px rgba(0, 0, 0, .45);
+    }
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 24px; }
+
+  header { text-align: center; padding: 64px 0 40px; }
+  .logo {
+    width: 72px; height: 72px;
+    margin: 0 auto 18px;
+    border-radius: 18px;
+    background: #00695c;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 14px rgba(0, 80, 68, .3);
+  }
+  .logo svg { width: 32px; height: 32px; margin-left: 4px; }
+  h1 { font-size: 40px; letter-spacing: -1px; }
+  .tagline {
+    font-size: 19px;
+    color: var(--muted);
+    max-width: 560px;
+    margin: 10px auto 22px;
+  }
+  .tagline strong { color: var(--text); }
+
+  .nots {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 30px;
+  }
+  .nots span {
+    background: var(--pill-bg);
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 5px 13px;
+    border-radius: 999px;
+  }
+
+  .cta { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; }
+  .btn {
+    display: inline-block;
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 16px;
+    padding: 13px 26px;
+    border-radius: 12px;
+    transition: background .15s ease, transform .1s ease;
+  }
+  .btn:active { transform: scale(.97); }
+  .btn-primary { background: var(--accent); color: var(--accent-text); }
+  .btn-primary:hover { background: var(--accent-dark); }
+  .btn-ghost {
+    background: var(--pill-bg);
+    color: var(--text);
+  }
+  .btn-ghost:hover { background: var(--accent); color: var(--accent-text); }
+
+  .cols {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin: 24px 0;
+  }
+  @media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--card);
+    border-radius: 18px;
+    box-shadow: var(--shadow);
+    padding: 28px;
+  }
+  .card h2 { font-size: 19px; margin-bottom: 12px; }
+  .card ul { padding-left: 20px; color: var(--muted); }
+  .card li { margin-bottom: 7px; }
+  .card li strong { color: var(--text); }
+
+  .steps { margin: 24px 0; }
+  .steps .card { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; text-align: center; }
+  @media (max-width: 640px) { .steps .card { grid-template-columns: 1fr; } }
+  .step .num {
+    width: 34px; height: 34px;
+    margin: 0 auto 10px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: var(--accent-text);
+    font-weight: 800;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .step p { color: var(--muted); font-size: 14px; }
+  .step p strong { color: var(--text); }
+
+  .support {
+    text-align: center;
+    margin: 40px 0;
+  }
+  .support .card { padding: 34px; }
+  .support p {
+    color: var(--muted);
+    max-width: 520px;
+    margin: 0 auto 20px;
+  }
+
+  footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px;
+    padding: 30px 24px 50px;
+    line-height: 1.7;
+  }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+
+<header class="wrap">
+  <div class="logo" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="#ffffff"><path d="M6 3.5v17l14-8.5z"/></svg>
+  </div>
+  <h1>Pickwick</h1>
+  <p class="tagline">
+    A kid-safe, whitelist-only YouTube app for Android phones, tablets and Google&nbsp;TV —
+    <strong>parents choose exactly which channels exist; nothing else is reachable.</strong>
+  </p>
+  <div class="nots">
+    <span>No ads</span><span>No Shorts</span><span>No comments</span>
+    <span>No recommendations</span><span>No accounts</span><span>No cloud</span>
+  </div>
+  <div class="cta">
+    <a class="btn btn-primary" href="https://github.com/itcon-pty-au/pickwick/releases">⬇ Download APK</a>
+    <a class="btn btn-ghost" href="donate.html">❤️ Donate</a>
+    <a class="btn btn-ghost" href="https://github.com/itcon-pty-au/pickwick">GitHub</a>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="cols">
+    <div class="card">
+      <h2>What the kid sees</h2>
+      <ul>
+        <li>A grid of <strong>parent-approved channels</strong> — and nothing else</li>
+        <li><strong>🎲 Surprise me</strong> and <strong>❤️ My list</strong></li>
+        <li><strong>Keep watching</strong> across the family's devices</li>
+        <li>Fullscreen player with no ads and nothing to escape into</li>
+        <li>Gentle time warnings, friendly break &amp; bedtime screens</li>
+        <li>Fully D-pad navigable on TV</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h2>What parents control</h2>
+      <ul>
+        <li><strong>Channels &amp; playlists</strong> — search, add, or import a whitelist</li>
+        <li><strong>Screen time</strong> — sessions, breaks, bedtime, extra-time grants</li>
+        <li><strong>Time price tags</strong> — educational cheap, junk food expensive</li>
+        <li><strong>Live stats</strong> per device, with a remote pause button</li>
+        <li>All from the parent's phone, fingerprint-gated</li>
+        <li>Everything stays on your devices — <strong>there is no server</strong></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="steps">
+    <div class="card">
+      <div class="step">
+        <div class="num">1</div>
+        <p><strong>Install the APK</strong><br>on the TV and on the parent's phone</p>
+      </div>
+      <div class="step">
+        <div class="num">2</div>
+        <p><strong>Scan the QR</strong><br>TV shows it, phone scans it — paired in a minute</p>
+      </div>
+      <div class="step">
+        <div class="num">3</div>
+        <p><strong>Add channels</strong><br>curate from the couch; the TV syncs instantly</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="support">
+    <div class="card">
+      <h2>Free forever — but not maintenance-free</h2>
+      <p>
+        YouTube changes its internals every few weeks, and each time it does, playback
+        breaks for every family until the app is updated and re-shipped. Donations fund
+        that ongoing work.
+      </p>
+      <a class="btn btn-primary" href="donate.html">❤️ Support Pickwick</a>
+    </div>
+  </div>
+</main>
+
+<footer>
+  Open source under <a href="https://github.com/itcon-pty-au/pickwick/blob/main/LICENSE">GPL-3.0</a>
+  · <a href="https://github.com/itcon-pty-au/pickwick">Source on GitHub</a>
+  · <a href="https://github.com/itcon-pty-au/pickwick#privacy--good-citizen-notes">Privacy &amp; good-citizen notes</a><br>
+  No accounts, no analytics, no cloud — everything stays inside your house.<br>
+  Sideloaded, not in app stores; plays streams directly, which is against YouTube's
+  Terms of Service — for personal/family use.
+</footer>
+
+</body>
+</html>

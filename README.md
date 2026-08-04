@@ -1,5 +1,13 @@
 # Pickwick 🏮
 
+<p align="center">
+  <a href="https://pickwick.tv/donate.html">
+    <img src="https://img.shields.io/badge/%E2%9D%A4%EF%B8%8F%20Donate-keep%20Pickwick%20maintained-00897B?style=for-the-badge&labelColor=00695C" alt="Donate — keep Pickwick maintained">
+  </a>
+  <br>
+  <sub>Free forever &amp; open source — donations fund the upkeep that keeps playback working.</sub>
+</p>
+
 A kid-safe, whitelist-only YouTube app for Android phones, tablets and Google TV —
 **parents choose exactly which channels exist; nothing else is reachable.**
 No ads, no Shorts, no comments, no recommendations, no rabbit holes, no accounts, no cloud.
@@ -169,7 +177,7 @@ If Pickwick is part of your family's routine, a small **monthly donation** is
 the most useful way to help — it's the recurring nature of the maintenance that
 makes recurring support matter. One-off donations are appreciated too.
 
-**[❤️ Donate](https://itcon-pty-au.github.io/pickwick/donate.html)** — monthly or
+**[❤️ Donate](https://pickwick.tv/donate.html)** — monthly or
 one-time, via Stripe; card, Apple Pay or Google Pay; no account needed.
 
 Donations fund maintenance of a hobby project; they aren't a purchase, aren't
