@@ -1,0 +1,41 @@
+# PickWick whitelist — one YouTube channel ID per line.
+# Format:  UC<22 chars>  [| Optional Display Name]   [# comment]
+https://www.youtube.com/@TEDEd
+UC4a-Gbdw7vOaccHmFo40b9g | Khan Academy
+https://www.youtube.com/user/mathantics
+https://www.youtube.com/user/crashcoursekids
+https://www.youtube.com/user/scishowkids
+https://www.youtube.com/mashupmath
+https://www.youtube.com/channel/UCxEmDFo1yUbbxjEb9RjitVA # Wild Kratts
+https://www.youtube.com/playlist?list=PLlYVsNakSKcflqZo8Fvmu3XlLqLz6prJt | Ask the StoryBots: The Complete Season 1
+https://www.youtube.com/watch?v=CaKDYO2pKyg&list=PLlYVsNakSKccbPMCHiUb8ic3Gpl5vcXCa | Ask the StoryBots: The Complete Season 2
+https://www.youtube.com/watch?v=GDXkZbO6T7Q&list=PLlYVsNakSKcdGQs2ZB97XZwmSnKaCB3Ne | Ask the StoryBots: The Complete Season 3
+https://www.youtube.com/watch?v=WYIINB4hhoA&list=PLlYVsNakSKcesFfNRz7tG5yMUJCLmSsg- | A StoryBots Space Adventure
+https://www.youtube.com/watch?v=Z9aUs1ONbGI&list=PLlYVsNakSKce9V9JGQEhtU913NeXIRK_g | StoryBots Christmas
+https://www.youtube.com/watch?v=DSXglVVnPWo&list=PLlYVsNakSKccrlaeDaClYJRaa9MSMRMz0 | StoryBots Answer time S1
+https://www.youtube.com/watch?v=tC3VrCZGkok&list=PLlYVsNakSKcergeuy1sAOkRZQsyPJTgK7 | StoryBots Answer time S2
+https://www.youtube.com/@BrainsOnShow
+https://youtube.com/@bbcearth?si=Xspc_fSiyO-NeARO # BBC Earth
+https://youtube.com/@bbcearthscience?si=NlUzyrYl2pSlHxat # BBC Earth Science
+https://www.youtube.com/@BillNyeTheScienceGuyHD
+https://www.youtube.com/c/microcosmos
+https://www.youtube.com/user/KQEDDeepLook
+https://www.youtube.com/c/HistoryoftheEarth
+https://www.youtube.com/c/AtlasPro1
+https://www.youtube.com/user/minutephysics
+https://www.youtube.com/c/veritasium
+https://www.youtube.com/c/TheActionLab
+https://www.youtube.com/c/BranchEducation
+https://www.youtube.com/user/scishow
+https://www.youtube.com/c/minuteearth
+https://www.youtube.com/c/realscience
+https://www.youtube.com/user/engineerguyvideo
+https://www.youtube.com/user/scishowspace
+https://www.youtube.com/user/astrumspace
+https://www.youtube.com/c/HistoryoftheUniverse
+https://www.youtube.com/channel/UC5_Y-BKzq1uW_2rexWkUzlA # New Mind
+https://www.youtube.com/user/GeographyNow
+https://www.youtube.com/channel/UCAOtE1V7Ots4DjM8JLlrYgg # Peppa pig
+https://www.youtube.com/@StorytimewithRyanandCraig
+https://www.youtube.com/@natgeokids
+https://www.youtube.com/@maddiemoate
