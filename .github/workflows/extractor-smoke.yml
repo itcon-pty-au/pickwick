@@ -74,13 +74,19 @@ jobs:
           )"
           fi
 
-      - name: Close breakage issue on recovery
+      - name: Close breakage issues on recovery
         if: success()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          open=$(gh issue list --label extractor-breakage --state open --json number --jq '.[0].number // empty')
-          if [ -n "$open" ]; then
-            gh issue close "$open" --comment "Canary is green again: $run_url"
-          fi
+          # Close every open canary issue, not just the first: a race between the
+          # two daily runs (or a hand-labelled issue) can leave more than one, and
+          # a stale open breakage issue is worse than none — it trains us to ignore it.
+          gh issue list --label extractor-breakage --state open --json number --jq '.[].number' \
+            | while read -r n; do
+                [ -n "$n" ] || continue
+                echo "Closing #$n — canary green"
+                gh issue close "$n" --reason completed \
+                  --comment "Canary is green again: $run_url"
+              done
