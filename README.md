@@ -28,6 +28,9 @@ so there are never ads.
 - **🎲 Surprise me** — a random mix drawn from allowed channels
 - **❤️ My list** — videos they saved by holding a tile (long-press / hold OK on the remote)
 - **Keep watching** — resume where they left off, on any of the family's devices
+- **📥 Downloads** — a row of videos saved for offline; the kid can *ask* for a
+  video from its poster ("Waiting for approval…") and a parent approves on their
+  phone, so car trips and dead Wi-Fi still work
 - A fullscreen player with no ads and nothing to escape into; playlists auto-play in order
 - **NEW badges** when an allowed channel has fresh uploads
 - **Time price tags** on tiles (0.5x … FREE, or 1.5x for "junk food" channels) —
@@ -41,10 +44,14 @@ Fully D-pad navigable on TV (colored focus glow, remote shortcuts: OK = pause,
 
 ## What the parent controls (all from their phone)
 
-Open settings (fingerprint-gated) on the phone:
+Open settings (fingerprint-gated, with a 4-digit parent PIN as fallback) on the phone:
 
 - **Channels & playlists** — search YouTube by name and tap Add; or paste any
-  channel/playlist link. One-time import from a hosted whitelist text file supported.
+  channel/playlist link. Import from a hosted whitelist text file, and
+  **export/share** your own list back out (save to file or share sheet) so other
+  families can import it. **Discover with AI** describes what you want in plain
+  words ("fun science experiments for kids") and proposes channels, each verified
+  against YouTube before it can be added.
   Each source has a **screen-time multiplier chip** — tap to cycle
   1x → 1.25x → 1.5x → 0.75x → 0.5x → 0.25x → FREE (long-press resets) — so
   educational channels can cost less (or nothing) and junk can cost extra.
@@ -52,6 +59,18 @@ Open settings (fingerprint-gated) on the phone:
   bedtime window. The daily budget is `session × sessions`; only actual watching
   counts, and stopping early never forfeits time.
 - **Grant extra time** — +15/+30/+60 today, applied to every device instantly.
+- **Pause for today** — one tap stops watching on every device until midnight.
+- **AI content screening** *(optional, off by default)* — screen new videos against
+  your own house rules ("no horror, no unboxing, no fake challenges") using any
+  OpenAI-compatible endpoint: Anthropic, OpenRouter, or a local server. Verdicts are
+  allow / block / **review** — unsure ones queue for you to rule on, and decisions
+  sync to the kid's devices. Only titles, channel names and durations are sent —
+  never watch history — and each video is screened once per rules version, so the
+  catalog isn't re-screened (or re-billed) on every launch. Child age and a
+  connection test are built in.
+- **Offline downloads** — approve (or decline) the kid's requests, pick download
+  quality, watch progress, cancel or delete. Files live in the app's private
+  storage and survive reboots.
 - **Kid devices** — sync status per device (settings are content-fingerprinted:
   matching `#hash` = provably in sync), push settings, per-device **stats**:
   what's playing right now — with a **pause/resume** button for "come to dinner"
@@ -100,6 +119,60 @@ Thumbnail resolution and playback quality adapt to the device and connection:
 up to 1080p on a TV with fast Wi-Fi (video+audio streams merged in ExoPlayer),
 degrading gracefully to lighter streams on weak links.
 
+## Installing
+
+Grab the APK from [Releases](https://github.com/itcon-pty-au/pickwick/releases)
+(or build it yourself, below). Phone/tablet — open the APK and install;
+Google TV — enable Developer mode and `adb install` (USB or
+`adb connect <tv-ip>` over Wi-Fi). After that, updates come from inside the app
+(parent settings → Check for updates).
+
+## Privacy & good-citizen notes
+
+- No accounts, no analytics, no cloud: history, stats and settings live on your
+  devices; phone↔TV traffic never leaves the LAN (token-authenticated).
+- The one exception is **AI screening**, which is off unless you turn it on and
+  supply your own endpoint/key. Even then it sends only video titles, channel names
+  and durations — never watch history — and pointing it at a local server keeps
+  everything in the house.
+- Plays streams directly rather than through YouTube's ad-supported player, which
+  is against YouTube's Terms of Service — the same trade NewPipe users accept.
+  For personal/family use; that's why it isn't in any app store.
+- Occasionally YouTube changes internals and extraction breaks until the
+  NewPipeExtractor dependency is updated — expect rare short outages.
+
+## Contributing
+
+The most valuable contributions aren't code: early breakage reports, bug reports
+from TV models we've never seen, translations — and **channel lists**. Curated,
+themed whitelists live in [`whitelists/`](whitelists/) and can be imported
+straight into the app; sharing yours is the easiest way to help other families.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Support Pickwick ❤️
+
+Pickwick is free and open source, but it isn't maintenance-free: YouTube changes
+its internals every few weeks, and when that happens playback breaks for every
+family using the app until someone updates the extractor, re-tests, and ships a
+release. That work is ongoing for as long as the app exists.
+
+If Pickwick is part of your family's routine, a small **monthly donation** is
+the most useful way to help — it's the recurring nature of the maintenance that
+makes recurring support matter. One-off donations are appreciated too.
+
+**[❤️ Donate](https://pickwick.tv/donate.html)** — monthly or
+one-time, via Stripe; card, Apple Pay or Google Pay; no account needed.
+
+Donations fund maintenance of a hobby project; they aren't a purchase, aren't
+tax-deductible, and don't come with support guarantees.
+
+---
+
+# For developers
+
+*Everything below is about building, releasing and maintaining Pickwick —
+parents can stop reading here.*
+
 ## Building
 
 Open in Android Studio, or:
@@ -108,9 +181,7 @@ Open in Android Studio, or:
 gradlew assembleDebug
 ```
 
-Sideload `app/build/outputs/apk/debug/app-debug.apk`:
-phone — install the APK directly; Google TV — enable Developer mode and
-`adb install` (USB or `adb connect <tv-ip>` over Wi-Fi).
+The APK lands at `app/build/outputs/apk/debug/app-debug.apk` — sideload as above.
 
 minSdk 26 · Kotlin + Jetpack Compose · Media3/ExoPlayer · NewPipeExtractor · GPL-3.0
 
@@ -158,45 +229,10 @@ Transient failures (throttling, flaky Wi-Fi, bot checks) are already retried wit
 escalating backoff inside `YouTubeRepository` — a real breakage is one that
 persists across retries and app restarts.
 
-## Contributing
-
-The most valuable contributions aren't code: early breakage reports, bug reports
-from TV models we've never seen, translations — and **channel lists**. Curated,
-themed whitelists live in [`whitelists/`](whitelists/) and can be imported
-straight into the app; sharing yours is the easiest way to help other families.
-See [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## Support Pickwick ❤️
-
-Pickwick is free and open source, but it isn't maintenance-free: YouTube changes
-its internals every few weeks, and when that happens playback breaks for every
-family using the app until someone updates the extractor, re-tests, and ships a
-release. That work is ongoing for as long as the app exists.
-
-If Pickwick is part of your family's routine, a small **monthly donation** is
-the most useful way to help — it's the recurring nature of the maintenance that
-makes recurring support matter. One-off donations are appreciated too.
-
-**[❤️ Donate](https://pickwick.tv/donate.html)** — monthly or
-one-time, via Stripe; card, Apple Pay or Google Pay; no account needed.
-
-Donations fund maintenance of a hobby project; they aren't a purchase, aren't
-tax-deductible, and don't come with support guarantees.
-
-## Privacy & good-citizen notes
-
-- No accounts, no analytics, no cloud: history, stats and settings live on your
-  devices; phone↔TV traffic never leaves the LAN (token-authenticated).
-- Plays streams directly rather than through YouTube's ad-supported player, which
-  is against YouTube's Terms of Service — the same trade NewPipe users accept.
-  For personal/family use; that's why it isn't in any app store.
-- Occasionally YouTube changes internals and extraction breaks until the
-  NewPipeExtractor dependency is updated — expect rare short outages.
-
 ## Roadmap
 
 - [ ] First public GitHub release (signed APK + self-update live)
 - [x] Contribution scaffolding (CI canary, community whitelists, issue templates)
-- [ ] AI-assisted curation (under discussion)
-- [x] Donations / sustainability (Stripe link pending)
-- [x] Everything above
+- [x] AI-assisted curation (channel discovery + rules-based screening)
+- [x] Offline downloads with parent approval
+- [x] Donations / sustainability
