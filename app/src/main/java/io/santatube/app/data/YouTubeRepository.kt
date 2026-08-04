@@ -1,5 +1,6 @@
 package io.santatube.app.data
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
@@ -14,6 +15,8 @@ import org.schabi.newpipe.extractor.channel.ChannelInfo
 import org.schabi.newpipe.extractor.channel.tabs.ChannelTabInfo
 import org.schabi.newpipe.extractor.channel.tabs.ChannelTabs
 import org.schabi.newpipe.extractor.channel.ChannelInfoItem
+import org.schabi.newpipe.extractor.exceptions.ContentNotAvailableException
+import org.schabi.newpipe.extractor.exceptions.ReCaptchaException
 import org.schabi.newpipe.extractor.linkhandler.ListLinkHandler
 import org.schabi.newpipe.extractor.playlist.PlaylistInfo
 import org.schabi.newpipe.extractor.search.SearchInfo
@@ -64,17 +67,46 @@ class YouTubeRepository {
 
         /** Per-key locks so concurrent callers join one in-flight fetch, not duplicate it. */
         private val fetchLocks = ConcurrentHashMap<String, Mutex>()
-    }
 
-    /** One retry with backoff: most extractor failures on flaky links are transient. */
-    private suspend fun <T> retrying(what: String, block: () -> T): T =
-        try {
-            block()
-        } catch (e: Exception) {
-            println("SantaTube: $what failed (${e.javaClass.simpleName}: ${e.message}) — retrying")
-            delay(800)
-            block()
+        /**
+         * Delay before each retry, chosen by failure class; empty = permanent, fail fast.
+         * ContentNotAvailable covers geo-blocked, paid, private, age-restricted and
+         * terminated-account errors — retrying those only wastes a fetch lane and delays
+         * the player's skip-to-next. A ReCaptcha (429) gets one long pause: hammering a
+         * rate limit makes it worse.
+         */
+        internal fun retryDelaysFor(e: Throwable): LongArray = when (e) {
+            is ContentNotAvailableException -> longArrayOf()
+            is ReCaptchaException -> longArrayOf(4_000)
+            else -> longArrayOf(800, 2_500)
         }
+
+        /** Escalating backoff with ±20% jitter: most extractor failures are transient. */
+        internal suspend fun <T> retrying(
+            what: String,
+            sleep: suspend (Long) -> Unit = { delay(it) },
+            block: () -> T
+        ): T {
+            var attempt = 1
+            while (true) {
+                try {
+                    return block()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    val delays = retryDelaysFor(e)
+                    if (attempt > delays.size) throw e
+                    val backoff = (delays[attempt - 1] * (0.8 + Math.random() * 0.4)).toLong()
+                    println(
+                        "SantaTube: $what failed on attempt $attempt " +
+                            "(${e.javaClass.simpleName}: ${e.message}) — retrying in ${backoff}ms"
+                    )
+                    sleep(backoff)
+                    attempt++
+                }
+            }
+        }
+    }
 
     /** TTL memo + in-flight dedup + rate limiting, shared by all info fetches. */
     private suspend fun <T> memoized(

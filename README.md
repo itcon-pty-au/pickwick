@@ -121,6 +121,46 @@ The app checks `version.json` in this repo (parent settings → Check for update
 
 Updates must be signed with the same key as the installed build.
 
+## When YouTube extraction breaks
+
+Symptom: videos stop resolving app-wide (spinners, "Could not play video") while
+YouTube itself works. Cause is almost always a server-side change that
+NewPipeExtractor hasn't caught up with yet.
+
+1. Check [NewPipeExtractor issues](https://github.com/TeamNewPipe/NewPipeExtractor/issues)
+   — a global breakage will have a fresh, very active issue, usually with a fix
+   merged within days.
+2. Bump `newpipeextractor` in `gradle/libs.versions.toml` to the newest
+   [release tag](https://github.com/TeamNewPipe/NewPipeExtractor/releases) — or, if
+   the fix is merged but unreleased, to the fix's **commit SHA** (JitPack builds any
+   commit, e.g. `newpipeextractor = "e1853be2b"`).
+3. Verify extraction against live YouTube:
+   `gradlew :app:testDebugUnitTest --tests "io.santatube.app.ExtractorSmokeTest"`
+   — `resolvesStream` is the playback path kids feel first.
+4. `gradlew assembleDebug`, then `adb install -r` to each device (or ship a
+   self-update release, see above).
+
+Transient failures (throttling, flaky Wi-Fi, bot checks) are already retried with
+escalating backoff inside `YouTubeRepository` — a real breakage is one that
+persists across retries and app restarts.
+
+## Support SantaTube ❤️
+
+SantaTube is free and open source, but it isn't maintenance-free: YouTube changes
+its internals every few weeks, and when that happens playback breaks for every
+family using the app until someone updates the extractor, re-tests, and ships a
+release. That work is ongoing for as long as the app exists.
+
+If SantaTube is part of your family's routine, a small **monthly donation** is
+the most useful way to help — it's the recurring nature of the maintenance that
+makes recurring support matter. One-off donations are appreciated too.
+
+**[Donate via Stripe](https://donate.stripe.com/REPLACE_ME)** — card,
+Apple Pay or Google Pay; no account needed.
+
+Donations fund maintenance of a hobby project; they aren't a purchase and don't
+come with support guarantees.
+
 ## Privacy & good-citizen notes
 
 - No accounts, no analytics, no cloud: history, stats and settings live on your
@@ -135,5 +175,5 @@ Updates must be signed with the same key as the installed build.
 
 - [ ] First public GitHub release (signed APK + self-update live)
 - [ ] AI-assisted curation (under discussion)
-- [ ] Donations / sustainability
+- [x] Donations / sustainability (Stripe link pending)
 - [x] Everything above

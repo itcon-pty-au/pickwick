@@ -7,8 +7,10 @@ import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.channel.ChannelInfo
 import org.schabi.newpipe.extractor.channel.tabs.ChannelTabInfo
+import org.schabi.newpipe.extractor.channel.tabs.ChannelTabs
 import org.schabi.newpipe.extractor.localization.ContentCountry
 import org.schabi.newpipe.extractor.localization.Localization
+import org.schabi.newpipe.extractor.stream.StreamInfo
 
 /** Runs the real extraction path on the JVM so failures are visible with full stack traces. */
 class ExtractorSmokeTest {
@@ -22,7 +24,7 @@ class ExtractorSmokeTest {
         println("CHANNEL: ${info.name}")
         println("TABS: " + info.tabs.joinToString { it.contentFilters.toString() })
 
-        val videosTab = info.tabs.firstOrNull { "videos" in it.contentFilters.map { f -> f.lowercase() } }
+        val videosTab = info.tabs.firstOrNull { ChannelTabs.VIDEOS in it.contentFilters }
         checkNotNull(videosTab) { "No videos tab found — tabs were: ${info.tabs.map { it.contentFilters }}" }
 
         val tab = ChannelTabInfo.getInfo(yt, videosTab)
@@ -51,6 +53,34 @@ class ExtractorSmokeTest {
                 }
         }
         check(failures.isEmpty()) { "Unresolvable URL forms: $failures" }
+    }
+
+    /**
+     * The playback path — the first thing users feel when YouTube breaks, and the
+     * regression check to run after an extractor version bump (see README runbook).
+     * Uses "Me at the zoo", the oldest video on YouTube, as a stable target.
+     */
+    @Test
+    fun resolvesStream() = runBlocking {
+        NewPipe.init(OkHttpDownloader(), Localization("en", "US"), ContentCountry("US"))
+        val yt = ServiceList.YouTube
+
+        val info = StreamInfo.getInfo(yt, "https://www.youtube.com/watch?v=jNQXAC9IVRw")
+        println("STREAM: ${info.name} (age limit ${info.ageLimit})")
+
+        val muxed = info.videoStreams.filter { !it.isVideoOnly && it.content != null }
+        val videoOnly = info.videoOnlyStreams.filter { it.content != null }
+        val audio = info.audioStreams.filter { it.content != null }
+        println("muxed=${muxed.size} videoOnly=${videoOnly.size} audio=${audio.size}")
+
+        // Same combinations resolvePlayback accepts: video+audio merged, or a muxed fallback.
+        check(muxed.isNotEmpty() || (videoOnly.isNotEmpty() && audio.isNotEmpty())) {
+            "No playable stream combination returned"
+        }
+        val sample = (muxed + videoOnly + audio).first()
+        check(sample.content.startsWith("http")) {
+            "Stream content is not a URL: ${sample.content?.take(80)}"
+        }
     }
 
     @Test

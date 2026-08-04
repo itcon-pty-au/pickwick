@@ -6,6 +6,9 @@ lifecycle = "2.8.6"
 activityCompose = "1.9.2"
 composeBom = "2024.09.03"
 media3 = "1.4.1"
+# Emergency bump: JitPack accepts any release tag OR dev-branch commit SHA here
+# (e.g. "e1853be2b"), so an upstream YouTube fix that isn't released yet can be
+# picked up same-day. See README "When YouTube extraction breaks".
 newpipeextractor = "v0.26.4"
 okhttp = "4.12.0"
 coil = "2.7.0"
