@@ -1,4 +1,4 @@
-# SantaTube whitelist — hosted on GitHub, the app refreshes it on every launch.
+# Pickwick whitelist — hosted on GitHub, the app refreshes it on every launch.
 #
 # Channels — paste any of these, whichever YouTube shows you:
 #   https://www.youtube.com/user/name      https://www.youtube.com/c/name

@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "io.santatube.app"
+    namespace = "io.pickwick.app"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "io.santatube.app"
+        applicationId = "io.pickwick.app"
         minSdk = 26 // adaptive icons; every realistic target device is far above this
         targetSdk = 34
         versionCode = 1
@@ -19,7 +19,7 @@ android {
         buildConfigField(
             "String",
             "UPDATE_MANIFEST_URL",
-            "\"https://raw.githubusercontent.com/itcon-pty-au/santatube/main/version.json\""
+            "\"https://raw.githubusercontent.com/itcon-pty-au/pickwick/main/version.json\""
         )
     }
 

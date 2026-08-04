@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Legacy/banner logo: red tile with a white play triangle. -->
+<!-- Legacy/banner logo: dark teal tile with a white play triangle. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
     <path
-        android:fillColor="#C62828"
+        android:fillColor="#00695C"
         android:pathData="M20,4 h68 a16,16 0 0 1 16,16 v68 a16,16 0 0 1 -16,16 h-68 a16,16 0 0 1 -16,-16 v-68 a16,16 0 0 1 16,-16 z" />
     <path
         android:fillColor="#FFFFFF"

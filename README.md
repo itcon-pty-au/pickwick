@@ -1,4 +1,4 @@
-# SantaTube 🎅
+# Pickwick 🏮
 
 A kid-safe, whitelist-only YouTube app for Android phones, tablets and Google TV —
 **parents choose exactly which channels exist; nothing else is reachable.**
@@ -9,7 +9,7 @@ Open source (GPL-3.0), sideloaded — not distributed via app stores.
 ## Why
 
 YouTube Kids' filters are algorithmic and leaky; commercial whitelist apps are paid,
-closed source, and still show ads. SantaTube flips the model: an explicit allow-list,
+closed source, and still show ads. Pickwick flips the model: an explicit allow-list,
 curated from a parent's phone, enforced on the kid's device — with the streams played
 directly (via [NewPipeExtractor](https://github.com/TeamNewPipe/NewPipeExtractor)),
 so there are never ads.
@@ -58,7 +58,7 @@ Open settings (fingerprint-gated) on the phone:
 
 1. Install the APK on the TV and on the parent's phone.
 2. TV: settings → a QR code appears.
-3. Phone: scan it with the camera → SantaTube opens → confirm.
+3. Phone: scan it with the camera → Pickwick opens → confirm.
 4. The **first** phone becomes the admin automatically; any later phone needs
    approval on an existing admin phone (the QR itself grants nothing).
 
@@ -116,7 +116,7 @@ The app checks `version.json` in this repo (parent settings → Check for update
 
 ```json
 { "versionCode": 2, "versionName": "0.2.0",
-  "apkUrl": "https://github.com/<you>/santatube/releases/download/v0.2.0/app-debug.apk" }
+  "apkUrl": "https://github.com/<you>/pickwick/releases/download/v0.2.0/app-debug.apk" }
 ```
 
 Updates must be signed with the same key as the installed build.
@@ -135,7 +135,7 @@ NewPipeExtractor hasn't caught up with yet.
    the fix is merged but unreleased, to the fix's **commit SHA** (JitPack builds any
    commit, e.g. `newpipeextractor = "e1853be2b"`).
 3. Verify extraction against live YouTube:
-   `gradlew :app:testDebugUnitTest --tests "io.santatube.app.ExtractorSmokeTest"`
+   `gradlew :app:testDebugUnitTest --tests "io.pickwick.app.ExtractorSmokeTest"`
    — `resolvesStream` is the playback path kids feel first.
 4. `gradlew assembleDebug`, then `adb install -r` to each device (or ship a
    self-update release, see above).
@@ -144,14 +144,14 @@ Transient failures (throttling, flaky Wi-Fi, bot checks) are already retried wit
 escalating backoff inside `YouTubeRepository` — a real breakage is one that
 persists across retries and app restarts.
 
-## Support SantaTube ❤️
+## Support Pickwick ❤️
 
-SantaTube is free and open source, but it isn't maintenance-free: YouTube changes
+Pickwick is free and open source, but it isn't maintenance-free: YouTube changes
 its internals every few weeks, and when that happens playback breaks for every
 family using the app until someone updates the extractor, re-tests, and ships a
 release. That work is ongoing for as long as the app exists.
 
-If SantaTube is part of your family's routine, a small **monthly donation** is
+If Pickwick is part of your family's routine, a small **monthly donation** is
 the most useful way to help — it's the recurring nature of the maintenance that
 makes recurring support matter. One-off donations are appreciated too.
 

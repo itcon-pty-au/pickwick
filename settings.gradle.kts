@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "santatube"
+rootProject.name = "pickwick"
 include(":app")
