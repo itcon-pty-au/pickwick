@@ -1,4 +1,4 @@
-# SantaTube whitelist — one YouTube channel ID per line.
+# PickWick whitelist — one YouTube channel ID per line.
 # Format:  UC<22 chars>  [| Optional Display Name]   [# comment]
 https://www.youtube.com/@TEDEd
 UC4a-Gbdw7vOaccHmFo40b9g | Khan Academy
