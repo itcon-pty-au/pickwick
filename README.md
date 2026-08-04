@@ -8,8 +8,8 @@
   <sub>Free forever &amp; open source — donations fund the upkeep that keeps playback working.</sub>
 </p>
 
-A kid-safe, whitelist-only YouTube app for Android phones, tablets and Google TV —
-**parents choose exactly which channels exist; nothing else is reachable.**
+A kid-safe, whitelist-only video player for Android phones, tablets and Google TV —
+**parents choose exactly which YouTube channels exist; nothing else is reachable.**
 No ads, no Shorts, no comments, no recommendations, no rabbit holes, no accounts, no cloud.
 
 Open source (GPL-3.0), sideloaded — not distributed via app stores.

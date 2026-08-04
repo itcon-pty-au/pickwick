@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Pickwick — kid-safe, whitelist-only YouTube for Android & Google TV</title>
-<meta name="description" content="Pickwick is a free, open-source, whitelist-only YouTube app for kids. Parents choose exactly which channels exist — no ads, no Shorts, no recommendations, no accounts, no cloud.">
+<title>Pickwick — kid-safe, whitelist-only video player for Android & Google TV</title>
+<meta name="description" content="Pickwick is a free, open-source video player for kids. Parents choose exactly which YouTube channels exist — no ads, no Shorts, no recommendations, no accounts, no cloud.">
 <style>
   :root {
     /* Pickwick brand teals — see app Theme.kt (#00695C logo, #4DB6AC primary) */
@@ -40,7 +40,9 @@
   }
   .wrap { max-width: 880px; margin: 0 auto; padding: 0 24px; }
 
-  header { text-align: center; padding: 64px 0 40px; }
+  /* header.wrap, not header: a bare `header` selector loses to `.wrap`'s
+     padding and the logo ends up flush against the top of the viewport. */
+  header.wrap { text-align: center; padding: 64px 24px 40px; }
   .logo {
     width: 72px; height: 72px;
     margin: 0 auto 18px;
@@ -158,8 +160,8 @@
   </div>
   <h1>Pickwick</h1>
   <p class="tagline">
-    A kid-safe, whitelist-only YouTube app for Android phones, tablets and Google&nbsp;TV —
-    <strong>parents choose exactly which channels exist; nothing else is reachable.</strong>
+    A kid-safe, whitelist-only video player for Android phones, tablets and Google&nbsp;TV —
+    <strong>parents choose exactly which YouTube channels exist; nothing else is reachable.</strong>
   </p>
   <div class="nots">
     <span>No ads</span><span>No Shorts</span><span>No comments</span>
@@ -238,7 +240,8 @@
   · <a href="https://github.com/itcon-pty-au/pickwick#privacy--good-citizen-notes">Privacy &amp; good-citizen notes</a><br>
   No accounts, no analytics, no cloud — everything stays inside your house.<br>
   Sideloaded, not in app stores; plays streams directly, which is against YouTube's
-  Terms of Service — for personal/family use.
+  Terms of Service — for personal/family use.<br>
+  An independent project — not affiliated with, endorsed by, or connected to YouTube or Google.
 </footer>
 
 </body>
