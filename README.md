@@ -1,4 +1,4 @@
-# Pickwick 🏮
+# Pickwick
 
 <p align="center">
   <a href="https://pickwick.tv/donate.html">
