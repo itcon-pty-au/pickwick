@@ -1,10 +1,3 @@
-# SantaTube Settings
-@session 30m              # max watch time per session
-@weekday-sessions 2       # sessions allowed Mon–Fri
-@weekend-sessions 4       # sessions allowed Sat–Sun
-@break 60m                # required gap between sessions (default 60m)
-@bedtime 20:30-07:45      # no watching in this window
-
 # SantaTube whitelist — one YouTube channel ID per line.
 # Format:  UC<22 chars>  [| Optional Display Name]   [# comment]
 https://www.youtube.com/@TEDEd
