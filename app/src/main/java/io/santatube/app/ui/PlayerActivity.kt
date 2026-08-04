@@ -62,6 +62,8 @@ class PlayerActivity : ComponentActivity() {
     private var currentChannel: String = ""
     /** Set from composition; invoked by the player listener when a video ends. */
     private var advance: (() -> Unit)? = null
+    /** Set from composition; invoked on a playback error (skip ahead or show it). */
+    private var playbackFailed: ((String) -> Unit)? = null
     private var isTv = false
     /** Non-null once a screen-time rule fires mid-playback. */
     private val timeUpMessage = mutableStateOf<String?>(null)
@@ -117,6 +119,11 @@ class PlayerActivity : ComponentActivity() {
                         currentPageUrl?.let { history.save(it, duration, duration) }
                         advance?.invoke()
                     }
+                }
+
+                override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                    // Never leave a frozen screen: skip ahead (playlist) or say why.
+                    playbackFailed?.invoke(error.message ?: error.errorCodeName)
                 }
             })
         }
@@ -199,6 +206,9 @@ class PlayerActivity : ComponentActivity() {
                 advance = {
                     if (index < queue.lastIndex) index += 1 else finish()
                 }
+                playbackFailed = { message ->
+                    if (index < queue.lastIndex) index += 1 else error = message
+                }
 
                 // Resolve streams whenever the queue position changes. A downloaded
                 // video plays from disk — instant start, and no network needed at
@@ -238,29 +248,33 @@ class PlayerActivity : ComponentActivity() {
                     fun progressive(url: String) =
                         androidx.media3.exoplayer.source.ProgressiveMediaSource
                             .Factory(factory).createMediaSource(MediaItem.fromUri(url))
-                    // HD: separate video+audio merged in the player (NewPipe-style).
-                    val av = if (pb.audioUrl != null) {
-                        androidx.media3.exoplayer.source.MergingMediaSource(
-                            progressive(pb.videoUrl), progressive(pb.audioUrl)
+                    // Subtitles ride along as side-loaded tracks on the video item;
+                    // DefaultMediaSourceFactory parses them during extraction (the
+                    // modern pipeline — SingleSampleMediaSource is the legacy path
+                    // that media3 1.4+ refuses at play time). Whether one is shown
+                    // is the kid's sticky captions choice.
+                    val subConfigs = pb.subtitles.map { sub ->
+                        MediaItem.SubtitleConfiguration
+                            .Builder(android.net.Uri.parse(sub.url))
+                            .setMimeType(sub.mimeType)
+                            .setLanguage(sub.languageTag.ifBlank { null })
+                            .setLabel(sub.name.ifBlank { null })
+                            .build()
+                    }
+                    val video = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(factory)
+                        .createMediaSource(
+                            MediaItem.Builder()
+                                .setUri(pb.videoUrl)
+                                .setSubtitleConfigurations(subConfigs)
+                                .build()
                         )
-                    } else progressive(pb.videoUrl)
-                    // Subtitles ride along as side-loaded tracks; whether one is
-                    // shown is the kid's sticky captions choice.
-                    val subs = pb.subtitles.map { sub ->
-                        androidx.media3.exoplayer.source.SingleSampleMediaSource
-                            .Factory(factory).createMediaSource(
-                                MediaItem.SubtitleConfiguration
-                                    .Builder(android.net.Uri.parse(sub.url))
-                                    .setMimeType(sub.mimeType)
-                                    .setLanguage(sub.languageTag.ifBlank { null })
-                                    .setLabel(sub.name.ifBlank { null })
-                                    .build(),
-                                androidx.media3.common.C.TIME_UNSET
-                            )
-                    }.toTypedArray()
+                    // HD: separate video+audio merged in the player (NewPipe-style).
                     exo.setMediaSource(
-                        if (subs.isEmpty()) av
-                        else androidx.media3.exoplayer.source.MergingMediaSource(av, *subs)
+                        if (pb.audioUrl != null) {
+                            androidx.media3.exoplayer.source.MergingMediaSource(
+                                video, progressive(pb.audioUrl)
+                            )
+                        } else video
                     )
                     applyCaptionsPreference()
                     exo.prepare()
@@ -406,6 +420,7 @@ class PlayerActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         advance = null
+        playbackFailed = null
         RemotePlayerControl.handler = null
         io.santatube.app.data.NowPlaying.clear()
         player?.release()
