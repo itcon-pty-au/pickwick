@@ -1,0 +1,14 @@
+name = "pickwick-suggest"
+main = "submit-worker.js"
+compatibility_date = "2026-08-01"
+
+# Secrets (set with `wrangler secret put <NAME>`, never in this file):
+#   TURNSTILE_SECRET — from the Turnstile widget for pickwick.tv
+#   GITHUB_TOKEN     — fine-grained PAT, repo itcon-pty-au/pickwick only,
+#                      permissions: Contents (read/write) + Pull requests (read/write)
+
+[vars]
+GITHUB_REPO = "itcon-pty-au/pickwick"
+DIRECTORY_PATH = "docs/directory/en.json"
+ALLOWED_ORIGINS = "https://pickwick.tv,https://www.pickwick.tv"
+MAX_OPEN_SUBMISSIONS = "25"

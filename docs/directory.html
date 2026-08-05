@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Channel directory — Pickwick</title>
+<meta name="description" content="YouTube channels other Pickwick families vouch for — every entry reviewed before it appears. Filter by age and topic, then add them to your own whitelist.">
+<style>
+  :root {
+    /* Pickwick brand teals — see app Theme.kt (#00695C logo, #4DB6AC primary) */
+    --bg: #eef6f4;
+    --card: #ffffff;
+    --text: #12211e;
+    --muted: #5c7370;
+    --accent: #00897b;
+    --accent-dark: #00695c;
+    --accent-text: #ffffff;
+    --pill-bg: #e2efec;
+    --shadow: 0 8px 30px rgba(0, 80, 68, .14);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1a18;
+      --card: #1b2825;
+      --text: #cce8e3;
+      --muted: #8fa8a3;
+      --accent: #4db6ac;
+      --accent-dark: #26a69a;
+      --accent-text: #00352f;
+      --pill-bg: #24342f;
+      --shadow: 0 8px 30px rgba(0, 0, 0, .45);
+    }
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 24px; }
+
+  header.wrap { text-align: center; padding: 48px 24px 28px; }
+  .logo {
+    width: 56px; height: 56px;
+    margin: 0 auto 14px;
+    border-radius: 14px;
+    background: #00695c;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 14px rgba(0, 80, 68, .3);
+  }
+  .logo svg { width: 26px; height: 26px; margin-left: 3px; }
+  h1 { font-size: 32px; letter-spacing: -.5px; }
+  .tagline {
+    font-size: 17px;
+    color: var(--muted);
+    max-width: 560px;
+    margin: 8px auto 18px;
+  }
+  .tagline strong { color: var(--text); }
+
+  .cta { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; }
+  .btn {
+    display: inline-block;
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 15px;
+    padding: 11px 22px;
+    border-radius: 12px;
+    border: 0;
+    cursor: pointer;
+    transition: background .15s ease, transform .1s ease;
+  }
+  .btn:active { transform: scale(.97); }
+  .btn-primary { background: var(--accent); color: var(--accent-text); }
+  .btn-primary:hover { background: var(--accent-dark); }
+  .btn-ghost { background: var(--pill-bg); color: var(--text); }
+  .btn-ghost:hover { background: var(--accent); color: var(--accent-text); }
+
+  .filters {
+    background: var(--card);
+    border-radius: 18px;
+    box-shadow: var(--shadow);
+    padding: 20px 22px;
+    margin: 10px 0 22px;
+  }
+  .search {
+    width: 100%;
+    font: inherit;
+    color: var(--text);
+    background: var(--bg);
+    border: 1.5px solid var(--pill-bg);
+    border-radius: 12px;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+  }
+  .search:focus { outline: none; border-color: var(--accent); }
+  .chip-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+  .chip-row .lbl {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    color: var(--muted);
+    min-width: 52px;
+  }
+  .chip {
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--muted);
+    background: var(--pill-bg);
+    border: 0;
+    border-radius: 999px;
+    padding: 5px 14px;
+    cursor: pointer;
+    transition: background .12s ease, color .12s ease;
+  }
+  .chip:hover { color: var(--text); }
+  .chip.on { background: var(--accent); color: var(--accent-text); }
+  .meta-line {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    color: var(--muted);
+    font-size: 13px;
+    margin: 0 4px 10px;
+  }
+  .meta-line button {
+    font: inherit; font-size: 13px;
+    background: none; border: 0; cursor: pointer;
+    color: var(--accent); font-weight: 600; padding: 0;
+  }
+
+  .entry {
+    background: var(--card);
+    border-radius: 18px;
+    box-shadow: var(--shadow);
+    padding: 20px 24px;
+    margin-bottom: 14px;
+  }
+  .entry .top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .entry h2 { font-size: 18px; }
+  .entry h2 a { color: var(--text); text-decoration: none; }
+  .entry h2 a:hover { color: var(--accent); }
+  .kind {
+    font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .5px;
+    color: var(--accent-dark);
+    background: var(--pill-bg);
+    border-radius: 999px;
+    padding: 2px 9px;
+  }
+  @media (prefers-color-scheme: dark) { .kind { color: var(--accent); } }
+  .entry .note { color: var(--muted); font-size: 14.5px; margin: 6px 0 10px; }
+  .pills { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pill {
+    font-size: 12px; font-weight: 600;
+    background: var(--pill-bg); color: var(--muted);
+    border-radius: 999px; padding: 3px 11px;
+  }
+  .pill.age { color: var(--accent-dark); }
+  @media (prefers-color-scheme: dark) { .pill.age { color: var(--accent); } }
+  .entry .actions { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .entry .actions .btn { font-size: 13px; padding: 7px 14px; }
+
+  .status { text-align: center; color: var(--muted); padding: 40px 0; }
+
+  footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px;
+    padding: 30px 24px 50px;
+    line-height: 1.7;
+  }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+
+<header class="wrap">
+  <a href="./" style="text-decoration:none"><div class="logo" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="#ffffff"><path d="M6 3.5v17l14-8.5z"/></svg>
+  </div></a>
+  <h1>Channel directory</h1>
+  <p class="tagline">
+    Channels other Pickwick families vouch for —
+    <strong>every entry is reviewed before it appears here.</strong>
+    Nothing lands on your TV unless you add it yourself.
+  </p>
+  <div class="cta">
+    <a class="btn btn-primary" href="suggest.html">💡 Suggest a channel</a>
+    <a class="btn btn-ghost" href="./">🏠 Pickwick home</a>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="filters">
+    <input class="search" id="search" type="search" placeholder="Search channels…" aria-label="Search channels">
+    <div class="chip-row" id="ageRow"><span class="lbl">Ages</span></div>
+    <div class="chip-row" id="topicRow"><span class="lbl">Topics</span></div>
+  </div>
+
+  <div class="meta-line">
+    <span id="count"></span>
+    <button id="clear" hidden>Clear filters</button>
+  </div>
+
+  <div id="list"><p class="status">Loading the directory…</p></div>
+</main>
+
+<footer>
+  To use a channel: open the Pickwick parent app → <strong>Channels &amp; playlists</strong> → paste its link —
+  an in-app browser for this directory is on the way.<br>
+  Suggestions are welcome from any family; each one gets an AI screening pass and a human review before publishing.<br>
+  <a href="https://github.com/itcon-pty-au/pickwick">Pickwick on GitHub</a> · <a href="donate.html">Donate</a>
+</footer>
+
+<script>
+(function () {
+  var AGE_ORDER = ['2-4', '5-7', '8-10', '11+'];
+  var state = { q: '', ages: new Set(), topics: new Set(), entries: [] };
+
+  var $ = function (id) { return document.getElementById(id); };
+  var pretty = function (age) { return age.replace('-', '–'); };
+
+  function chip(label, set, key, onChange) {
+    var b = document.createElement('button');
+    b.className = 'chip';
+    b.type = 'button';
+    b.textContent = label;
+    b.addEventListener('click', function () {
+      set.has(key) ? set.delete(key) : set.add(key);
+      b.classList.toggle('on');
+      onChange();
+    });
+    return b;
+  }
+
+  function render() {
+    var q = state.q.trim().toLowerCase();
+    var shown = state.entries.filter(function (e) {
+      if (state.ages.size && !e.ages.some(function (a) { return state.ages.has(a); })) return false;
+      if (state.topics.size && !e.topics.some(function (t) { return state.topics.has(t); })) return false;
+      if (q) {
+        var hay = (e.name + ' ' + e.note + ' ' + e.topics.join(' ')).toLowerCase();
+        if (hay.indexOf(q) === -1) return false;
+      }
+      return true;
+    });
+
+    $('count').textContent = shown.length === state.entries.length
+      ? state.entries.length + ' channels & playlists'
+      : shown.length + ' of ' + state.entries.length + ' shown';
+    $('clear').hidden = !(state.ages.size || state.topics.size || q);
+
+    var list = $('list');
+    list.textContent = '';
+    if (!shown.length) {
+      list.innerHTML = '<p class="status">Nothing matches those filters — try widening them, or ' +
+        '<a href="suggest.html">suggest a channel</a> that should be here.</p>';
+      return;
+    }
+    shown.forEach(function (e) {
+      var card = document.createElement('div');
+      card.className = 'entry';
+
+      var top = document.createElement('div');
+      top.className = 'top';
+      var h = document.createElement('h2');
+      var a = document.createElement('a');
+      a.href = e.url; a.target = '_blank'; a.rel = 'noopener';
+      a.textContent = e.name;
+      h.appendChild(a);
+      top.appendChild(h);
+      if (e.kind === 'playlist') {
+        var k = document.createElement('span');
+        k.className = 'kind';
+        k.textContent = 'playlist';
+        top.appendChild(k);
+      }
+      card.appendChild(top);
+
+      var note = document.createElement('p');
+      note.className = 'note';
+      note.textContent = e.note;
+      card.appendChild(note);
+
+      var pills = document.createElement('div');
+      pills.className = 'pills';
+      e.ages.forEach(function (ag) {
+        var p = document.createElement('span');
+        p.className = 'pill age';
+        p.textContent = 'ages ' + pretty(ag);
+        pills.appendChild(p);
+      });
+      e.topics.forEach(function (t) {
+        var p = document.createElement('span');
+        p.className = 'pill';
+        p.textContent = t;
+        pills.appendChild(p);
+      });
+      card.appendChild(pills);
+
+      var actions = document.createElement('div');
+      actions.className = 'actions';
+      var copy = document.createElement('button');
+      copy.className = 'btn btn-ghost';
+      copy.type = 'button';
+      copy.textContent = '📋 Copy link for Pickwick';
+      copy.addEventListener('click', function () {
+        navigator.clipboard.writeText(e.url).then(function () {
+          copy.textContent = '✓ Copied — paste it in the parent app';
+          setTimeout(function () { copy.textContent = '📋 Copy link for Pickwick'; }, 2200);
+        });
+      });
+      actions.appendChild(copy);
+      card.appendChild(actions);
+
+      list.appendChild(card);
+    });
+  }
+
+  function buildFilters() {
+    var ages = [], topics = [];
+    state.entries.forEach(function (e) {
+      e.ages.forEach(function (a) { if (ages.indexOf(a) === -1) ages.push(a); });
+      e.topics.forEach(function (t) { if (topics.indexOf(t) === -1) topics.push(t); });
+    });
+    ages.sort(function (a, b) {
+      var ia = AGE_ORDER.indexOf(a), ib = AGE_ORDER.indexOf(b);
+      return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+    });
+    topics.sort();
+    ages.forEach(function (a) { $('ageRow').appendChild(chip(pretty(a), state.ages, a, render)); });
+    topics.forEach(function (t) { $('topicRow').appendChild(chip(t, state.topics, t, render)); });
+  }
+
+  $('search').addEventListener('input', function (e) { state.q = e.target.value; render(); });
+  $('clear').addEventListener('click', function () {
+    state.q = ''; $('search').value = '';
+    state.ages.clear(); state.topics.clear();
+    document.querySelectorAll('.chip.on').forEach(function (c) { c.classList.remove('on'); });
+    render();
+  });
+
+  fetch('directory/en.json')
+    .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(function (data) {
+      state.entries = data.entries || [];
+      buildFilters();
+      render();
+    })
+    .catch(function () {
+      $('list').innerHTML = '<p class="status">Couldn’t load the directory — please try again in a minute.</p>';
+    });
+})();
+</script>
+
+</body>
+</html>
