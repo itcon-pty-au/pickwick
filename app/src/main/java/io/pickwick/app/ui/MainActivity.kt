@@ -702,7 +702,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
 
     private fun handlePairIntent(intent: Intent?) {
         val data = intent?.data ?: return
-        if (data.scheme != "Pickwick" || data.host != "pair") return
+        if (data.scheme != "pickwick" || data.host != "pair") return
         val host = data.getQueryParameter("host") ?: return
         val port = data.getQueryParameter("port")?.toIntOrNull() ?: return
         val name = data.getQueryParameter("name") ?: "TV"
@@ -802,24 +802,41 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         }
                     )
                     is PairFlow.Waiting -> {
+                        // The dialog narrates which step is running: contacting the TV
+                        // and copying its config are both LAN round-trips that can take
+                        // seconds, and a static "Waiting for approval…" read as a freeze.
+                        var status by remember(flow) {
+                            mutableStateOf("Contacting ${flow.name}…")
+                        }
+                        var awaitingApproval by remember(flow) { mutableStateOf(false) }
                         LaunchedEffect(flow) {
-                            val myToken = pairingStore.deviceToken()
+                            val myToken = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                pairingStore.deviceToken()
+                            }
                             val myName = android.os.Build.MODEL ?: "Phone"
                             suspend fun paired() {
+                                awaitingApproval = false
+                                status = "Copying settings from ${flow.name}…"
                                 val device = PairedDevice(flow.name, flow.host, flow.port, myToken)
-                                pairingStore.addPaired(device)
+                                // Prefs and config are disk + JSON work; off the main
+                                // thread so the spinner keeps animating.
+                                val local = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                    pairingStore.addPaired(device)
+                                    configStore.load()
+                                }
                                 // Fresh install (or wiped phone): the TV still holds the
                                 // family's config — blocks, safe-list, channels, rules.
                                 // Adopt it instead of later stomping it with an empty one.
-                                val local = configStore.load()
                                 val blank = local.sources.isEmpty() &&
                                     local.blockedVideoIds.isEmpty() &&
                                     local.aiAllowedVideoIds.isEmpty()
                                 val restored = blank &&
                                     LanClient.fetchConfig(device)?.let { remote ->
-                                        val parsed = runCatching { ConfigStore.fromJson(remote) }.getOrNull()
-                                        parsed != null && parsed.sources.isNotEmpty() &&
-                                            configStore.saveRaw(remote)
+                                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                            val parsed = runCatching { ConfigStore.fromJson(remote) }.getOrNull()
+                                            parsed != null && parsed.sources.isNotEmpty() &&
+                                                configStore.saveRaw(remote)
+                                        }
                                     } == true
                                 if (restored) ConfigEvents.onConfigChanged?.invoke()
                                 pairFlow.value = PairFlow.Result(
@@ -830,6 +847,10 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                             when (LanClient.requestPairing(flow.host, flow.port, myName, myToken)) {
                                 "approved" -> paired()
                                 "pending" -> {
+                                    awaitingApproval = true
+                                    status = "Open Pickwick settings on the family's " +
+                                        "already-paired phone and approve this request " +
+                                        "for \"$myName\"."
                                     // Wait for the family's approved phone to say yes.
                                     repeat(100) {
                                         kotlinx.coroutines.delay(3_000)
@@ -851,12 +872,18 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         }
                         AlertDialog(
                             onDismissRequest = { /* keep waiting; cancel via button */ },
-                            title = { Text("Waiting for approval…") },
+                            title = {
+                                Text(if (awaitingApproval) "Waiting for approval…" else "Pairing…")
+                            },
                             text = {
-                                Text(
-                                    "Open Pickwick settings on the family's already-paired phone " +
-                                        "and approve this request for \"${android.os.Build.MODEL}\"."
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(24.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                    Spacer(Modifier.width(16.dp))
+                                    Text(status)
+                                }
                             },
                             confirmButton = {},
                             dismissButton = {
@@ -1170,7 +1197,7 @@ private fun KeepWatchingRow(
                             )
                             Box(
                                 Modifier.align(Alignment.BottomStart).fillMaxWidth(fraction)
-                                    .height(4.dp).background(Color(0xFF4DB6AC))
+                                    .height(4.dp).background(WatchedProgressRed)
                             )
                         }
                     }
@@ -1744,7 +1771,7 @@ private fun VideoGrid(
                                     .align(Alignment.BottomStart)
                                     .fillMaxWidth(fraction)
                                     .height(4.dp)
-                                    .background(Color(0xFF4DB6AC))
+                                    .background(WatchedProgressRed)
                             )
                         }
                     }

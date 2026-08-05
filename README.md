@@ -178,10 +178,34 @@ parents can stop reading here.*
 Open in Android Studio, or:
 
 ```
-gradlew assembleDebug
+gradlew assembleRelease
 ```
 
-The APK lands at `app/build/outputs/apk/debug/app-debug.apk` — sideload as above.
+The APK lands at `app/build/outputs/apk/release/app-release.apk` — sideload as
+above. The release type is signed with the debug key precisely so it can be
+side-loaded like this.
+
+**Always install the release build on real devices.** A debug build is
+*debuggable*, which enables `-Xcheck:jni` and skips ahead-of-time compilation,
+so the whole Compose runtime is interpreted on first launch. Measured cold start
+to first frame on a Chromecast with Google TV:
+
+| Build | Cold start |
+| --- | --- |
+| `assembleDebug` | 10.2 s |
+| `assembleRelease` | ~1.9 s |
+| `assembleRelease` + forced AOT (below) | ~1.5 s |
+
+Use `assembleDebug` only when you need `run-as`, breakpoints or a debugger —
+never for someone's TV.
+
+Optionally squeeze out the last ~0.4 s by AOT-compiling the installed app. This
+is a device-local setting that does **not** survive a reinstall, so re-run it
+after each install:
+
+```
+adb shell cmd package compile -m speed -f io.pickwick.app
+```
 
 minSdk 26 · Kotlin + Jetpack Compose · Media3/ExoPlayer · NewPipeExtractor · GPL-3.0
 
@@ -189,16 +213,21 @@ minSdk 26 · Kotlin + Jetpack Compose · Media3/ExoPlayer · NewPipeExtractor ·
 
 The app checks `version.json` in this repo (parent settings → Check for updates):
 
-1. Bump `versionCode`/`versionName` in `app/build.gradle.kts`, build the APK.
+1. Bump `versionCode`/`versionName` in `app/build.gradle.kts`, then
+   `gradlew assembleRelease`. A device only offers an update when the manifest's
+   `versionCode` is **higher** than the installed one, so forgetting the bump
+   silently ships nothing.
 2. Create a GitHub Release (tag `vX.Y.Z`) with the APK attached.
 3. Point `version.json` at it:
 
 ```json
 { "versionCode": 2, "versionName": "0.2.0",
-  "apkUrl": "https://github.com/<you>/pickwick/releases/download/v0.2.0/app-debug.apk" }
+  "apkUrl": "https://github.com/<you>/pickwick/releases/download/v0.2.0/app-release.apk" }
 ```
 
-Updates must be signed with the same key as the installed build.
+Updates must be signed with the same key as the installed build. Ship the
+*release* APK — self-updating a family's TV onto a debug build would hand them
+the 10-second cold start described above.
 
 ## When YouTube extraction breaks
 

@@ -520,7 +520,7 @@ private fun BoxScope.TvControlsOverlay(
                     Modifier
                         .fillMaxWidth((positionMs.toFloat() / durationMs).coerceIn(0f, 1f))
                         .height(6.dp)
-                        .background(Color(0xFF4DB6AC))
+                        .background(WatchedProgressRed)
                 )
             }
         }

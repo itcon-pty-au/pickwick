@@ -20,6 +20,13 @@ val PickwickDarkColors = darkColorScheme(
     tertiary = Color(0xFFA5C8E4)
 )
 
+/**
+ * Watched/played progress. Deliberately not the brand teal: kids read this bar
+ * by the same convention YouTube taught them, so it stays red everywhere it
+ * appears (thumbnail bars and the player scrubber).
+ */
+val WatchedProgressRed = Color(0xFFFF0000)
+
 /** "1.5x" / "0.5x" / "FREE" — one shared spelling of a screen-time multiplier. */
 fun timeMultiplierLabel(percent: Int): String = when (percent) {
     0 -> "FREE"
