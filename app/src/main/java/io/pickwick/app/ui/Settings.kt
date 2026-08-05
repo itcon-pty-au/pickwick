@@ -42,6 +42,7 @@ import io.pickwick.app.data.DownloadStore
 import io.pickwick.app.data.LanClient
 import io.pickwick.app.data.LanServer
 import io.pickwick.app.data.Limits
+import io.pickwick.app.data.LocalLibrary
 import io.pickwick.app.data.PairedDevice
 import io.pickwick.app.data.PairingStore
 import io.pickwick.app.data.ScreeningStore
@@ -404,6 +405,9 @@ private fun AdminScreen(
 
         SectionTitle("Offline downloads")
         DownloadsSection()
+
+        SectionTitle("Videos from this phone")
+        LocalVideosSection()
 
         SectionTitle("Kid devices")
         PhoneDevicesSection(
@@ -1666,6 +1670,157 @@ private fun formatBytes(bytes: Long): String = when {
     bytes >= 1_000_000 -> "%.0f MB".format(bytes / 1_000_000.0)
     else -> "%.0f kB".format(bytes / 1_000.0)
 }
+
+// --- Videos from this phone --------------------------------------------------
+
+/**
+ * Parent links videos already on this phone into the kid's Downloads shelf.
+ * SAF only: the files stay where they are, Pickwick stores links. Folders are
+ * the recommended path (one permission grant covers everything inside, and a
+ * rescan picks up new files); single-file picking exists for one-offs.
+ */
+@Composable
+private fun LocalVideosSection() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val library = remember { LocalLibrary(context.applicationContext) }
+    // Local edits ride the downloads change signal — same shelf, same refresh.
+    val changes by DownloadEvents.changes.collectAsState()
+    val trees = remember(changes) { library.trees() }
+    val items = remember(changes) { library.items() }
+    val scope = rememberCoroutineScope()
+    // Thumbnail/metadata extraction is ~0.1s per file: a folder of episodes
+    // needs a narrated scan, not a frozen section.
+    var progress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+
+    fun rescan() {
+        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            library.rescan { done, total -> if (total > 0) progress = done to total }
+            progress = null
+        }
+    }
+
+    val pickFolder = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri != null) scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            library.addTree(uri)
+            library.rescan { done, total -> if (total > 0) progress = done to total }
+            progress = null
+        }
+    }
+    val pickVideos = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isNotEmpty()) scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            library.addFiles(uris) { done, total -> progress = done to total }
+            progress = null
+        }
+    }
+
+    Text(
+        "Add videos already on this phone — home videos, rips, purchases. " +
+            "Pickwick links to the files where they are (nothing is copied or " +
+            "uploaded) and shows them on the kid's Downloads shelf, with the " +
+            "folder name where the channel name usually goes.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Button(
+            modifier = Modifier.tvFocusHighlight(),
+            onClick = { pickFolder.launch(null) }
+        ) { Text("Add folder") }
+        Spacer(Modifier.width(8.dp))
+        OutlinedButton(
+            modifier = Modifier.tvFocusHighlight(),
+            onClick = { pickVideos.launch(arrayOf("video/*")) }
+        ) { Text("Add videos") }
+        if (trees.isNotEmpty()) {
+            Spacer(Modifier.width(8.dp))
+            TextButton(
+                modifier = Modifier.tvFocusHighlight(),
+                onClick = { rescan() }
+            ) { Text("Rescan") }
+        }
+    }
+
+    progress?.let { (done, total) ->
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
+            LinearProgressIndicator(
+                progress = { if (total == 0) 0f else done.toFloat() / total },
+                modifier = Modifier.weight(1f)
+            )
+            Spacer(Modifier.width(10.dp))
+            Text("Adding $done of $total", style = MaterialTheme.typography.bodySmall)
+        }
+    }
+
+    trees.forEach { tree ->
+        val count = items.count { it.treeUri == tree.uri && it.available }
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Text(
+                "📁 ${tree.name}  ·  $count video(s)",
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            TextButton(
+                modifier = Modifier.tvFocusHighlight(),
+                onClick = { scope.launch(kotlinx.coroutines.Dispatchers.IO) { library.forgetTree(tree.uri) } }
+            ) { Text("Forget") }
+        }
+    }
+
+    val sorted = items.sortedWith(compareBy({ it.video.channelName }, { it.video.title }))
+    sorted.forEach { item ->
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+        ) {
+            AsyncImage(
+                model = item.video.thumbnailUrl,
+                contentDescription = null,
+                modifier = Modifier.width(72.dp).height(40.dp).clip(MaterialTheme.shapes.small)
+            )
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    item.video.title, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Text(
+                    if (item.available) {
+                        "${item.video.channelName} · ${formatSeconds(item.video.durationSeconds)}"
+                    } else "File missing — rescan, or forget its folder",
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            // Folder videos are managed by their folder — a removed row would
+            // silently come back on the next rescan.
+            if (item.treeUri.isEmpty()) {
+                IconButton(onClick = {
+                    scope.launch(kotlinx.coroutines.Dispatchers.IO) { library.remove(item.video.url) }
+                }) {
+                    Icon(Icons.Filled.Delete, contentDescription = "Remove video")
+                }
+            }
+        }
+    }
+
+    if (items.isEmpty() && trees.isEmpty()) {
+        Text(
+            "Nothing linked yet.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+private fun formatSeconds(s: Long): String =
+    if (s >= 3600) "%d:%02d:%02d".format(s / 3600, (s % 3600) / 60, s % 60)
+    else "%d:%02d".format(s / 60, s % 60)
 
 // --- Grants -----------------------------------------------------------------
 

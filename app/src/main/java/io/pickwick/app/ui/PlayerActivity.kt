@@ -103,6 +103,7 @@ class PlayerActivity : ComponentActivity() {
         sessionGuard = SessionGuard(this)
         val repo = YouTubeRepository()
         val downloads = io.pickwick.app.data.DownloadStore(this)
+        val localLibrary = io.pickwick.app.data.LocalLibrary(this)
         val timePercent = intent.getIntExtra(EXTRA_TIME_PERCENT, 100).coerceIn(0, 400)
 
         // Screen-time rules: blocked before we even build the player.
@@ -223,7 +224,10 @@ class PlayerActivity : ComponentActivity() {
                     currentPageUrl = queue[index]
                     runCatching {
                         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                            downloads.localPlayback(queue[index])
+                            // Sideloaded file (content:// via SAF) or a finished
+                            // download — both play from disk with no network.
+                            localLibrary.playback(queue[index])
+                                ?: downloads.localPlayback(queue[index])
                         } ?: repo.resolvePlayback(
                             queue[index],
                             io.pickwick.app.data.QualityTargets.playbackMaxHeight
@@ -245,7 +249,8 @@ class PlayerActivity : ComponentActivity() {
                     val pb = playback ?: return@LaunchedEffect
                     val exo = player ?: return@LaunchedEffect
                     currentSubtitles = pb.subtitles
-                    // DefaultDataSource: http for streams, file for offline downloads.
+                    // DefaultDataSource: http for streams, file for offline
+                    // downloads, content for sideloaded SAF files.
                     val factory = androidx.media3.datasource.DefaultDataSource
                         .Factory(this@PlayerActivity)
                     fun progressive(url: String) =

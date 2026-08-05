@@ -43,7 +43,10 @@ data class Video(
     val durationSeconds: Long
 ) {
     val videoId: String?
-        get() = Regex("[?&]v=([A-Za-z0-9_-]{11})").find(url)?.groupValues?.get(1)
+        // Sideloaded files carry a synthetic pickwick://local/<hash> URL; the
+        // hash is 16 hex chars so it can't collide with an 11-char YouTube id.
+        get() = if (LocalLibrary.isLocal(url)) url.removePrefix(LocalLibrary.URL_PREFIX)
+        else Regex("[?&]v=([A-Za-z0-9_-]{11})").find(url)?.groupValues?.get(1)
 }
 
 /** All YouTube access goes through NewPipeExtractor — no API key, no quota, no ads. */

@@ -100,6 +100,8 @@ class MainViewModel(
     private val configStore: ConfigStore? = null,
     /** Offline downloads (phones); null on TV and in tests. */
     private val downloadStore: DownloadStore? = null,
+    /** Parent-sideloaded local files (phones); null on TV and in tests. */
+    private val localLibrary: LocalLibrary? = null,
     /** True when there's no network at launch — lands the kid on Downloads. */
     private val isOffline: () -> Boolean = { false },
     /** Serializes this device's watch state for cross-device sync. */
@@ -133,15 +135,18 @@ class MainViewModel(
         _state.value = _state.value.copy(
             watchlisted = watchlistStore.urls(),
             downloadPending = downloadStore?.pendingUrls().orEmpty(),
-            downloaded = downloadStore?.downloadedUrls().orEmpty()
+            // Sideloaded local files count as "downloaded": one set drives the
+            // ✅ badges, the home tile and the offline auto-open alike.
+            downloaded = downloadStore?.downloadedUrls().orEmpty() + localLibrary?.urls().orEmpty()
         )
         // Car trip / flight: no network but saved videos — open the offline shelf.
         if (isOffline() && _state.value.downloaded.isNotEmpty()) openDownloads()
         refresh()
         syncWatchState()
         syncConfigState()
-        // Approvals and finished downloads update the badges (and the Downloads
-        // screen, if it's open) as they happen.
+        // Approvals, finished downloads and local-library edits update the
+        // badges (and the Downloads screen, if it's open) as they happen —
+        // LocalLibrary rides the same change signal since it feeds the same shelf.
         viewModelScope.launch {
             DownloadEvents.changes.collect { refreshDownloadState() }
         }
@@ -629,20 +634,22 @@ class MainViewModel(
     }
 
     /**
-     * The offline shelf. No screener/blocklist re-filtering here: everything on
-     * it was explicitly approved by the parent, and it must work with no network.
+     * The offline shelf: finished downloads plus parent-sideloaded local files.
+     * No screener/blocklist re-filtering here: everything on it was explicitly
+     * approved (or added) by the parent, and it must work with no network.
      */
     fun openDownloads() {
-        val store = downloadStore ?: return
-        rawVideos = store.downloadedVideos()
+        if (downloadStore == null && localLibrary == null) return
+        rawVideos = downloadStore?.downloadedVideos().orEmpty() +
+            localLibrary?.videos().orEmpty()
         feedHandle = null
         uploadsNextPage = null
         _state.value = _state.value.copy(
             screen = Screen.Downloads,
             loading = false,
             error = null,
-            downloadPending = store.pendingUrls(),
-            downloaded = store.downloadedUrls(),
+            downloadPending = downloadStore?.pendingUrls().orEmpty(),
+            downloaded = downloadStore?.downloadedUrls().orEmpty() + localLibrary?.urls().orEmpty(),
             videos = downloadItems()
         )
     }
@@ -651,13 +658,14 @@ class MainViewModel(
         rawVideos.map { VideoItem(it, history.progress(it.url)?.fraction) }
 
     private fun refreshDownloadState() {
-        val store = downloadStore ?: return
+        if (downloadStore == null && localLibrary == null) return
         _state.value = _state.value.copy(
-            downloadPending = store.pendingUrls(),
-            downloaded = store.downloadedUrls()
+            downloadPending = downloadStore?.pendingUrls().orEmpty(),
+            downloaded = downloadStore?.downloadedUrls().orEmpty() + localLibrary?.urls().orEmpty()
         )
         if (_state.value.screen == Screen.Downloads) {
-            rawVideos = store.downloadedVideos()
+            rawVideos = downloadStore?.downloadedVideos().orEmpty() +
+                localLibrary?.videos().orEmpty()
             _state.value = _state.value.copy(videos = downloadItems())
         }
     }
@@ -721,6 +729,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         val configStore = ConfigStore(applicationContext)
         val pairingStore = PairingStore(applicationContext)
         val downloadStore = DownloadStore(applicationContext)
+        val localLibrary = LocalLibrary(applicationContext)
         // A queue interrupted by a reboot or crash resumes on next open.
         DownloadService.startIfPending(this)
         // Seeded before the ViewModel exists so the first cached paint is already
@@ -770,6 +779,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         pairingStore,
                         configStore = configStore,
                         downloadStore = downloadStore,
+                        localLibrary = localLibrary,
                         isOffline = {
                             val cm = appContext.getSystemService(
                                 android.content.Context.CONNECTIVITY_SERVICE
