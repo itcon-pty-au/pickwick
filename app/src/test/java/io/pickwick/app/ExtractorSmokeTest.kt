@@ -2,12 +2,15 @@ package io.pickwick.app
 
 import io.pickwick.app.data.OkHttpDownloader
 import kotlinx.coroutines.runBlocking
+import org.junit.Assume.assumeFalse
 import org.junit.Test
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.channel.ChannelInfo
 import org.schabi.newpipe.extractor.channel.tabs.ChannelTabInfo
 import org.schabi.newpipe.extractor.channel.tabs.ChannelTabs
+import org.schabi.newpipe.extractor.exceptions.ReCaptchaException
+import org.schabi.newpipe.extractor.exceptions.SignInConfirmNotBotException
 import org.schabi.newpipe.extractor.localization.ContentCountry
 import org.schabi.newpipe.extractor.localization.Localization
 import org.schabi.newpipe.extractor.stream.StreamInfo
@@ -15,19 +18,44 @@ import org.schabi.newpipe.extractor.stream.StreamInfo
 /** Runs the real extraction path on the JVM so failures are visible with full stack traces. */
 class ExtractorSmokeTest {
 
+    /**
+     * From datacenter IPs (GitHub-hosted runners) YouTube often answers with a
+     * "sign in to confirm you're not a bot" wall or a reCaptcha. That says nothing
+     * about whether extraction is broken — the same build works from a residential
+     * IP — so in CI those results are inconclusive: skip the test instead of failing
+     * the canary. Locally (CI env var unset) they still fail loudly.
+     */
+    private fun assumeNotCiBotCheck(e: Throwable) {
+        val botCheck = generateSequence(e) { it.cause }
+            .any { it is SignInConfirmNotBotException || it is ReCaptchaException }
+        assumeFalse(
+            "CI datacenter IP got bot-checked — inconclusive, not a breakage: $e",
+            botCheck && System.getenv("CI") == "true"
+        )
+    }
+
+    private fun <T> skipOnCiBotCheck(block: () -> T): T = try {
+        block()
+    } catch (e: Throwable) {
+        assumeNotCiBotCheck(e)
+        throw e
+    }
+
     @Test
     fun channelUploads() = runBlocking {
         NewPipe.init(OkHttpDownloader(), Localization("en", "US"), ContentCountry("US"))
         val yt = ServiceList.YouTube
 
-        val info = ChannelInfo.getInfo(yt, "https://www.youtube.com/channel/UC4a-Gbdw7vOaccHmFo40b9g")
+        val info = skipOnCiBotCheck {
+            ChannelInfo.getInfo(yt, "https://www.youtube.com/channel/UC4a-Gbdw7vOaccHmFo40b9g")
+        }
         println("CHANNEL: ${info.name}")
         println("TABS: " + info.tabs.joinToString { it.contentFilters.toString() })
 
         val videosTab = info.tabs.firstOrNull { ChannelTabs.VIDEOS in it.contentFilters }
         checkNotNull(videosTab) { "No videos tab found — tabs were: ${info.tabs.map { it.contentFilters }}" }
 
-        val tab = ChannelTabInfo.getInfo(yt, videosTab)
+        val tab = skipOnCiBotCheck { ChannelTabInfo.getInfo(yt, videosTab) }
         println("ITEMS: ${tab.relatedItems.size}")
         tab.relatedItems.take(5).forEach { println(" - ${it.name}") }
         check(tab.relatedItems.isNotEmpty()) { "Videos tab resolved but returned 0 items" }
@@ -48,6 +76,7 @@ class ExtractorSmokeTest {
             runCatching { ChannelInfo.getInfo(yt, url) }
                 .onSuccess { println("OK   $url -> ${it.name} (${it.id})") }
                 .onFailure {
+                    assumeNotCiBotCheck(it)
                     println("FAIL $url -> ${it.javaClass.simpleName}: ${it.message}")
                     failures += url
                 }
@@ -65,7 +94,9 @@ class ExtractorSmokeTest {
         NewPipe.init(OkHttpDownloader(), Localization("en", "US"), ContentCountry("US"))
         val yt = ServiceList.YouTube
 
-        val info = StreamInfo.getInfo(yt, "https://www.youtube.com/watch?v=jNQXAC9IVRw")
+        val info = skipOnCiBotCheck {
+            StreamInfo.getInfo(yt, "https://www.youtube.com/watch?v=jNQXAC9IVRw")
+        }
         println("STREAM: ${info.name} (age limit ${info.ageLimit})")
 
         val muxed = info.videoStreams.filter { !it.isVideoOnly && it.content != null }
@@ -87,9 +118,11 @@ class ExtractorSmokeTest {
     fun searchUploaderUrls() = runBlocking {
         NewPipe.init(OkHttpDownloader(), Localization("en", "US"), ContentCountry("US"))
         val yt = ServiceList.YouTube
-        val info = org.schabi.newpipe.extractor.search.SearchInfo.getInfo(
-            yt, yt.searchQHFactory.fromQuery("ted")
-        )
+        val info = skipOnCiBotCheck {
+            org.schabi.newpipe.extractor.search.SearchInfo.getInfo(
+                yt, yt.searchQHFactory.fromQuery("ted")
+            )
+        }
         val streams = info.relatedItems
             .filterIsInstance<org.schabi.newpipe.extractor.stream.StreamInfoItem>()
         println("RESULTS: ${streams.size}")

@@ -69,7 +69,7 @@ jobs:
           3. Re-run this workflow (Actions → Extractor canary → Run workflow) to verify; it closes this issue automatically once green.
           4. Ship a self-update release.
 
-          A single failure can also be CI-side throttling or a bot check — wait for the next scheduled run before acting on one red result.
+          Bot-check walls from the runner's datacenter IP are skipped as inconclusive (not failures), so a red run is more likely a real change — but still wait for a second consecutive red before acting.
           EOF
           )"
           fi
