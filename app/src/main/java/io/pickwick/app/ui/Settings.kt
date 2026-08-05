@@ -44,6 +44,7 @@ import io.pickwick.app.data.LanServer
 import io.pickwick.app.data.Limits
 import io.pickwick.app.data.PairedDevice
 import io.pickwick.app.data.PairingStore
+import io.pickwick.app.data.ScreeningStore
 import io.pickwick.app.data.SessionGuard
 import io.pickwick.app.data.SettingsStore
 import io.pickwick.app.data.SourceCache
@@ -57,7 +58,9 @@ import io.pickwick.app.data.YouTubeRepository
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Holds the TV's running LAN server so the settings QR can reference it. */
 object LanServerHolder {
@@ -296,6 +299,30 @@ private fun AdminScreen(
 
     var statsDevice by remember { mutableStateOf<PairedDevice?>(null) }
 
+    /**
+     * Review-queue decisions commit the moment they're tapped — a parent who ruled
+     * on a batch and walked back without Save & close was asked the same questions
+     * again next time. Only the two id sets are written to disk; other unsaved form
+     * edits stay unsaved (same rule as PauseTodayRow). The LAN push is debounced,
+     * because ruling on a queue is a burst of taps and every push to a sleeping TV
+     * costs a connect timeout. Runs on LanPushScope, not the composition scope, so
+     * closing settings right after the last tap doesn't cancel the sync.
+     */
+    val pushJob = remember {
+        java.util.concurrent.atomic.AtomicReference<kotlinx.coroutines.Job?>()
+    }
+    fun resolveFlagged(mutate: (Whitelist) -> Whitelist) {
+        io.pickwick.app.data.LanPushScope.scope.launch {
+            val updated = mutate(configStore.load())
+            configStore.save(updated)
+            val json = ConfigStore.toJson(updated)
+            pushJob.getAndSet(launch {
+                delay(2_000)
+                pairingStore.paired().forEach { LanClient.pushConfig(it, json) }
+            })?.cancel()
+        }
+    }
+
     // Stats takes over the screen while open.
     statsDevice?.let { device ->
         StatsScreen(device, configStore, pairingStore) { statsDevice = null }
@@ -393,8 +420,14 @@ private fun AdminScreen(
             AiReviewSection(
                 ai = ai,
                 resolved = blocked + aiAllowed,
-                onAllow = { aiAllowed = aiAllowed + it },
-                onBlock = { blocked = blocked + it }
+                onAllow = {
+                    aiAllowed = aiAllowed + it
+                    resolveFlagged { c -> c.copy(aiAllowedVideoIds = c.aiAllowedVideoIds + it) }
+                },
+                onBlock = {
+                    blocked = blocked + it
+                    resolveFlagged { c -> c.copy(blockedVideoIds = c.blockedVideoIds + it) }
+                }
             )
         }
 
@@ -1131,8 +1164,8 @@ private fun AiScreeningSection(ai: io.pickwick.app.data.AiConfig, onChanged: (io
 /**
  * The review queue, served from THIS device's own verdict store — so the parent
  * can rule on held videos even while the kid device is off or unreachable (each
- * device screens its own catalog and reaches the same verdicts). Decisions join
- * the form state and land on every device with Save & close. The per-device
+ * device screens its own catalog and reaches the same verdicts). Decisions are
+ * committed and pushed as they're tapped, not held for Save & close. The per-device
  * pages under "Kid devices" show the same queue live from that device.
  */
 @Composable
@@ -1145,14 +1178,49 @@ private fun AiReviewSection(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val store = remember { io.pickwick.app.data.ScreeningStore(context.applicationContext) }
-    val flagged = remember(ai.rulesVersion, resolved) {
-        store.flagged(ai.rulesVersion).filterNot { (id, _) -> id in resolved }
+    var all by remember { mutableStateOf<List<Pair<String, ScreeningStore.Entry>>>(emptyList()) }
+    /** Cached-feed videos with no verdict yet — the queue is still growing by this much. */
+    var stillScreening by remember { mutableIntStateOf(0) }
+    // The poll loop outlives any single value of `resolved`; read the latest each
+    // pass rather than restarting the (disk-reading) loop on every Allow/Block tap.
+    val latestResolved by rememberUpdatedState(resolved)
+
+    // Polled, not read once: screening runs in background batches, and a snapshot
+    // taken when the screen opened showed the parent one batch and hid the rest
+    // until they left and came back. Off the main thread — this reads every
+    // source's cached video list plus the verdict file.
+    LaunchedEffect(ai.rulesVersion) {
+        while (true) {
+            val snapshot = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val flaggedNow = store.flagged(ai.rulesVersion)
+                val videoCache = io.pickwick.app.data.VideoCache(context.applicationContext)
+                val pending = SourceCache(context.applicationContext).load()
+                    .flatMap { videoCache.load(it.id) }
+                    .mapNotNull { it.videoId }
+                    .distinct()
+                    // Parent-allowed videos are never sent for screening, so they'd
+                    // otherwise sit in this count forever.
+                    .count {
+                        it !in latestResolved && store.get(it)?.rulesVersion != ai.rulesVersion
+                    }
+                flaggedNow to pending
+            }
+            all = snapshot.first
+            stillScreening = snapshot.second
+            delay(4_000)
+        }
     }
+
+    val flagged = all.filterNot { (id, _) -> id in resolved }
+
+    val screeningNote = if (stillScreening > 0) {
+        " $stillScreening more still being screened — they'll appear here as the AI finishes."
+    } else ""
 
     if (flagged.isEmpty()) {
         Text(
             "Nothing waiting for you. Videos the AI blocks or is unsure about " +
-                "appear here for your decision.",
+                "appear here for your decision." + screeningNote,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -1161,11 +1229,14 @@ private fun AiReviewSection(
 
     Text(
         "${flagged.size} video(s) held back — hidden from the kid until you decide. " +
-            "Decisions apply to every device after Save & close.",
+            "Each Allow/Block is saved as you tap it." + screeningNote,
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )
-    flagged.take(30).forEach { (videoId, e) ->
+    // No pagination: a parent asked to rule on a queue wants the whole queue, not
+    // a batch that refills after each round trip. The cap only exists so a runaway
+    // store can't build thousands of cards into one scrolling Column.
+    flagged.take(300).forEach { (videoId, e) ->
         Card(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
             Column(Modifier.padding(12.dp)) {
                 Row(verticalAlignment = Alignment.Top) {
@@ -1224,9 +1295,9 @@ private fun AiReviewSection(
             }
         }
     }
-    if (flagged.size > 30) {
+    if (flagged.size > 300) {
         Text(
-            "…and ${flagged.size - 30} more — they appear as you rule on these.",
+            "…and ${flagged.size - 300} more — they appear as you rule on these.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

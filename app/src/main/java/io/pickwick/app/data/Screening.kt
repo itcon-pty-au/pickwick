@@ -31,9 +31,22 @@ class ScreeningStore(context: Context) {
     private val file = File(context.filesDir, "screening.json")
     private var cache: MutableMap<String, Entry>? = null
 
+    /** (lastModified, length) of the file the cache was built from — see [all]. */
+    private var loadedFrom: Pair<Long, Long> = 0L to 0L
+
+    private fun signature() = file.lastModified() to file.length()
+
+    /**
+     * More than one instance of this store is alive at a time (the feed's screener
+     * writes; the parent's review queue reads), so a cache pinned at construction
+     * serves a snapshot that ages out — the review queue used to reveal verdicts a
+     * batch at a time, one batch per reopen. Re-read whenever the file has moved
+     * on. Length is checked alongside mtime because filesystem timestamps are only
+     * second-granular, and a screening batch lands well inside one second.
+     */
     @Synchronized
     private fun all(): MutableMap<String, Entry> {
-        cache?.let { return it }
+        cache?.let { if (signature() == loadedFrom) return it }
         val map = mutableMapOf<String, Entry>()
         runCatching {
             if (file.exists()) {
@@ -54,6 +67,7 @@ class ScreeningStore(context: Context) {
             }
         }
         cache = map
+        loadedFrom = signature()
         return map
     }
 
@@ -100,6 +114,8 @@ class ScreeningStore(context: Context) {
                     .put("at", e.at))
             }
             file.writeText(root.toString())
+            // Our own write must not read as someone else's to the next all().
+            loadedFrom = signature()
         }
     }
 }
