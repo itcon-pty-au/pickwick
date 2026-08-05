@@ -348,19 +348,22 @@ class MainViewModel(
                 fun names(sourcesList: List<Source>) {
                     // Which channel names belong to entries this kid can't see —
                     // resolved from whatever names we have at this point.
-                    val byId = sourcesList.associateBy { it.id }
+                    val byUrl = sourcesList.associateBy { it.url }
                     hiddenChannelNames = list.sources
                         .filterNot { it.visibleTo(activeProfileId) }
-                        .mapNotNull { e -> byId[e.id]?.name ?: e.label }
+                        .mapNotNull { e -> byUrl[e.url]?.name ?: e.label }
                         .toSet()
                 }
                 // The full entry list resolves and caches (tile art is shared by
-                // every kid); only the active kid's subset is published.
+                // every kid); only the active kid's subset is published. Matched
+                // by URL, never id: resolution canonicalizes user/, c/ and
+                // @handle ids to UC… form, so an id join silently drops every
+                // non-UC entry once its real identity comes back.
                 fun visible(sourcesList: List<Source>): List<Source> {
-                    val visibleIds = list.sources
+                    val visibleUrls = list.sources
                         .filter { it.visibleTo(activeProfileId) }
-                        .map { it.id }.toSet()
-                    return sourcesList.filter { it.id in visibleIds }
+                        .map { it.url }.toSet()
+                    return sourcesList.filter { it.url in visibleUrls }
                 }
                 val provisional = list.sources.map { e ->
                     cachedByUrl[e.url] ?: Source(e.id, e.url, e.label ?: e.id, null, e.kind)
