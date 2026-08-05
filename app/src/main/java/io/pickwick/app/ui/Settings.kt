@@ -548,6 +548,12 @@ private fun AdminScreen(
             newIds = newIds + e.id
         }
 
+        SectionTitle("Suggested channels")
+        DirectorySection(entries) { e ->
+            entries = (entries + e).distinctBy { it.id }
+            newIds = newIds + e.id
+        }
+
         // The list can grow long; only the rarely-used sections sit below it.
         SectionTitle("Channels & playlists")
         ChannelsSection(entries, newIds, yt, resolvedNames, profiles, onChanged = { entries = it })
@@ -1723,6 +1729,163 @@ private suspend fun verifySuggestion(
                 ).joinToString(" · "),
                 why = s.why
             )
+        }
+    }
+}
+
+// --- Community directory ------------------------------------------------------
+
+private val DIRECTORY_AGE_ORDER = listOf("2-4", "5-7", "8-10", "11+")
+
+/**
+ * Browse the reviewed community directory (pickwick.tv/directory) and add
+ * entries to the whitelist. Directory review means "other parents vouch for
+ * this", not "right for this family" — added entries land tagged NEW and go
+ * through the same per-kid switches and screening as any hand-added channel.
+ */
+@Composable
+private fun DirectorySection(
+    entries: List<WhitelistEntry>,
+    onAdd: (WhitelistEntry) -> Unit
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = rememberCoroutineScope()
+    var busy by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+    var all by remember { mutableStateOf<List<io.pickwick.app.data.DirectoryEntry>>(emptyList()) }
+    var selectedAges by remember { mutableStateOf(setOf<String>()) }
+    var selectedTopics by remember { mutableStateOf(setOf<String>()) }
+
+    fun load() = scope.launch {
+        busy = true
+        message = "Loading the directory…"
+        runCatching { io.pickwick.app.data.Directory.fetch() }
+            .onSuccess { list ->
+                all = list
+                message = if (list.isEmpty()) "The directory is empty right now" else null
+            }
+            .onFailure { message = "Couldn't load the directory: ${it.message?.take(120)}" }
+        busy = false
+    }
+
+    Text(
+        "Channels other Pickwick families vouch for — every entry is reviewed " +
+            "before it appears. Adding one works like adding by hand: it lands " +
+            "tagged NEW below, with your per-kid switches and screening applying " +
+            "as usual.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+
+    if (all.isEmpty()) {
+        TextButton(
+            modifier = Modifier.tvFocusHighlight(),
+            enabled = !busy,
+            onClick = { load() }
+        ) { Text(if (busy) "…" else "Browse the directory") }
+        message?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        return
+    }
+
+    val ages = all.flatMap { it.ages }.distinct()
+        .sortedBy { DIRECTORY_AGE_ORDER.indexOf(it).let { i -> if (i == -1) 99 else i } }
+    val topics = all.flatMap { it.topics }.distinct().sorted()
+
+    Row(Modifier.horizontalScroll(rememberScrollState())) {
+        ages.forEach { a ->
+            FilterChip(
+                selected = a in selectedAges,
+                onClick = {
+                    selectedAges = if (a in selectedAges) selectedAges - a else selectedAges + a
+                },
+                label = { Text("ages " + a.replace("-", "–")) },
+                modifier = Modifier.padding(end = 6.dp).tvFocusHighlight()
+            )
+        }
+    }
+    Row(Modifier.horizontalScroll(rememberScrollState())) {
+        topics.forEach { t ->
+            FilterChip(
+                selected = t in selectedTopics,
+                onClick = {
+                    selectedTopics = if (t in selectedTopics) selectedTopics - t else selectedTopics + t
+                },
+                label = { Text(t) },
+                modifier = Modifier.padding(end = 6.dp).tvFocusHighlight()
+            )
+        }
+    }
+
+    val shown = all.filter { e ->
+        (selectedAges.isEmpty() || e.ages.any { it in selectedAges }) &&
+            (selectedTopics.isEmpty() || e.topics.any { it in selectedTopics })
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            if (shown.size == all.size) "${all.size} channels & playlists"
+            else "${shown.size} of ${all.size} shown",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f)
+        )
+        TextButton(
+            modifier = Modifier.tvFocusHighlight(),
+            enabled = !busy,
+            onClick = { load() }
+        ) { Text("Refresh") }
+    }
+    message?.let {
+        Text(it, style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+
+    shown.forEach { d ->
+        // Same accept-path as AI discovery: the canonical WhitelistEntry comes
+        // from the parser, so a directory add is byte-identical to a hand add.
+        val parsed = remember(d.url) { WhitelistParser.parse(d.url).sources.firstOrNull() }
+        val alreadyAdded = parsed != null &&
+            entries.any { it.id == parsed.id || it.url == parsed.url }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(vertical = 4.dp)
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(d.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    (if (d.kind == SourceKind.PLAYLIST) listOf("Playlist") else emptyList())
+                        .plus(d.ages.map { "ages " + it.replace("-", "–") })
+                        .plus(d.topics)
+                        .joinToString(" · "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (d.note.isNotBlank()) {
+                    Text(
+                        d.note,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+            TextButton(modifier = Modifier.tvFocusHighlight(), onClick = {
+                runCatching {
+                    context.startActivity(
+                        android.content.Intent(
+                            android.content.Intent.ACTION_VIEW,
+                            android.net.Uri.parse(d.url)
+                        )
+                    )
+                }
+            }) { Text("YouTube") }
+            TextButton(
+                modifier = Modifier.tvFocusHighlight(),
+                enabled = parsed != null && !alreadyAdded,
+                onClick = { parsed?.let { onAdd(it.copy(label = d.name)) } }
+            ) { Text(if (alreadyAdded) "Added ✓" else "Add") }
         }
     }
 }

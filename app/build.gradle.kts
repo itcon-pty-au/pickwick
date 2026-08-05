@@ -21,6 +21,15 @@ android {
             "UPDATE_MANIFEST_URL",
             "\"https://raw.githubusercontent.com/itcon-pty-au/pickwick/main/version.json\""
         )
+
+        // Community channel directory — same JSON the pickwick.tv browse page
+        // renders. Served via Pages (not raw.githubusercontent) so app and site
+        // share one canonical URL.
+        buildConfigField(
+            "String",
+            "DIRECTORY_URL",
+            "\"https://pickwick.tv/directory/\""
+        )
     }
 
     buildTypes {
