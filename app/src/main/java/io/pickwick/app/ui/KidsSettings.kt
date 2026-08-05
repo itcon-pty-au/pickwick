@@ -65,14 +65,9 @@ fun KidsSection(
 
     Text(
         if (profiles.isEmpty()) {
-            "Add your kids to give each their own channels, watch history and " +
-                "screen time. Your current setup becomes the first kid's — nothing " +
-                "is lost. With one kid the app looks exactly like today; a second " +
-                "kid brings the \"Who's watching?\" screen."
+            "Add your kids to give each their own channels, watch history and screen time."
         } else {
-            "Each kid has their own channels, watch history, saved list and " +
-                "screen-time rules. A lock code stops siblings from picking each " +
-                "other's profile on the TV."
+            "Each kid has their own channels, watch history, saved list and screen-time rules."
         },
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant
