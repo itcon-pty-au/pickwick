@@ -24,6 +24,12 @@ so there are never ads.
 
 ## What the kid sees
 
+- **"Who's watching?"** — in a multi-kid family, each kid picks their own
+  profile (a color + a friendly avatar, readable before they can read), and
+  everything below is *theirs*: channels, resume points, saved list, screen
+  time. A profile can carry a **secret lock code** — four presses on the
+  remote's D-pad/OK buttons, entered blind with only dots on screen — so a
+  younger sibling can't borrow an older kid's channels or clock.
 - A grid of **parent-approved channels and playlists**, ordered by their own favourites
 - **🎲 Surprise me** — a random mix drawn from allowed channels
 - **❤️ My list** — videos they saved by holding a tile (long-press / hold OK on the remote)
@@ -46,28 +52,40 @@ Fully D-pad navigable on TV (colored focus glow, remote shortcuts: OK = pause,
 
 Open settings (fingerprint-gated, with a 4-digit parent PIN as fallback) on the phone:
 
+- **Kids** — one profile per child: name, age, color, avatar, own screen-time
+  rules (with "copy from sibling"), optional lock code. One kid changes nothing
+  visibly; a second brings the who's-watching screen. Each device can be
+  **dedicated to one kid** (their phone) or stay shared (the TV) — shared
+  devices re-ask per sitting, never between episodes. Watch history, saved
+  lists, NEW badges and stats are all per kid; the first kid a family creates
+  inherits everything the device already knew.
 - **Channels & playlists** — search YouTube by name and tap Add; or paste any
   channel/playlist link. Import from a hosted whitelist text file, and
   **export/share** your own list back out (save to file or share sheet) so other
-  families can import it. **Discover with AI** describes what you want in plain
-  words ("fun science experiments for kids") and proposes channels, each verified
-  against YouTube before it can be added.
+  families can import it. With multiple kids, one shared list carries
+  **per-kid switches** on every channel — adding one asks "who is this for?",
+  and the default is everyone. **Discover with AI** describes what you want in
+  plain words ("fun science experiments for kids") and proposes channels, each
+  verified against YouTube before it can be added.
   Each source has a **screen-time multiplier chip** — tap to cycle
   1x → 1.25x → 1.5x → 0.75x → 0.5x → 0.25x → FREE (long-press resets) — so
   educational channels can cost less (or nothing) and junk can cost extra.
 - **Screen time** — session length, sessions per weekday/weekend, break length,
   bedtime window. The daily budget is `session × sessions`; only actual watching
   counts, and stopping early never forfeits time.
-- **Grant extra time** — +15/+30/+60 today, applied to every device instantly.
+- **Grant extra time** — +15/+30/+60 today for a named kid, applied to every
+  device instantly.
 - **Pause for today** — one tap stops watching on every device until midnight.
 - **AI content screening** *(optional, off by default)* — screen new videos against
   your own house rules ("no horror, no unboxing, no fake challenges") using any
   OpenAI-compatible endpoint: Anthropic, OpenRouter, or a local server. Verdicts are
   allow / block / **review** — unsure ones queue for you to rule on, and decisions
-  sync to the kid's devices. Only titles, channel names and durations are sent —
-  never watch history — and each video is screened once per rules version, so the
-  catalog isn't re-screened (or re-billed) on every launch. Child age and a
-  connection test are built in.
+  sync to the kid's devices. With kid profiles, **one call returns a verdict per
+  kid by age** ("fine for the 12-year-old, held for the 4-year-old"); in the
+  queue, tap rules for everyone and hold picks kids. Only titles, channel names
+  and durations are sent — never watch history — and each video is screened once
+  per rules version, so the catalog isn't re-screened (or re-billed) on every
+  launch. A connection test is built in.
 - **Offline downloads** — approve (or decline) the kid's requests, pick download
   quality, watch progress, cancel or delete. Files live in the app's private
   storage and survive reboots.
@@ -121,11 +139,16 @@ degrading gracefully to lighter streams on weak links.
 
 ## Installing
 
-Grab the APK from [Releases](https://github.com/itcon-pty-au/pickwick/releases)
+**New to sideloading? Follow the [step-by-step setup guide](docs/SETUP.md)** —
+it walks through the Google TV and phone installs button-by-button, no
+technical background assumed.
+
+The short version: grab the APK from
+[Releases](https://github.com/itcon-pty-au/pickwick/releases)
 (or build it yourself, below). Phone/tablet — open the APK and install;
-Google TV — enable Developer mode and `adb install` (USB or
-`adb connect <tv-ip>` over Wi-Fi). After that, updates come from inside the app
-(parent settings → Check for updates).
+Google TV — install via the Downloader app, or enable Developer mode and
+`adb install` (USB or `adb connect <tv-ip>` over Wi-Fi). After that, updates
+come from inside the app (parent settings → Check for updates).
 
 ## Privacy & good-citizen notes
 
@@ -208,6 +231,8 @@ adb shell cmd package compile -m speed -f io.pickwick.app
 ```
 
 minSdk 26 · Kotlin + Jetpack Compose · Media3/ExoPlayer · NewPipeExtractor · GPL-3.0
+· profile avatars from [Fluent Emoji](https://github.com/microsoft/fluentui-emoji)
+(MIT — see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md))
 
 ## Releasing updates (self-update)
 
@@ -260,7 +285,9 @@ persists across retries and app restarts.
 
 ## Roadmap
 
-- [ ] First public GitHub release (signed APK + self-update live)
+- [x] First public GitHub release (signed APK + self-update live)
+- [x] Kid profiles: per-kid channels, history, screen time, AI verdicts,
+      who's-watching screen with remote-code profile locks
 - [x] Contribution scaffolding (CI canary, community whitelists, issue templates)
 - [x] AI-assisted curation (channel discovery + rules-based screening)
 - [x] Offline downloads with parent approval
