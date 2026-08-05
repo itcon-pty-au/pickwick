@@ -339,16 +339,13 @@ private fun AdminScreen(
     fun buildCurrentConfig(): Whitelist {
         // Changed rules/age/model mean old verdicts no longer apply — bumping the
         // version makes every device re-screen its catalog against the new rules.
-        // Kids' names and ages are part of the judging too (the prompt lists them).
         // The bump is computed against `initial` (disk state when the form opened),
         // so building twice in one session yields the same version, not two bumps.
-        fun judgingShape(list: List<io.pickwick.app.data.Profile>) =
-            list.map { Triple(it.id, it.name, it.age) }
         val judgingChanged = ai.rules != initial.ai.rules ||
             ai.childAge != initial.ai.childAge ||
             ai.model != initial.ai.model ||
             ai.baseUrl != initial.ai.baseUrl ||
-            judgingShape(profiles) != judgingShape(initial.profiles)
+            io.pickwick.app.data.screeningJudgmentChanged(initial.profiles, profiles)
         val finalAi = if (judgingChanged) ai.copy(rulesVersion = initial.ai.rulesVersion + 1) else ai
         // A removed kid must not linger: entries owned only by them fall back
         // to everyone, their per-video rulings and device assignment are dropped.

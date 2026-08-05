@@ -149,6 +149,35 @@ class ProfileConfigTest {
     }
 
     @Test
+    fun `only judgment-relevant kid changes force a catalog re-screen`() {
+        val kids = listOf(dave, katy)
+        // Renames, pins, colors, avatars, limits: cosmetic to the AI — no re-screen.
+        org.junit.Assert.assertFalse(
+            io.pickwick.app.data.screeningJudgmentChanged(
+                kids, listOf(dave.copy(name = "David", pin = "CCCC", colorArgb = 0x1L), katy)
+            )
+        )
+        // Removing a kid leaves the others' verdicts valid — no re-screen.
+        org.junit.Assert.assertFalse(
+            io.pickwick.app.data.screeningJudgmentChanged(kids, listOf(dave))
+        )
+        // A new kid has no verdicts yet — re-screen.
+        assertTrue(
+            io.pickwick.app.data.screeningJudgmentChanged(
+                listOf(dave), kids
+            )
+        )
+        // An age change changes what's appropriate — re-screen.
+        assertTrue(
+            io.pickwick.app.data.screeningJudgmentChanged(
+                kids, listOf(dave.copy(age = 5), katy)
+            )
+        )
+        // First kids ever also count as new.
+        assertTrue(io.pickwick.app.data.screeningJudgmentChanged(emptyList(), listOf(dave)))
+    }
+
+    @Test
     fun `ai config with profiles still round-trips independently`() {
         val config = Whitelist(
             sources = emptyList(), blockedVideoIds = emptySet(),

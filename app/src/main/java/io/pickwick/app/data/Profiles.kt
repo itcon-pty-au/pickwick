@@ -64,6 +64,20 @@ fun isValidDirectionPin(pin: String): Boolean =
     pin.length == 4 && pin.all { it in "UDLRC" }
 
 /**
+ * Whether a change to the kids list invalidates existing AI verdicts (which
+ * forces every device to re-screen its whole catalog — real API money, so
+ * only judgment-relevant changes may trigger it):
+ *  - a NEW kid needs verdicts nobody has computed yet → re-screen;
+ *  - a changed AGE changes what's appropriate → re-screen;
+ *  - a rename changes nothing about the videos (verdicts key on profile id),
+ *    and a removal leaves the remaining kids' verdicts exactly as valid.
+ */
+fun screeningJudgmentChanged(old: List<Profile>, new: List<Profile>): Boolean {
+    val oldAges = old.associate { it.id to it.age }
+    return new.any { p -> p.id !in oldAges || oldAges[p.id] != p.age }
+}
+
+/**
  * Device-local mapping profileId → SharedPreferences/file suffix. The first
  * profile this device ever sees keeps the empty suffix, so it silently inherits
  * everything the device recorded back when "the device was the profile" —

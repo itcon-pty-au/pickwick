@@ -188,6 +188,21 @@ object AiScreener {
             .sorted()
     }
 
+    /**
+     * The system message, shaped per provider. Anthropic models via OpenRouter
+     * get the shared prefix marked cacheable — during a catalog sweep the same
+     * rules+kids preamble heads every batch, so later batches read it at the
+     * cached rate. (No effect below Anthropic's minimum cacheable size; other
+     * providers get a plain string, since unknown fields can be rejected.)
+     */
+    private fun systemContent(cfg: AiConfig, system: String): Any =
+        if ("openrouter" in cfg.baseUrl && cfg.model.startsWith("anthropic/", ignoreCase = true)) {
+            JSONArray().put(JSONObject()
+                .put("type", "text")
+                .put("text", system)
+                .put("cache_control", JSONObject().put("type", "ephemeral")))
+        } else system
+
     /** One chat-completions round trip; returns the assistant's text content. */
     private suspend fun chatCompletion(cfg: AiConfig, system: String, user: String): String =
         withContext(Dispatchers.IO) {
@@ -195,7 +210,7 @@ object AiScreener {
                 .put("model", cfg.model)
                 .put("temperature", 0)
                 .put("messages", JSONArray()
-                    .put(JSONObject().put("role", "system").put("content", system))
+                    .put(JSONObject().put("role", "system").put("content", systemContent(cfg, system)))
                     .put(JSONObject().put("role", "user").put("content", user)))
                 .toString()
 
