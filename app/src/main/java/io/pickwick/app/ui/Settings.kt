@@ -7,6 +7,7 @@ import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
@@ -334,10 +335,13 @@ private fun AdminScreen(
         return
     }
 
-    fun saveAndSync() {
+    /** The form as a config: what Save & close and Push both deliver. */
+    fun buildCurrentConfig(): Whitelist {
         // Changed rules/age/model mean old verdicts no longer apply — bumping the
         // version makes every device re-screen its catalog against the new rules.
         // Kids' names and ages are part of the judging too (the prompt lists them).
+        // The bump is computed against `initial` (disk state when the form opened),
+        // so building twice in one session yields the same version, not two bumps.
         fun judgingShape(list: List<io.pickwick.app.data.Profile>) =
             list.map { Triple(it.id, it.name, it.age) }
         val judgingChanged = ai.rules != initial.ai.rules ||
@@ -352,7 +356,7 @@ private fun AdminScreen(
         fun scrub(overlay: Map<String, Set<String>>) = overlay
             .mapValues { (_, pids) -> pids.intersect(validIds) }
             .filterValues { it.isNotEmpty() }
-        val config = Whitelist(
+        return Whitelist(
             entries.map { e ->
                 if (e.profileIds.isEmpty()) e
                 else e.copy(profileIds = e.profileIds.intersect(validIds))
@@ -361,6 +365,10 @@ private fun AdminScreen(
             profiles, scrub(blockedFor), scrub(allowedFor),
             deviceProfiles.filterValues { it in validIds }
         )
+    }
+
+    fun saveAndSync() {
+        val config = buildCurrentConfig()
         configStore.save(config)
         val devices = pairingStore.paired()
         // Close immediately — the save is already on disk. Blocking the button on
@@ -481,6 +489,14 @@ private fun AdminScreen(
             pairingStore, configStore,
             profiles = profiles,
             deviceProfiles = deviceProfiles,
+            // Push must deliver what the parent is LOOKING AT, unsaved edits
+            // included — pushing the stale disk config while the form showed
+            // freshly-added kids read as "the button does nothing".
+            saveCurrent = {
+                val config = buildCurrentConfig()
+                configStore.save(config)
+                ConfigStore.toJson(config)
+            },
             onAssign = { token, profileId ->
                 deviceProfiles =
                     if (profileId == null) deviceProfiles - token
@@ -768,7 +784,12 @@ private fun ChannelsSection(
             color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     entries.forEach { entry ->
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 2.dp)) {
+        // One tile per source: identity and actions in the first row, per-kid
+        // chips in a scrollable second — chips inline with the name wrapped a
+        // three-kid family into a broken layout.
+        Card(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+        Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             TimeMultiplierChip(entry.timeMultiplierPercent) { pct ->
                 onChanged(entries.map {
                     if (it.id == entry.id) it.copy(timeMultiplierPercent = pct) else it
@@ -832,18 +853,6 @@ private fun ChannelsSection(
                 )
                 Spacer(Modifier.width(4.dp))
             }
-            if (profiles.size >= 2) {
-                KidToggleChips(
-                    profiles = profiles,
-                    selectedIds = entry.profileIds,
-                    onChanged = { forKids ->
-                        onChanged(entries.map {
-                            if (it.id == entry.id) it.copy(profileIds = forKids) else it
-                        })
-                    }
-                )
-                Spacer(Modifier.width(4.dp))
-            }
             IconButton(
                 modifier = Modifier.tvFocusHighlight(),
                 onClick = { pendingDelete = entry }
@@ -853,6 +862,19 @@ private fun ChannelsSection(
                     contentDescription = "Remove ${displayName(entry)}"
                 )
             }
+        }
+        if (profiles.size >= 2) {
+            KidToggleChips(
+                profiles = profiles,
+                selectedIds = entry.profileIds,
+                onChanged = { forKids ->
+                    onChanged(entries.map {
+                        if (it.id == entry.id) it.copy(profileIds = forKids) else it
+                    })
+                }
+            )
+        }
+        }
         }
     }
 
@@ -2252,6 +2274,8 @@ private fun PhoneDevicesSection(
     configStore: ConfigStore,
     profiles: List<io.pickwick.app.data.Profile> = emptyList(),
     deviceProfiles: Map<String, String> = emptyMap(),
+    /** Saves the form's current state to disk and returns its JSON — what Push sends. */
+    saveCurrent: () -> String,
     /** Assign a device (by its own token) to a kid; null = shared (picker). */
     onAssign: (String, String?) -> Unit = { _, _ -> },
     onOpenStats: (PairedDevice) -> Unit,
@@ -2292,7 +2316,10 @@ private fun PhoneDevicesSection(
     @Composable
     fun assignmentRow(label: String, deviceToken: String?) {
         if (profiles.size < 2) return
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.horizontalScroll(rememberScrollState())
+        ) {
             Text(
                 label,
                 style = MaterialTheme.typography.bodySmall,
@@ -2320,7 +2347,7 @@ private fun PhoneDevicesSection(
                     modifier = Modifier.tvFocusHighlight(),
                     selected = assigned == p.id,
                     onClick = { onAssign(deviceToken, p.id) },
-                    label = { Text("${p.avatar} ${p.name}") }
+                    label = { Text(p.name) }
                 )
             }
         }
@@ -2423,11 +2450,14 @@ private fun PhoneDevicesSection(
     }
     devices.forEach { device ->
         val sync = syncStates[device.token]
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
+        // One tile per device: identity and state up top, actions on their own
+        // line — buttons squeezed beside the sync text truncated both.
+        Card(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+            Column(Modifier.padding(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         device.name, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.titleSmall,
                         modifier = Modifier.weight(1f, fill = false)
                     )
                     IconButton(
@@ -2457,69 +2487,77 @@ private fun PhoneDevicesSection(
                         else -> MaterialTheme.colorScheme.onSurfaceVariant
                     }
                 )
-            }
-            if (sync is DeviceSync.Reachable && sync.hash != localHash) {
-                Button(modifier = Modifier.tvFocusHighlight(), onClick = {
-                    scope.launch {
-                        // Push overwrites the device with this phone's saved settings.
-                        LanClient.pushConfig(device, configStore.rawJson())
-                        checkAll()
-                    }
-                }) { Text("Push") }
-                Spacer(Modifier.width(4.dp))
-                // The reverse direction: adopt the device's settings — the recovery
-                // path when this phone was reinstalled and the device still holds
-                // the family's blocks/safe-list.
-                TextButton(modifier = Modifier.tvFocusHighlight(), onClick = {
-                    pendingPull = device
-                }) { Text("Pull") }
-                Spacer(Modifier.width(4.dp))
-            }
-            TextButton(modifier = Modifier.tvFocusHighlight(), onClick = { onOpenStats(device) }) {
-                Text("Stats")
-            }
-            TextButton(modifier = Modifier.tvFocusHighlight(), onClick = {
-                pairingStore.removePaired(device.token)
-                devices = pairingStore.paired()
-            }) { Text("Unpair") }
-        }
-        assignmentRow("  Watching:", (sync as? DeviceSync.Reachable)?.deviceToken)
-        // Admin phones approved on this device (revocable, except this phone).
-        val admins = adminsByDevice[device.token].orEmpty()
-        if (admins.size > 1 || (admins.size == 1 && admins[0].second != myToken)) {
-            admins.forEach { (adminName, adminToken) ->
-                val isThisPhone = adminToken == myToken
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        "  admin: $adminName" + if (isThisPhone) "  (this phone)" else "",
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    if (!isThisPhone) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.horizontalScroll(rememberScrollState())
+                ) {
+                    if (sync is DeviceSync.Reachable && sync.hash != localHash) {
+                        Button(modifier = Modifier.tvFocusHighlight(), onClick = {
+                            // Push = "make the device match this screen": saves the
+                            // form (unsaved edits included), then overwrites the device.
+                            val json = saveCurrent()
+                            localHash = ConfigStore.fingerprint(configStore.load())
+                            scope.launch {
+                                LanClient.pushConfig(device, json)
+                                checkAll()
+                            }
+                        }) { Text("Push") }
+                        Spacer(Modifier.width(4.dp))
+                        // The reverse direction: adopt the device's settings — the recovery
+                        // path when this phone was reinstalled and the device still holds
+                        // the family's blocks/safe-list.
                         TextButton(modifier = Modifier.tvFocusHighlight(), onClick = {
-                            pendingRevoke = Triple(device, adminName, adminToken)
-                        }) { Text("Revoke") }
+                            pendingPull = device
+                        }) { Text("Pull") }
+                        Spacer(Modifier.width(4.dp))
+                    }
+                    TextButton(modifier = Modifier.tvFocusHighlight(), onClick = { onOpenStats(device) }) {
+                        Text("Stats")
+                    }
+                    TextButton(modifier = Modifier.tvFocusHighlight(), onClick = {
+                        pairingStore.removePaired(device.token)
+                        devices = pairingStore.paired()
+                    }) { Text("Unpair") }
+                }
+                assignmentRow("Watching:", (sync as? DeviceSync.Reachable)?.deviceToken)
+                // Admin phones approved on this device (revocable, except this phone).
+                val admins = adminsByDevice[device.token].orEmpty()
+                if (admins.size > 1 || (admins.size == 1 && admins[0].second != myToken)) {
+                    admins.forEach { (adminName, adminToken) ->
+                        val isThisPhone = adminToken == myToken
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "admin: $adminName" + if (isThisPhone) "  (this phone)" else "",
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (!isThisPhone) {
+                                TextButton(modifier = Modifier.tvFocusHighlight(), onClick = {
+                                    pendingRevoke = Triple(device, adminName, adminToken)
+                                }) { Text("Revoke") }
+                            }
+                        }
                     }
                 }
-            }
-        }
-        // New phones asking to become admins for this device.
-        pendingByDevice[device.token].orEmpty().forEach { (reqName, reqToken) ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "“$reqName” asks to manage ${device.name}",
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Button(modifier = Modifier.tvFocusHighlight(), onClick = {
-                    scope.launch { LanClient.approveRequest(device, reqToken); checkAll() }
-                }) { Text("Approve") }
-                Spacer(Modifier.width(4.dp))
-                TextButton(modifier = Modifier.tvFocusHighlight(), onClick = {
-                    scope.launch { LanClient.denyRequest(device, reqToken); checkAll() }
-                }) { Text("Deny") }
+                // New phones asking to become admins for this device.
+                pendingByDevice[device.token].orEmpty().forEach { (reqName, reqToken) ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "“$reqName” asks to manage ${device.name}",
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Button(modifier = Modifier.tvFocusHighlight(), onClick = {
+                            scope.launch { LanClient.approveRequest(device, reqToken); checkAll() }
+                        }) { Text("Approve") }
+                        Spacer(Modifier.width(4.dp))
+                        TextButton(modifier = Modifier.tvFocusHighlight(), onClick = {
+                            scope.launch { LanClient.denyRequest(device, reqToken); checkAll() }
+                        }) { Text("Deny") }
+                    }
+                }
             }
         }
     }

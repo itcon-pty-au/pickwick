@@ -8,8 +8,6 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.BufferedReader
-import java.io.InputStreamReader
 import java.net.InetAddress
 import java.net.NetworkInterface
 import java.net.ServerSocket
@@ -172,8 +170,22 @@ class LanServer(
 
     private fun handle(client: Socket) = client.use { sock ->
         sock.soTimeout = 10_000
-        val reader = BufferedReader(InputStreamReader(sock.getInputStream()))
-        val requestLine = reader.readLine() ?: return
+        // Bytes, not a Reader: Content-Length counts bytes, and a Reader-based
+        // body loop stalls forever on any multi-byte UTF-8 (kid-profile avatar
+        // emoji were the first non-ASCII to ever enter a config push — every
+        // push then died in a silent socket timeout).
+        val input = java.io.BufferedInputStream(sock.getInputStream())
+        fun readLine(): String? {
+            val buf = java.io.ByteArrayOutputStream()
+            while (true) {
+                val b = input.read()
+                if (b == -1) return if (buf.size() == 0) null else buf.toString("UTF-8")
+                if (b == '\n'.code) break
+                if (b != '\r'.code) buf.write(b)
+            }
+            return buf.toString("UTF-8")
+        }
+        val requestLine = readLine() ?: return
         val parts = requestLine.split(' ')
         if (parts.size < 2) return
         val (method, target) = parts
@@ -181,7 +193,7 @@ class LanServer(
         var contentLength = 0
         var reqToken: String? = null
         while (true) {
-            val line = reader.readLine() ?: break
+            val line = readLine() ?: break
             if (line.isEmpty()) break
             val lower = line.lowercase()
             if (lower.startsWith("content-length:")) {
@@ -190,14 +202,14 @@ class LanServer(
             if (lower.startsWith("x-token:")) reqToken = line.substringAfter(':').trim()
         }
         val body = if (contentLength > 0) {
-            val buf = CharArray(contentLength)
+            val bytes = ByteArray(contentLength)
             var read = 0
             while (read < contentLength) {
-                val n = reader.read(buf, read, contentLength - read)
+                val n = input.read(bytes, read, contentLength - read)
                 if (n < 0) break
                 read += n
             }
-            String(buf, 0, read)
+            String(bytes, 0, read, Charsets.UTF_8)
         } else ""
 
         fun respond(code: Int, text: String) {

@@ -41,7 +41,12 @@ class ConfigStore(context: Context) {
         registered(fromJson(json)) // validate before accepting
         file.writeText(json)
         true
-    }.getOrDefault(false)
+    }.getOrElse { e ->
+        // A rejected push is otherwise invisible on both ends — the phone shows
+        // "out of sync" forever and nobody learns why.
+        android.util.Log.w("Pickwick", "incoming config rejected", e)
+        false
+    }
 
     fun rawJson(): String = toJson(load())
 

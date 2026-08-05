@@ -122,7 +122,7 @@ object Stats {
             .put("state", snap.state)
             .put("breakUntil", snap.breakUntil ?: JSONObject.NULL)
             .put("watchlistCount", WatchlistStore(app, suffix).load().size)
-        activeProfile?.let { root.put("profileName", "${it.avatar} ${it.name}".trim()) }
+        activeProfile?.let { root.put("profileName", it.name) }
 
         NowPlaying.current()?.let { np ->
             root.put("nowPlaying", JSONObject()

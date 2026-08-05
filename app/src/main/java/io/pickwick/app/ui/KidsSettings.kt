@@ -2,6 +2,7 @@ package io.pickwick.app.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,7 +31,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
@@ -323,10 +323,12 @@ private fun KidEditorDialog(
 // ---------------------------------------------------------------------------
 
 /**
- * One row of small avatar chips showing which kids something applies to.
- * Tap toggles a kid; the empty set means "everyone" (matching the config
- * convention), so the last remaining kid can't be toggled off — a channel
- * visible to no one just looks broken.
+ * One row of name chips showing which kids something applies to — scrolls
+ * sideways so a big family never wraps into a broken layout. Tap toggles a
+ * kid; the empty set means "everyone" (matching the config convention), so
+ * the last remaining kid can't be toggled off — a channel visible to no one
+ * just looks broken. Avatars stay in the Kids section; everywhere else in the
+ * parent settings, names alone read faster.
  */
 @Composable
 fun KidToggleChips(
@@ -335,22 +337,23 @@ fun KidToggleChips(
     onChanged: (Set<String>) -> Unit
 ) {
     val effective = selectedIds.ifEmpty { profiles.map { it.id }.toSet() }
-    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.horizontalScroll(rememberScrollState())
+    ) {
         profiles.forEach { profile ->
             val on = profile.id in effective
-            Box(
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .clickable {
-                        val next = if (on) effective - profile.id else effective + profile.id
-                        if (next.isEmpty()) return@clickable
-                        // Collapse back to "everyone" so future kids are included.
-                        onChanged(if (next.size == profiles.size) emptySet() else next)
-                    }
-                    .alpha(if (on) 1f else 0.25f)
-            ) {
-                ProfileAvatar(profile, size = 28)
-            }
+            FilterChip(
+                modifier = Modifier.tvFocusHighlight(),
+                selected = on,
+                onClick = {
+                    val next = if (on) effective - profile.id else effective + profile.id
+                    if (next.isEmpty()) return@FilterChip
+                    // Collapse back to "everyone" so future kids are included.
+                    onChanged(if (next.size == profiles.size) emptySet() else next)
+                },
+                label = { Text(profile.name) }
+            )
         }
     }
 }
@@ -362,13 +365,16 @@ fun KidSelectorChips(
     selectedId: String,
     onSelect: (String) -> Unit
 ) {
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.horizontalScroll(rememberScrollState())
+    ) {
         profiles.forEach { profile ->
             FilterChip(
                 modifier = Modifier.tvFocusHighlight(),
                 selected = profile.id == selectedId,
                 onClick = { onSelect(profile.id) },
-                label = { Text("${profile.avatar} ${profile.name}") }
+                label = { Text(profile.name) }
             )
         }
     }
@@ -411,8 +417,6 @@ fun WhoForDialog(
                                 checked = if (on) checked + profile.id else checked - profile.id
                             }
                         )
-                        ProfileAvatar(profile, size = 28)
-                        Spacer(Modifier.width(8.dp))
                         Text(profile.name)
                     }
                 }

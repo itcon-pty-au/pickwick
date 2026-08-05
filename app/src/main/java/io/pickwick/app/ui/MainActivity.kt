@@ -109,6 +109,12 @@ class MainViewModel(
     /** Merges a peer's watch state into this device. Returns true if applied. */
     private val mergeWatchState: (String) -> Boolean = { false },
     /**
+     * Snapshots a device's stats into the phone-side cache. Riding the periodic
+     * sync keeps the snapshot warm, so the parent's Stats page has yesterday's
+     * picture even when the TV has been off all day.
+     */
+    private val cacheStats: suspend (PairedDevice) -> Unit = {},
+    /**
      * Warms thumbnails into Coil's disk cache, one at a time, so the trickle
      * never competes with the images currently on screen.
      */
@@ -185,19 +191,42 @@ class MainViewModel(
      * older* config, push ours again; a device carrying a newer config (another
      * admin phone edited meanwhile) is left alone for a deliberate Push/Pull.
      */
+    private var configSyncInFlight = false
+
     fun syncConfigState() {
         val store = configStore ?: return
         val devices = pairingStore?.paired().orEmpty()
-        if (devices.isEmpty()) return
+        // Init and ON_START both fire this at launch — one reconcile is plenty.
+        if (devices.isEmpty() || configSyncInFlight) return
+        configSyncInFlight = true
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val localHash = ConfigStore.fingerprint(store.load())
             val localAt = store.updatedAt()
             devices.forEach { device ->
-                val (remoteHash, remoteAt) = LanClient.status(device) ?: return@forEach
-                if (remoteHash != localHash && remoteAt < localAt) {
-                    LanClient.pushConfig(device, store.rawJson())
+                val status = LanClient.status(device)
+                if (status == null) {
+                    android.util.Log.i("Pickwick", "config sync: ${device.name} unreachable")
+                    return@forEach
+                }
+                val (remoteHash, remoteAt) = status
+                when {
+                    remoteHash == localHash -> {}
+                    remoteAt < localAt -> {
+                        val ok = LanClient.pushConfig(device, store.rawJson())
+                        android.util.Log.i(
+                            "Pickwick",
+                            "config sync: pushed #$localHash to ${device.name} " +
+                                "(had #$remoteHash) → ${if (ok) "accepted" else "REJECTED"}"
+                        )
+                    }
+                    else -> android.util.Log.i(
+                        "Pickwick",
+                        "config sync: ${device.name} differs (#$remoteHash) but its copy is " +
+                            "newer (theirs $remoteAt >= ours $localAt) — leaving for Push/Pull"
+                    )
                 }
             }
+            configSyncInFlight = false
         }
     }
 
@@ -216,6 +245,7 @@ class MainViewModel(
             devices.forEach { device ->
                 LanClient.fetchWatchState(device)?.let { if (mergeWatchState(it)) changed = true }
                 LanClient.pushWatchState(device, exportWatchState())
+                cacheStats(device)
             }
             watchSyncInFlight = false
             if (changed) refreshProgress()
@@ -902,6 +932,11 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         },
                         exportWatchState = { WatchSync.exportJson(appContext) },
                         mergeWatchState = { WatchSync.mergeJson(appContext, it) },
+                        cacheStats = { device ->
+                            LanClient.stats(device)?.let {
+                                io.pickwick.app.data.StatsCache(appContext).save(device.token, it)
+                            }
+                        },
                         prefetchThumbs = prefetchThumbs,
                         screener = screener,
                         activeProfileId = activeProfileId
