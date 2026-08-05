@@ -40,8 +40,9 @@ class LocalLibrary(private val context: Context) {
         val available: Boolean
     )
 
-    /** A folder the parent granted; rescanned to pick up new files. */
-    data class Tree(val uri: String, val name: String)
+    /** A folder the parent granted; rescanned to pick up new files.
+     *  [profileIds] empty = every kid sees its videos (matches WhitelistEntry). */
+    data class Tree(val uri: String, val name: String, val profileIds: Set<String> = emptySet())
 
     private val root = File(context.filesDir, "local").apply { mkdirs() }
     private val index = File(root, "index.tsv")
@@ -52,17 +53,26 @@ class LocalLibrary(private val context: Context) {
 
     fun trees(): List<Tree> = synchronized(LOCK) { loadTrees() }
 
-    /** Videos for the kid's Downloads shelf: available only, grouped by folder. */
-    fun videos(): List<Video> = items()
-        .filter { it.available }
+    /** Videos for the kid's Downloads shelf: available only, grouped by folder.
+     *  [profileId] filters folder videos to that kid; picked files show for all. */
+    fun videos(profileId: String? = null): List<Video> = visibleItems(profileId)
         .map { it.video }
         .sortedWith(compareBy({ it.channelName }, { it.title }))
 
     /** Playable page URLs (joins DownloadStore.downloadedUrls for the ✅ set). */
-    fun urls(): Set<String> = items()
-        .filter { it.available }
+    fun urls(profileId: String? = null): Set<String> = visibleItems(profileId)
         .map { it.video.url }
         .toSet()
+
+    private fun visibleItems(profileId: String?): List<Item> {
+        val treeVisibility = trees().associate { it.uri to it.profileIds }
+        return items().filter { item ->
+            item.available && run {
+                val pids = treeVisibility[item.treeUri].orEmpty()
+                pids.isEmpty() || profileId == null || profileId in pids
+            }
+        }
+    }
 
     /** Local stream for the player, or null if this URL isn't a linked file. */
     fun playback(videoUrl: String): YouTubeRepository.Playback? {
@@ -75,7 +85,7 @@ class LocalLibrary(private val context: Context) {
      * Link a granted folder. Contents arrive via the rescan() the caller runs
      * next — adding and scanning are split so the UI can narrate the slow part.
      */
-    fun addTree(uri: Uri) {
+    fun addTree(uri: Uri, profileIds: Set<String> = emptySet()) {
         // Persist the grant or the link dies with the next reboot. Some
         // providers refuse; the link then just lives until reboot.
         runCatching {
@@ -87,7 +97,17 @@ class LocalLibrary(private val context: Context) {
         synchronized(LOCK) {
             val all = loadTrees()
             if (all.any { it.uri == s }) return
-            saveTrees(all + Tree(s, treeName(uri)))
+            saveTrees(all + Tree(s, treeName(uri), profileIds))
+        }
+        DownloadEvents.notifyChanged()
+    }
+
+    /** Update which kids can see a folder's videos (empty = everyone). */
+    fun setTreeProfiles(treeUri: String, profileIds: Set<String>) {
+        synchronized(LOCK) {
+            saveTrees(loadTrees().map {
+                if (it.uri == treeUri) it.copy(profileIds = profileIds) else it
+            })
         }
         DownloadEvents.notifyChanged()
     }
@@ -396,7 +416,11 @@ class LocalLibrary(private val context: Context) {
         return runCatching {
             treesFile.readLines().mapNotNull { line ->
                 val p = line.split('\t')
-                if (p.size < 2) null else Tree(p[0], p[1])
+                if (p.size < 2) null else Tree(
+                    p[0], p[1],
+                    // Third column absent on rows written before profiles existed.
+                    p.getOrNull(2)?.split(',')?.filter { it.isNotBlank() }?.toSet() ?: emptySet()
+                )
             }
         }.getOrDefault(emptyList())
     }
@@ -404,7 +428,8 @@ class LocalLibrary(private val context: Context) {
     private fun saveTrees(trees: List<Tree>) {
         runCatching {
             treesFile.writeText(trees.joinToString("\n") {
-                "${it.uri}\t${it.name.replace('\t', ' ').replace('\n', ' ')}"
+                "${it.uri}\t${it.name.replace('\t', ' ').replace('\n', ' ')}\t" +
+                    it.profileIds.joinToString(",")
             })
         }
     }

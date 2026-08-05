@@ -21,8 +21,17 @@ data class WhitelistEntry(
      * 100 = normal, 50 = half speed, 150 = "junk food" penalty, 0 = FREE
      * (doesn't count at all). One of [TIME_MULTIPLIERS].
      */
-    val timeMultiplierPercent: Int = 100
-)
+    val timeMultiplierPercent: Int = 100,
+    /**
+     * Which kids see this source. Empty = everyone, including kids added
+     * later — so a family that never touches the per-kid switches shares one
+     * list, and adding a channel defaults to all.
+     */
+    val profileIds: Set<String> = emptySet()
+) {
+    fun visibleTo(profileId: String?): Boolean =
+        profileIds.isEmpty() || profileId == null || profileId in profileIds
+}
 
 /** Chip cycle order in settings: tap steps through these, long-press resets to 100. */
 val TIME_MULTIPLIERS = listOf(100, 125, 150, 75, 50, 25, 0)
@@ -70,8 +79,50 @@ data class Whitelist(
     val limits: Limits = Limits(),
     val ai: AiConfig = AiConfig(),
     /** Parent overrides: videos the AI blocked but a parent explicitly allowed. */
-    val aiAllowedVideoIds: Set<String> = emptySet()
-)
+    val aiAllowedVideoIds: Set<String> = emptySet(),
+    /**
+     * The family's kids. Empty = pre-profile behavior everywhere: no picker,
+     * the device is the kid, [limits] and [AiConfig.childAge] apply directly.
+     */
+    val profiles: List<Profile> = emptyList(),
+    /**
+     * Per-kid overlays from a long-press ruling ("fine for the 12-year-old,
+     * not the 5-year-old"): videoId → the kids it's blocked/allowed for. A
+     * plain tap uses the family-wide sets above instead.
+     */
+    val blockedFor: Map<String, Set<String>> = emptyMap(),
+    val allowedFor: Map<String, Set<String>> = emptyMap(),
+    /**
+     * Device pairing-token → the kid that device is dedicated to. Devices not
+     * listed are shared and show the who's-watching screen.
+     */
+    val deviceProfiles: Map<String, String> = emptyMap()
+) {
+    fun profile(id: String?): Profile? = profiles.firstOrNull { it.id == id }
+
+    /**
+     * Effective screen-time rules for one kid. The family-wide pause ("pause
+     * for today") always applies on top of a kid's own rules — a per-kid
+     * bedtime shouldn't undo a whole-family timeout.
+     */
+    fun limitsFor(profileId: String?): Limits {
+        val p = profile(profileId) ?: return limits
+        return if (limits.pausedUntilMillis != null) {
+            p.limits.copy(pausedUntilMillis = limits.pausedUntilMillis)
+        } else p.limits
+    }
+
+    fun isBlockedFor(videoId: String?, profileId: String?): Boolean {
+        videoId ?: return false
+        if (videoId in blockedVideoIds) return true
+        return profileId != null && profileId in blockedFor[videoId].orEmpty()
+    }
+
+    /** Parent allow-overrides that apply to this kid (feeds the screener). */
+    fun allowedIdsFor(profileId: String?): Set<String> =
+        if (profileId == null) aiAllowedVideoIds
+        else aiAllowedVideoIds + allowedFor.filterValues { profileId in it }.keys
+}
 
 /**
  * Fetches and parses the parent-maintained list.

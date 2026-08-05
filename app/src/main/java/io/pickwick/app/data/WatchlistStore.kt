@@ -8,12 +8,12 @@ import java.io.File
  * timestamped so devices can merge (latest event per video wins) without
  * removals resurrecting on the next sync.
  */
-class WatchlistStore(context: Context) {
+class WatchlistStore(context: Context, profileSuffix: String = "") {
 
     data class Entry(val video: Video, val addedAt: Long)
 
-    private val file = File(context.filesDir, "watchlist.tsv")
-    private val removedFile = File(context.filesDir, "watchlist_removed.tsv")
+    private val file = File(context.filesDir, "watchlist$profileSuffix.tsv")
+    private val removedFile = File(context.filesDir, "watchlist_removed$profileSuffix.tsv")
 
     fun loadEntries(): List<Entry> {
         if (!file.exists()) return emptyList()

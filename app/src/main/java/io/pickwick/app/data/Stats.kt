@@ -66,6 +66,8 @@ object Stats {
         val sittingCapMin: Int?,
         val state: String,
         val breakUntil: String?,
+        /** "🦊 Noa" — whose day this payload describes; null pre-profiles. */
+        val profileName: String? = null,
         val nowPlaying: NowPlaying.State?,
         val recent: List<RecentVideo>,
         val topChannels: List<Pair<String, Int>>,
@@ -85,11 +87,21 @@ object Stats {
 
     fun build(context: Context): String {
         val app = context.applicationContext
-        val guard = SessionGuard(app)
+        val config = ConfigStore(app).load()
+        // With profiles, report the kid this device is showing right now — the
+        // parent's dashboard says whose day it is looking at.
+        val activeProfile = config.profiles.takeIf { it.isNotEmpty() }?.let { profiles ->
+            val assigned = config.deviceProfiles[PairingStore(app).deviceToken()]
+            profiles.firstOrNull { it.id == assigned }
+                ?: profiles.firstOrNull { it.id == ActiveProfileStore(app).activeId() }
+                ?: profiles.first()
+        }
+        val suffix = ProfileNamespace(app).suffixFor(activeProfile?.id)
+        val guard = SessionGuard(app, suffix)
         val snap = guard.snapshot()
         val history = guard.history()
-        val usage = ChannelUsage(app).topChannels()
-        val watchHistory = WatchHistoryStore(app)
+        val usage = ChannelUsage(app, suffix).topChannels()
+        val watchHistory = WatchHistoryStore(app, suffix)
         val videoCache = VideoCache(app)
         val sources = SourceCache(app).load()
 
@@ -109,7 +121,8 @@ object Stats {
             .put("sittingCapMin", snap.sittingCapMin ?: JSONObject.NULL)
             .put("state", snap.state)
             .put("breakUntil", snap.breakUntil ?: JSONObject.NULL)
-            .put("watchlistCount", WatchlistStore(app).load().size)
+            .put("watchlistCount", WatchlistStore(app, suffix).load().size)
+        activeProfile?.let { root.put("profileName", "${it.avatar} ${it.name}".trim()) }
 
         NowPlaying.current()?.let { np ->
             root.put("nowPlaying", JSONObject()
@@ -141,7 +154,6 @@ object Stats {
             }
         })
 
-        val config = ConfigStore(app).load()
         // Reported from the device's own config, so the label matches what this
         // device actually enforced — not what the phone believes it pushed.
         root.put("multipliers", config.sources.any { it.timeMultiplierPercent != 100 })
@@ -240,6 +252,7 @@ object Stats {
             sittingCapMin = optInt("sittingCapMin"),
             state = root.optString("state"),
             breakUntil = if (root.isNull("breakUntil")) null else root.getString("breakUntil"),
+            profileName = root.optString("profileName").ifEmpty { null },
             nowPlaying = np,
             recent = recent,
             topChannels = top,

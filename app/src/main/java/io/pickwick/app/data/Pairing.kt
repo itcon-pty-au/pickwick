@@ -139,7 +139,8 @@ object ConfigEvents {
  */
 class LanServer(
     private val configStore: ConfigStore,
-    private val sessionGuard: SessionGuard,
+    /** Applies a grant to the right kid's guard (null profile = legacy/active). */
+    private val grantHandler: (minutes: Int, profileId: String?) -> Unit,
     private val pairingStore: PairingStore,
     private val statsProvider: () -> String = { "{}" },
     private val watchStateProvider: () -> String = { "{}" },
@@ -304,6 +305,9 @@ class LanServer(
                 JSONObject()
                     .put("hash", ConfigStore.fingerprint(configStore.load()))
                     .put("updatedAt", configStore.updatedAt())
+                    // Our own identity token, so the admin phone can key this
+                    // device in deviceProfiles (dedicated-to-a-kid assignment).
+                    .put("token", pairingStore.deviceToken())
                     .toString()
             )
             // Disaster recovery: a freshly reinstalled phone starts with an empty
@@ -327,8 +331,9 @@ class LanServer(
             }
             method == "POST" && path == "/grant" -> {
                 val minutes = Regex("minutes=(\\d+)").find(target)?.groupValues?.get(1)?.toIntOrNull()
+                val profileId = Regex("profile=([0-9a-f]{8})").find(target)?.groupValues?.get(1)
                 if (minutes != null && minutes in 1..240) {
-                    sessionGuard.grantExtraMinutes(minutes)
+                    grantHandler(minutes, profileId)
                     respond(200, "granted")
                 } else respond(400, "bad minutes")
             }
@@ -349,13 +354,23 @@ class LanServer(
 /** Phone side: pushes to paired TVs. */
 object LanClient {
 
+    data class DeviceStatus(val hash: String, val updatedAt: Long, val deviceToken: String?)
+
     /** The device's config fingerprint + last-edit time, or null when unreachable. */
-    suspend fun status(device: PairedDevice): Pair<String, Long>? = withContext(Dispatchers.IO) {
+    suspend fun status(device: PairedDevice): Pair<String, Long>? =
+        fullStatus(device)?.let { it.hash to it.updatedAt }
+
+    /** Status including the device's own identity token (for profile assignment). */
+    suspend fun fullStatus(device: PairedDevice): DeviceStatus? = withContext(Dispatchers.IO) {
         runCatching {
             request(device, "GET", "/status", null).use { resp ->
                 if (!resp.isSuccessful) return@withContext null
                 val json = JSONObject(resp.body?.string().orEmpty())
-                json.getString("hash") to json.optLong("updatedAt", 0L)
+                DeviceStatus(
+                    json.getString("hash"),
+                    json.optLong("updatedAt", 0L),
+                    json.optString("token").ifEmpty { null }
+                )
             }
         }.getOrNull()
     }
@@ -384,10 +399,12 @@ object LanClient {
             }.getOrDefault(false)
         }
 
-    suspend fun grant(device: PairedDevice, minutes: Int): Boolean =
+    suspend fun grant(device: PairedDevice, minutes: Int, profileId: String? = null): Boolean =
         withContext(Dispatchers.IO) {
+            val profileParam = profileId?.let { "&profile=$it" } ?: ""
             runCatching {
-                request(device, "POST", "/grant?minutes=$minutes", "").use { it.isSuccessful }
+                request(device, "POST", "/grant?minutes=$minutes$profileParam", "")
+                    .use { it.isSuccessful }
             }.getOrDefault(false)
         }
 

@@ -115,6 +115,8 @@ class MainViewModel(
     private val prefetchThumbs: suspend (List<String>) -> Unit = {},
     /** AI screening gate; null in tests. Unscreened/blocked videos never render. */
     private val screener: io.pickwick.app.data.Screener? = null,
+    /** Whose home screen this is; null = pre-profile single-kid behavior. */
+    private val activeProfileId: String? = null,
     private val yt: YouTubeRepository = YouTubeRepository()
 ) : ViewModel() {
 
@@ -122,6 +124,9 @@ class MainViewModel(
     val state: StateFlow<UiState> = _state
     private var sources: List<Source> = emptyList()
     private var blockedVideoIds: Set<String> = emptySet()
+    /** Channels that exist in the family config but belong to other kids —
+     *  used to keep their downloads off this kid's offline shelf. */
+    private var hiddenChannelNames: Set<String> = emptySet()
 
     /** The unfiltered videos behind the current screen; progress/filtering applied on top. */
     private var rawVideos: List<Video> = emptyList()
@@ -131,13 +136,25 @@ class MainViewModel(
     private var uploadsNextPage: org.schabi.newpipe.extractor.Page? = null
     private var loadingMore = false
 
+    /**
+     * The offline shelf through this kid's eyes: YouTube downloads follow
+     * their channel's per-kid switches, local folders their own visibility.
+     */
+    private fun visibleDownloads(): List<Video> =
+        downloadStore?.downloadedVideos().orEmpty()
+            .filter { it.channelName !in hiddenChannelNames } +
+            localLibrary?.videos(activeProfileId).orEmpty()
+
+    private fun visibleDownloadUrls(): Set<String> =
+        visibleDownloads().map { it.url }.toSet()
+
     init {
         _state.value = _state.value.copy(
             watchlisted = watchlistStore.urls(),
             downloadPending = downloadStore?.pendingUrls().orEmpty(),
             // Sideloaded local files count as "downloaded": one set drives the
             // ✅ badges, the home tile and the offline auto-open alike.
-            downloaded = downloadStore?.downloadedUrls().orEmpty() + localLibrary?.urls().orEmpty()
+            downloaded = visibleDownloadUrls()
         )
         // Car trip / flight: no network but saved videos — open the offline shelf.
         if (isOffline() && _state.value.downloaded.isNotEmpty()) openDownloads()
@@ -286,18 +303,43 @@ class MainViewModel(
         }
         runCatching { whitelist.load() }
             .onSuccess { list ->
-                blockedVideoIds = list.blockedVideoIds
+                // Per-kid blocks fold into one set — every downstream check
+                // ("is this video blocked?") stays a plain membership test.
+                blockedVideoIds = list.blockedVideoIds +
+                    list.blockedFor.filterValues { activeProfileId in it }.keys
                 screener?.config = list.ai
-                screener?.allowedOverrides = list.aiAllowedVideoIds
-                sessionGuard.saveLimits(list.limits)
+                screener?.profiles = list.profiles
+                screener?.activeProfileId = activeProfileId
+                screener?.allowedOverrides = list.allowedIdsFor(activeProfileId)
+                sessionGuard.saveLimits(list.limitsFor(activeProfileId))
                 // Fast publish: entries merged with cached tile artwork (keyed by URL,
                 // which survives id canonicalization). Adds/removes land right here.
                 val cachedByUrl = cached.associateBy { it.url }
+                fun names(sourcesList: List<Source>) {
+                    // Which channel names belong to entries this kid can't see —
+                    // resolved from whatever names we have at this point.
+                    val byId = sourcesList.associateBy { it.id }
+                    hiddenChannelNames = list.sources
+                        .filterNot { it.visibleTo(activeProfileId) }
+                        .mapNotNull { e -> byId[e.id]?.name ?: e.label }
+                        .toSet()
+                }
+                // The full entry list resolves and caches (tile art is shared by
+                // every kid); only the active kid's subset is published.
+                fun visible(sourcesList: List<Source>): List<Source> {
+                    val visibleIds = list.sources
+                        .filter { it.visibleTo(activeProfileId) }
+                        .map { it.id }.toSet()
+                    return sourcesList.filter { it.id in visibleIds }
+                }
                 val provisional = list.sources.map { e ->
                     cachedByUrl[e.url] ?: Source(e.id, e.url, e.label ?: e.id, null, e.kind)
                 }
-                sources = provisional
-                publishChannels(provisional)
+                names(provisional)
+                sources = visible(provisional)
+                publishChannels(sources)
+                // hiddenChannelNames just settled — re-derive the offline badges.
+                refreshDownloadState()
                 _state.value = _state.value.copy(refreshing = false) // pull completes here
                 refreshInFlight = false
 
@@ -321,9 +363,10 @@ class MainViewModel(
                         if (s.avatarUrl == null) cachedByUrl[s.url]?.takeIf { it.avatarUrl != null } ?: s
                         else s
                     }.distinctBy { it.id }
-                    sources = best
+                    names(best)
+                    sources = visible(best)
                     sourceCache.save(best)
-                    publishChannels(best)
+                    publishChannels(sources)
                     // Warm the per-channel caches after the UI has settled.
                     kotlinx.coroutines.delay(3_000)
                     runCatching { warmCaches() }
@@ -640,8 +683,7 @@ class MainViewModel(
      */
     fun openDownloads() {
         if (downloadStore == null && localLibrary == null) return
-        rawVideos = downloadStore?.downloadedVideos().orEmpty() +
-            localLibrary?.videos().orEmpty()
+        rawVideos = visibleDownloads()
         feedHandle = null
         uploadsNextPage = null
         _state.value = _state.value.copy(
@@ -649,7 +691,7 @@ class MainViewModel(
             loading = false,
             error = null,
             downloadPending = downloadStore?.pendingUrls().orEmpty(),
-            downloaded = downloadStore?.downloadedUrls().orEmpty() + localLibrary?.urls().orEmpty(),
+            downloaded = visibleDownloadUrls(),
             videos = downloadItems()
         )
     }
@@ -661,11 +703,10 @@ class MainViewModel(
         if (downloadStore == null && localLibrary == null) return
         _state.value = _state.value.copy(
             downloadPending = downloadStore?.pendingUrls().orEmpty(),
-            downloaded = downloadStore?.downloadedUrls().orEmpty() + localLibrary?.urls().orEmpty()
+            downloaded = visibleDownloadUrls()
         )
         if (_state.value.screen == Screen.Downloads) {
-            rawVideos = downloadStore?.downloadedVideos().orEmpty() +
-                localLibrary?.videos().orEmpty()
+            rawVideos = visibleDownloads()
             _state.value = _state.value.copy(videos = downloadItems())
         }
     }
@@ -732,18 +773,36 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         val localLibrary = LocalLibrary(applicationContext)
         // A queue interrupted by a reboot or crash resumes on next open.
         DownloadService.startIfPending(this)
+        val initialConfig = configStore.load()
+        val profileNs = ProfileNamespace(applicationContext)
+        val activeProfiles = ActiveProfileStore(applicationContext)
         // Seeded before the ViewModel exists so the first cached paint is already
         // gated — a held video must never flash on screen while config loads.
+        // Until the ViewModel's first refresh names the active kid, a null id
+        // gates on the strictest verdict across kids: still fail-closed.
         val screener = io.pickwick.app.data.Screener(io.pickwick.app.data.ScreeningStore(applicationContext)).also {
-            val config = configStore.load()
-            it.config = config.ai
-            it.allowedOverrides = config.aiAllowedVideoIds
+            it.config = initialConfig.ai
+            it.profiles = initialConfig.profiles
+            it.allowedOverrides = initialConfig.aiAllowedVideoIds
         }
         val deviceIsTv = (getSystemService(android.content.Context.UI_MODE_SERVICE) as android.app.UiModeManager)
             .currentModeType == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
         if (deviceIsTv && LanServerHolder.server == null) {
             LanServerHolder.server = LanServer(
-                configStore, SessionGuard(applicationContext), pairingStore,
+                configStore,
+                grantHandler = { minutes, profileId ->
+                    // Route the grant to the named kid's guard; unnamed grants
+                    // (older admin phones) land on whoever this device shows.
+                    val target = profileId ?: run {
+                        val f = ConfigStore(appContext).load()
+                        if (f.profiles.isEmpty()) null
+                        else f.deviceProfiles[PairingStore(appContext).deviceToken()]
+                            ?: ActiveProfileStore(appContext).activeId()
+                    }
+                    SessionGuard(appContext, ProfileNamespace(appContext).suffixFor(target))
+                        .grantExtraMinutes(minutes)
+                },
+                pairingStore,
                 statsProvider = { io.pickwick.app.data.Stats.build(appContext) },
                 watchStateProvider = { WatchSync.exportJson(appContext) },
                 watchStateMerger = { json ->
@@ -767,15 +826,70 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         }
         setContent {
             MaterialTheme(colorScheme = PickwickDarkColors) {
-                val vm: MainViewModel = viewModel {
+                // The family config drives who exists and whether this device is
+                // dedicated; reloaded whenever a push lands or settings close.
+                var family by remember { mutableStateOf(initialConfig) }
+                val myToken = remember { pairingStore.deviceToken() }
+
+                fun assignedId(f: io.pickwick.app.data.Whitelist): String? =
+                    f.deviceProfiles[myToken]?.takeIf { pid -> f.profile(pid) != null }
+
+                // null with 2+ kids = the who's-watching screen must ask.
+                fun resolveActive(f: io.pickwick.app.data.Whitelist): String? = when {
+                    f.profiles.isEmpty() -> null
+                    else -> assignedId(f)
+                        ?: f.profiles.singleOrNull()?.id
+                        ?: activeProfiles.activeId()?.takeIf { pid ->
+                            f.profile(pid) != null &&
+                                !activeProfiles.needsReask(f.limitsFor(pid).breakMinutes)
+                        }
+                }
+
+                var activeProfileId by remember { mutableStateOf(resolveActive(initialConfig)) }
+                // A pushed config can rename, delete or reassign kids out from
+                // under the current pick — re-resolve rather than show a ghost.
+                LaunchedEffect(family) {
+                    val resolved = resolveActive(family)
+                    if (family.profiles.isEmpty()) activeProfileId = null
+                    else if (activeProfileId == null ||
+                        family.profile(activeProfileId) == null ||
+                        (assignedId(family) != null && assignedId(family) != activeProfileId)
+                    ) activeProfileId = resolved
+                }
+                // New sitting on a shared device → ask again; leaving marks the
+                // moment the room emptied so the gap measures real absence.
+                val lifecycleOwner = LocalLifecycleOwner.current
+                DisposableEffect(lifecycleOwner) {
+                    val observer = LifecycleEventObserver { _, event ->
+                        when (event) {
+                            Lifecycle.Event.ON_START -> {
+                                if (family.profiles.size >= 2 && assignedId(family) == null &&
+                                    activeProfiles.needsReask(
+                                        family.limitsFor(activeProfileId).breakMinutes
+                                    )
+                                ) activeProfileId = null
+                            }
+                            Lifecycle.Event.ON_STOP ->
+                                if (activeProfileId != null) activeProfiles.touch()
+                            else -> {}
+                        }
+                    }
+                    lifecycleOwner.lifecycle.addObserver(observer)
+                    onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+                }
+
+                val profileSuffix = profileNs.suffixFor(activeProfileId)
+                // Keyed per kid: switching profiles rebuilds the ViewModel over
+                // that kid's own history/watchlist/usage/screen-time stores.
+                val vm: MainViewModel = viewModel(key = "main-${activeProfileId ?: "solo"}") {
                     MainViewModel(
                         WhitelistRepository(configStore),
-                        WatchHistoryStore(applicationContext),
+                        WatchHistoryStore(applicationContext, profileSuffix),
                         SourceCache(applicationContext),
                         VideoCache(applicationContext),
-                        UsageStore(applicationContext),
-                        SessionGuard(applicationContext),
-                        WatchlistStore(applicationContext),
+                        UsageStore(applicationContext, profileSuffix),
+                        SessionGuard(applicationContext, profileSuffix),
+                        WatchlistStore(applicationContext, profileSuffix),
                         pairingStore,
                         configStore = configStore,
                         downloadStore = downloadStore,
@@ -789,12 +903,18 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         exportWatchState = { WatchSync.exportJson(appContext) },
                         mergeWatchState = { WatchSync.mergeJson(appContext, it) },
                         prefetchThumbs = prefetchThumbs,
-                        screener = screener
+                        screener = screener,
+                        activeProfileId = activeProfileId
                     )
                 }
                 // TV: a paired phone just pushed new config — apply it live.
                 SideEffect {
-                    ConfigEvents.onConfigChanged = { runOnUiThread { vm.refresh() } }
+                    ConfigEvents.onConfigChanged = {
+                        runOnUiThread {
+                            family = configStore.load()
+                            vm.refresh()
+                        }
+                    }
                 }
                 // Phone: pairing flow started by scanning a TV's QR code.
                 when (val flow = pairFlow.value) {
@@ -914,11 +1034,34 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 if (showSettings) {
                     SettingsFlow(settings, configStore, pairingStore, deviceIsTv) { changed ->
                         showSettings = false
+                        // Kids may have been added/edited — re-resolve everything.
+                        family = configStore.load()
                         if (changed) vm.refresh()
                     }
+                } else if (family.profiles.size >= 2 && activeProfileId == null) {
+                    WhosWatchingScreen(
+                        profiles = family.profiles,
+                        remainingMinutes = remember(family) {
+                            family.profiles.associate { p ->
+                                p.id to SessionGuard(appContext, profileNs.suffixFor(p.id))
+                                    .remainingTodayMin(family.limitsFor(p.id))
+                            }
+                        },
+                        onOpenSettings = { showSettings = true },
+                        onPicked = { p ->
+                            activeProfiles.setActive(p.id)
+                            activeProfileId = p.id
+                        }
+                    )
                 } else {
                     PickwickScreen(
                         vm,
+                        activeProfile = family.profile(activeProfileId),
+                        // Switching lives behind the header avatar, and only on
+                        // shared devices — a dedicated device *is* its kid.
+                        onSwitchProfile = if (family.profiles.size >= 2 && assignedId(family) == null) {
+                            { activeProfileId = null }
+                        } else null,
                         onOpenSettings = { showSettings = true }
                     ) { item ->
                         val s = vm.state.value
@@ -1006,6 +1149,10 @@ private val TvRowPivot = TvPivotBringIntoView(0.25f)
 fun PickwickScreen(
     vm: MainViewModel,
     onOpenSettings: () -> Unit,
+    /** Who this home screen belongs to; null before profiles exist. */
+    activeProfile: io.pickwick.app.data.Profile? = null,
+    /** Non-null on shared devices with 2+ kids: header avatar re-opens the picker. */
+    onSwitchProfile: (() -> Unit)? = null,
     onPlay: (VideoItem) -> Unit
 ) {
     val state by vm.state.collectAsState()
@@ -1070,7 +1217,9 @@ fun PickwickScreen(
                             onOpen = vm::openChannel,
                             onSurprise = vm::surpriseMe,
                             onOpenWatchlist = vm::openWatchlist,
-                            onOpenSettings = onOpenSettings
+                            onOpenSettings = onOpenSettings,
+                            activeProfile = activeProfile,
+                            onSwitchProfile = onSwitchProfile
                         )
                     } else {
                         PullToRefreshBox(
@@ -1089,7 +1238,9 @@ fun PickwickScreen(
                                 onOpenWatchlist = vm::openWatchlist,
                                 hasDownloads = state.downloaded.isNotEmpty(),
                                 onOpenDownloads = vm::openDownloads,
-                                onOpenSettings = onOpenSettings
+                                onOpenSettings = onOpenSettings,
+                                activeProfile = activeProfile,
+                                onSwitchProfile = onSwitchProfile
                             )
                         }
                     }
@@ -1233,7 +1384,9 @@ private fun ChannelGrid(
     onOpenWatchlist: () -> Unit,
     hasDownloads: Boolean = false,
     onOpenDownloads: () -> Unit = {},
-    onOpenSettings: () -> Unit = {}
+    onOpenSettings: () -> Unit = {},
+    activeProfile: io.pickwick.app.data.Profile? = null,
+    onSwitchProfile: (() -> Unit)? = null
 ) {
     if (channels.isEmpty()) {
         EmptyHome(onOpenSettings)
@@ -1248,7 +1401,7 @@ private fun ChannelGrid(
     ) {
         // Branding + settings scroll away like everything else — content is king.
         item(key = "app-header", span = { GridItemSpan(maxLineSpan) }) {
-            HomeHeader(onOpenSettings)
+            HomeHeader(onOpenSettings, activeProfile, onSwitchProfile)
         }
         // Keep-watching scrolls away with the rest — not sticky.
         if (keepWatching.isNotEmpty()) {
@@ -1391,7 +1544,11 @@ private fun EmptyHome(onOpenSettings: () -> Unit) {
 }
 
 @Composable
-private fun HomeHeader(onOpenSettings: () -> Unit) {
+private fun HomeHeader(
+    onOpenSettings: () -> Unit,
+    activeProfile: io.pickwick.app.data.Profile? = null,
+    onSwitchProfile: (() -> Unit)? = null
+) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth()
@@ -1416,6 +1573,27 @@ private fun HomeHeader(onOpenSettings: () -> Unit) {
                     letterSpacing = androidx.compose.ui.unit.TextUnit(0.5f, androidx.compose.ui.unit.TextUnitType.Sp)
                 )
             )
+        }
+        // Whose home this is — always visible so a wrong pick gets noticed.
+        // On shared devices it's also the way back to the who's-watching screen.
+        activeProfile?.let { profile ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .let { m ->
+                        if (onSwitchProfile != null) {
+                            m.tvFocusHighlight()
+                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(20.dp))
+                                .clickable { onSwitchProfile() }
+                        } else m
+                    }
+                    .padding(horizontal = 6.dp, vertical = 4.dp)
+            ) {
+                ProfileAvatar(profile, size = 32)
+                Spacer(Modifier.width(6.dp))
+                Text(profile.name, style = MaterialTheme.typography.bodyMedium)
+            }
+            Spacer(Modifier.width(6.dp))
         }
         IconButton(
             modifier = Modifier.size(48.dp),
@@ -1447,7 +1625,9 @@ private fun TvHomeRows(
     onOpen: (Source) -> Unit,
     onSurprise: () -> Unit,
     onOpenWatchlist: () -> Unit,
-    onOpenSettings: () -> Unit
+    onOpenSettings: () -> Unit,
+    activeProfile: io.pickwick.app.data.Profile? = null,
+    onSwitchProfile: (() -> Unit)? = null
 ) {
     if (channels.isEmpty()) {
         EmptyHome(onOpenSettings)
@@ -1460,7 +1640,7 @@ private fun TvHomeRows(
         verticalArrangement = Arrangement.spacedBy(4.dp),
         contentPadding = PaddingValues(vertical = 8.dp)
     ) {
-        item(key = "header") { HomeHeader(onOpenSettings) }
+        item(key = "header") { HomeHeader(onOpenSettings, activeProfile, onSwitchProfile) }
 
         if (keepWatching.isNotEmpty()) {
             item(key = "kw") {

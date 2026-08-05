@@ -3,10 +3,10 @@ package io.pickwick.app.data
 import android.content.Context
 
 /** Counts how often each source is opened — drives the popularity-ordered home grid. */
-class UsageStore(context: Context) {
+class UsageStore(context: Context, profileSuffix: String = "") {
 
-    private val prefs =
-        context.applicationContext.getSharedPreferences("usage", Context.MODE_PRIVATE)
+    private val prefs = context.applicationContext
+        .getSharedPreferences("usage$profileSuffix", Context.MODE_PRIVATE)
 
     fun opens(sourceId: String): Int = prefs.getInt("opens_$sourceId", 0)
 

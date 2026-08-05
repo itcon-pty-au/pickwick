@@ -89,7 +89,18 @@ class PlayerActivity : ComponentActivity() {
         isTv = (getSystemService(UI_MODE_SERVICE) as android.app.UiModeManager)
             .currentModeType == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
 
-        channelUsage = io.pickwick.app.data.ChannelUsage(this)
+        // Progress, screen time and channel minutes all belong to whoever the
+        // who's-watching screen picked (dedicated devices set it at startup).
+        // The active id is only trusted while profiles exist — a stale pick
+        // from a removed setup must not strand data in an orphan namespace.
+        val profileSuffix = run {
+            val hasProfiles = io.pickwick.app.data.ConfigStore(this).load().profiles.isNotEmpty()
+            val active = if (hasProfiles) {
+                io.pickwick.app.data.ActiveProfileStore(this).activeId()
+            } else null
+            io.pickwick.app.data.ProfileNamespace(this).suffixFor(active)
+        }
+        channelUsage = io.pickwick.app.data.ChannelUsage(this, profileSuffix)
         currentChannel = intent.getStringExtra(EXTRA_CHANNEL).orEmpty()
         val queue: List<String> =
             intent.getStringArrayListExtra(EXTRA_QUEUE)
@@ -99,8 +110,8 @@ class PlayerActivity : ComponentActivity() {
         }
         val startIndex = intent.getIntExtra(EXTRA_INDEX, 0).coerceIn(0, queue.lastIndex)
 
-        history = WatchHistoryStore(this)
-        sessionGuard = SessionGuard(this)
+        history = WatchHistoryStore(this, profileSuffix)
+        sessionGuard = SessionGuard(this, profileSuffix)
         val repo = YouTubeRepository()
         val downloads = io.pickwick.app.data.DownloadStore(this)
         val localLibrary = io.pickwick.app.data.LocalLibrary(this)
@@ -429,6 +440,9 @@ class PlayerActivity : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         saveProgress()
+        // Watching counts as presence — the who's-watching screen must not
+        // re-ask right after a long video just because home sat idle.
+        io.pickwick.app.data.ActiveProfileStore(this).touch()
         player?.pause()
     }
 

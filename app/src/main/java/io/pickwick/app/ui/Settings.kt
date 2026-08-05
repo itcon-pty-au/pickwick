@@ -273,6 +273,10 @@ private fun AdminScreen(
     var blocked by remember(initial) { mutableStateOf(initial.blockedVideoIds) }
     var ai by remember(initial) { mutableStateOf(initial.ai) }
     var aiAllowed by remember(initial) { mutableStateOf(initial.aiAllowedVideoIds) }
+    var profiles by remember(initial) { mutableStateOf(initial.profiles) }
+    var blockedFor by remember(initial) { mutableStateOf(initial.blockedFor) }
+    var allowedFor by remember(initial) { mutableStateOf(initial.allowedFor) }
+    var deviceProfiles by remember(initial) { mutableStateOf(initial.deviceProfiles) }
     /** Entries added by this session's URL import — shown with a NEW tag for review. */
     var newIds by remember { mutableStateOf(setOf<String>()) }
 
@@ -333,12 +337,30 @@ private fun AdminScreen(
     fun saveAndSync() {
         // Changed rules/age/model mean old verdicts no longer apply — bumping the
         // version makes every device re-screen its catalog against the new rules.
+        // Kids' names and ages are part of the judging too (the prompt lists them).
+        fun judgingShape(list: List<io.pickwick.app.data.Profile>) =
+            list.map { Triple(it.id, it.name, it.age) }
         val judgingChanged = ai.rules != initial.ai.rules ||
             ai.childAge != initial.ai.childAge ||
             ai.model != initial.ai.model ||
-            ai.baseUrl != initial.ai.baseUrl
+            ai.baseUrl != initial.ai.baseUrl ||
+            judgingShape(profiles) != judgingShape(initial.profiles)
         val finalAi = if (judgingChanged) ai.copy(rulesVersion = initial.ai.rulesVersion + 1) else ai
-        val config = Whitelist(entries, blocked, limits, finalAi, aiAllowed)
+        // A removed kid must not linger: entries owned only by them fall back
+        // to everyone, their per-video rulings and device assignment are dropped.
+        val validIds = profiles.map { it.id }.toSet()
+        fun scrub(overlay: Map<String, Set<String>>) = overlay
+            .mapValues { (_, pids) -> pids.intersect(validIds) }
+            .filterValues { it.isNotEmpty() }
+        val config = Whitelist(
+            entries.map { e ->
+                if (e.profileIds.isEmpty()) e
+                else e.copy(profileIds = e.profileIds.intersect(validIds))
+            },
+            blocked, limits, finalAi, aiAllowed,
+            profiles, scrub(blockedFor), scrub(allowedFor),
+            deviceProfiles.filterValues { it in validIds }
+        )
         configStore.save(config)
         val devices = pairingStore.paired()
         // Close immediately — the save is already on disk. Blocking the button on
@@ -380,11 +402,56 @@ private fun AdminScreen(
                 Text("Save & close")
             }
         }
+        SectionTitle("Kids")
+        KidsSection(
+            profiles = profiles,
+            legacyLimits = limits,
+            legacyAi = ai,
+            onChanged = { profiles = it }
+        )
+
         SectionTitle("Screen time")
-        ScreenTimeSection(limits, onChanged = { limits = it })
+        if (profiles.isEmpty()) {
+            ScreenTimeSection(limits, onChanged = { limits = it })
+        } else {
+            // Per-kid rules: pick a kid, edit their rules, or copy a sibling's.
+            var editingKidId by remember(profiles.map { it.id }) {
+                mutableStateOf(profiles.first().id)
+            }
+            val editingKid = profiles.firstOrNull { it.id == editingKidId } ?: profiles.first()
+            KidSelectorChips(profiles, editingKid.id, onSelect = { editingKidId = it })
+            Spacer(Modifier.height(8.dp))
+            ScreenTimeSection(editingKid.limits, onChanged = { newLimits ->
+                profiles = profiles.map {
+                    if (it.id == editingKid.id) it.copy(limits = newLimits) else it
+                }
+            })
+            val others = profiles.filter { it.id != editingKid.id }
+            if (others.isNotEmpty()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Copy rules from:",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    others.forEach { sibling ->
+                        TextButton(
+                            modifier = Modifier.tvFocusHighlight(),
+                            onClick = {
+                                profiles = profiles.map {
+                                    if (it.id == editingKid.id) {
+                                        it.copy(limits = sibling.limits.copy(pausedUntilMillis = null))
+                                    } else it
+                                }
+                            }
+                        ) { Text(sibling.name) }
+                    }
+                }
+            }
+        }
 
         SectionTitle("Screen time today")
-        GrantTimeSection(pairingStore)
+        GrantTimeSection(pairingStore, profiles)
         PauseTodayRow(
             pausedUntil = limits.pausedUntilMillis,
             onChanged = { until ->
@@ -407,30 +474,57 @@ private fun AdminScreen(
         DownloadsSection()
 
         SectionTitle("Videos from this phone")
-        LocalVideosSection()
+        LocalVideosSection(profiles)
 
         SectionTitle("Kid devices")
         PhoneDevicesSection(
             pairingStore, configStore,
+            profiles = profiles,
+            deviceProfiles = deviceProfiles,
+            onAssign = { token, profileId ->
+                deviceProfiles =
+                    if (profileId == null) deviceProfiles - token
+                    else deviceProfiles + (token to profileId)
+                // Assignment applies immediately, like queue rulings — a parent
+                // dedicating the TV shouldn't have to remember Save & close.
+                resolveFlagged { c ->
+                    c.copy(
+                        deviceProfiles =
+                            if (profileId == null) c.deviceProfiles - token
+                            else c.deviceProfiles + (token to profileId)
+                    )
+                }
+            },
             onOpenStats = { statsDevice = it },
             onConfigReplaced = { configEpoch++ }
         )
 
         SectionTitle("AI content screening")
-        AiScreeningSection(ai, onChanged = { ai = it })
+        AiScreeningSection(ai, profiles, onChanged = { ai = it })
 
         if (ai.enabled) {
             SectionTitle("Waiting for your OK")
             AiReviewSection(
                 ai = ai,
-                resolved = blocked + aiAllowed,
-                onAllow = {
-                    aiAllowed = aiAllowed + it
-                    resolveFlagged { c -> c.copy(aiAllowedVideoIds = c.aiAllowedVideoIds + it) }
+                profiles = profiles,
+                resolved = blocked + aiAllowed + blockedFor.keys + allowedFor.keys,
+                onAllow = { id, forKids ->
+                    if (forKids == null) {
+                        aiAllowed = aiAllowed + id
+                        resolveFlagged { c -> c.copy(aiAllowedVideoIds = c.aiAllowedVideoIds + id) }
+                    } else {
+                        allowedFor = allowedFor + (id to forKids)
+                        resolveFlagged { c -> c.copy(allowedFor = c.allowedFor + (id to forKids)) }
+                    }
                 },
-                onBlock = {
-                    blocked = blocked + it
-                    resolveFlagged { c -> c.copy(blockedVideoIds = c.blockedVideoIds + it) }
+                onBlock = { id, forKids ->
+                    if (forKids == null) {
+                        blocked = blocked + id
+                        resolveFlagged { c -> c.copy(blockedVideoIds = c.blockedVideoIds + id) }
+                    } else {
+                        blockedFor = blockedFor + (id to forKids)
+                        resolveFlagged { c -> c.copy(blockedFor = c.blockedFor + (id to forKids)) }
+                    }
                 }
             )
         }
@@ -443,7 +537,7 @@ private fun AdminScreen(
 
         // The list can grow long; only the rarely-used sections sit below it.
         SectionTitle("Channels & playlists")
-        ChannelsSection(entries, newIds, yt, resolvedNames, onChanged = { entries = it })
+        ChannelsSection(entries, newIds, yt, resolvedNames, profiles, onChanged = { entries = it })
 
         SectionTitle("Import from a whitelist link")
         UrlImportSection { parsed ->
@@ -609,6 +703,7 @@ private fun ChannelsSection(
     yt: YouTubeRepository,
     /** url → real name, resolved by AdminScreen for entries without a label. */
     resolvedNames: Map<String, String>,
+    profiles: List<io.pickwick.app.data.Profile>,
     onChanged: (List<WhitelistEntry>) -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -619,9 +714,31 @@ private fun ChannelsSection(
     var pasteText by remember { mutableStateOf("") }
     var pasteError by remember { mutableStateOf<String?>(null) }
     var pendingDelete by remember { mutableStateOf<WhitelistEntry?>(null) }
+    /** A just-picked channel awaiting the "who is this for?" answer. */
+    var pendingAdd by remember { mutableStateOf<WhitelistEntry?>(null) }
 
     fun displayName(entry: WhitelistEntry) =
         entry.label ?: resolvedNames[entry.url] ?: entry.id
+
+    fun add(entry: WhitelistEntry) {
+        // With one kid (or none) there's nothing to ask.
+        if (profiles.size < 2) onChanged((entries + entry).distinctBy { it.id })
+        else pendingAdd = entry
+    }
+
+    pendingAdd?.let { entry ->
+        WhoForDialog(
+            title = "Who is ${displayName(entry)} for?",
+            profiles = profiles,
+            initialIds = emptySet(),
+            confirmLabel = "Add",
+            onDismiss = { pendingAdd = null },
+            onConfirm = { forKids ->
+                onChanged((entries + entry.copy(profileIds = forKids)).distinctBy { it.id })
+                pendingAdd = null
+            }
+        )
+    }
 
     // Delete confirmation
     pendingDelete?.let { entry ->
@@ -715,6 +832,18 @@ private fun ChannelsSection(
                 )
                 Spacer(Modifier.width(4.dp))
             }
+            if (profiles.size >= 2) {
+                KidToggleChips(
+                    profiles = profiles,
+                    selectedIds = entry.profileIds,
+                    onChanged = { forKids ->
+                        onChanged(entries.map {
+                            if (it.id == entry.id) it.copy(profileIds = forKids) else it
+                        })
+                    }
+                )
+                Spacer(Modifier.width(4.dp))
+            }
             IconButton(
                 modifier = Modifier.tvFocusHighlight(),
                 onClick = { pendingDelete = entry }
@@ -778,7 +907,7 @@ private fun ChannelsSection(
                 enabled = !alreadyAdded,
                 onClick = {
                     val id = r.url.substringAfterLast('/')
-                    onChanged(entries + WhitelistEntry(id, r.url, r.name, SourceKind.CHANNEL))
+                    add(WhitelistEntry(id, r.url, r.name, SourceKind.CHANNEL))
                 }
             ) { Text(if (alreadyAdded) "Added ✓" else "Add") }
         }
@@ -804,7 +933,7 @@ private fun ChannelsSection(
                 } else {
                     pasteError = null
                     pasteText = ""
-                    onChanged((entries + parsed).distinctBy { it.id })
+                    add(parsed)
                 }
             }
         ) { Text("Add") }
@@ -987,7 +1116,11 @@ private val DEFAULT_AI_RULES = """
     ExperimentalMaterial3Api::class
 )
 @Composable
-private fun AiScreeningSection(ai: io.pickwick.app.data.AiConfig, onChanged: (io.pickwick.app.data.AiConfig) -> Unit) {
+private fun AiScreeningSection(
+    ai: io.pickwick.app.data.AiConfig,
+    profiles: List<io.pickwick.app.data.Profile>,
+    onChanged: (io.pickwick.app.data.AiConfig) -> Unit
+) {
     val scope = rememberCoroutineScope()
     var testing by remember { mutableStateOf(false) }
     var testMessage by remember { mutableStateOf<String?>(null) }
@@ -1116,12 +1249,24 @@ private fun AiScreeningSection(ai: io.pickwick.app.data.AiConfig, onChanged: (io
         minLines = 3,
         modifier = Modifier.fillMaxWidth()
     )
-    StepperRow(
-        label = "Child age",
-        value = ai.childAge, step = 1, min = 2, max = 16,
-        format = { "$it" },
-        onChanged = { onChanged(ai.copy(childAge = it)) }
-    )
+    if (profiles.isEmpty()) {
+        StepperRow(
+            label = "Child age",
+            value = ai.childAge, step = 1, min = 2, max = 16,
+            format = { "$it" },
+            onChanged = { onChanged(ai.copy(childAge = it)) }
+        )
+    } else {
+        Text(
+            "Each video is checked once for the whole family — one AI call, a " +
+                "verdict per kid, using the ages set under Kids: " +
+                profiles.joinToString(", ") { p ->
+                    p.name + (p.age?.let { " ($it)" } ?: " (no age)")
+                } + ".",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(
             "Changing rules re-screens the whole catalog on every device.",
@@ -1172,14 +1317,35 @@ private fun AiScreeningSection(ai: io.pickwick.app.data.AiConfig, onChanged: (io
  * committed and pushed as they're tapped, not held for Save & close. The per-device
  * pages under "Kid devices" show the same queue live from that device.
  */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun AiReviewSection(
     ai: io.pickwick.app.data.AiConfig,
+    profiles: List<io.pickwick.app.data.Profile>,
     /** Already ruled on (parent-blocked or allowed) — dropped from the queue. */
     resolved: Set<String>,
-    onAllow: (String) -> Unit,
-    onBlock: (String) -> Unit
+    /** Second arg: null = everyone (tap); a kid set = long-press per-kid ruling. */
+    onAllow: (String, Set<String>?) -> Unit,
+    onBlock: (String, Set<String>?) -> Unit
 ) {
+    /** (videoId, allow?) awaiting the long-press "which kids?" answer. */
+    var perKid by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+
+    perKid?.let { (videoId, isAllow) ->
+        WhoForDialog(
+            title = if (isAllow) "Allow for which kids?" else "Block for which kids?",
+            profiles = profiles,
+            initialIds = emptySet(),
+            confirmLabel = if (isAllow) "Allow" else "Block",
+            onDismiss = { perKid = null },
+            onConfirm = { forKids ->
+                // "All kids" collapses to the family-wide tap ruling.
+                val target = forKids.ifEmpty { null }
+                if (isAllow) onAllow(videoId, target) else onBlock(videoId, target)
+                perKid = null
+            }
+        )
+    }
     val context = androidx.compose.ui.platform.LocalContext.current
     val store = remember { io.pickwick.app.data.ScreeningStore(context.applicationContext) }
     var all by remember { mutableStateOf<List<Pair<String, ScreeningStore.Entry>>>(emptyList()) }
@@ -1255,12 +1421,28 @@ private fun AiReviewSection(
                     Column(Modifier.weight(1f)) {
                         Text(e.title, style = MaterialTheme.typography.bodyMedium)
                         Spacer(Modifier.height(2.dp))
+                        // With per-kid verdicts, say who it's held for — "held
+                        // for Dave · fine for Katy" is the whole point.
+                        val verdictLabel = if (profiles.isNotEmpty() && e.perProfile.isNotEmpty()) {
+                            val held = profiles.filter {
+                                e.perProfile[it.id] != io.pickwick.app.data.AiScreener.Verdict.ALLOW
+                            }
+                            val fine = profiles.filter {
+                                e.perProfile[it.id] == io.pickwick.app.data.AiScreener.Verdict.ALLOW
+                            }
+                            listOfNotNull(
+                                held.takeIf { it.isNotEmpty() }
+                                    ?.joinToString(", ") { it.name }?.let { "held for $it" },
+                                fine.takeIf { it.isNotEmpty() }
+                                    ?.joinToString(", ") { it.name }?.let { "fine for $it" }
+                            ).joinToString(" · ")
+                        } else if (e.verdict == io.pickwick.app.data.AiScreener.Verdict.REVIEW) {
+                            "AI unsure"
+                        } else "AI blocked"
                         Text(
                             listOfNotNull(
                                 e.channel.takeIf { it.isNotBlank() },
-                                if (e.verdict == io.pickwick.app.data.AiScreener.Verdict.REVIEW) {
-                                    "AI unsure"
-                                } else "AI blocked"
+                                verdictLabel
                             ).joinToString(" · "),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1288,16 +1470,45 @@ private fun AiReviewSection(
                         }
                     }) { Text("View in YouTube") }
                     Spacer(Modifier.weight(1f))
-                    TextButton(modifier = Modifier.tvFocusHighlight(), onClick = { onAllow(videoId) }) {
-                        Text("Allow")
+                    // Tap rules for everyone; with 2+ kids a long-press picks who —
+                    // TextButton owns its click, so these are hand-rolled buttons.
+                    @Composable
+                    fun rulingButton(label: String, isAllow: Boolean) {
+                        Text(
+                            label,
+                            color = MaterialTheme.colorScheme.primary,
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier
+                                .tvFocusHighlight()
+                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
+                                .dpadLongPress {
+                                    if (profiles.size >= 2) perKid = videoId to isAllow
+                                }
+                                .combinedClickable(
+                                    onClick = {
+                                        if (isAllow) onAllow(videoId, null)
+                                        else onBlock(videoId, null)
+                                    },
+                                    onLongClick = {
+                                        if (profiles.size >= 2) perKid = videoId to isAllow
+                                    }
+                                )
+                                .padding(horizontal = 12.dp, vertical = 10.dp)
+                        )
                     }
+                    rulingButton("Allow", isAllow = true)
                     Spacer(Modifier.width(8.dp))
-                    TextButton(modifier = Modifier.tvFocusHighlight(), onClick = { onBlock(videoId) }) {
-                        Text("Block")
-                    }
+                    rulingButton("Block", isAllow = false)
                 }
             }
         }
+    }
+    if (profiles.size >= 2) {
+        Text(
+            "Tap Allow/Block for all kids — hold to choose which kids.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
     if (flagged.size > 300) {
         Text(
@@ -1680,7 +1891,7 @@ private fun formatBytes(bytes: Long): String = when {
  * rescan picks up new files); single-file picking exists for one-offs.
  */
 @Composable
-private fun LocalVideosSection() {
+private fun LocalVideosSection(profiles: List<io.pickwick.app.data.Profile> = emptyList()) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val library = remember { LocalLibrary(context.applicationContext) }
     // Local edits ride the downloads change signal — same shelf, same refresh.
@@ -1691,6 +1902,8 @@ private fun LocalVideosSection() {
     // Thumbnail/metadata extraction is ~0.1s per file: a folder of episodes
     // needs a narrated scan, not a frozen section.
     var progress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    /** A picked folder awaiting the "who can watch these?" answer. */
+    var pendingTree by remember { mutableStateOf<android.net.Uri?>(null) }
 
     fun rescan() {
         scope.launch(kotlinx.coroutines.Dispatchers.IO) {
@@ -1699,13 +1912,34 @@ private fun LocalVideosSection() {
         }
     }
 
+    fun linkTree(uri: android.net.Uri, forKids: Set<String>) {
+        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            library.addTree(uri, forKids)
+            library.rescan { done, total -> if (total > 0) progress = done to total }
+            progress = null
+        }
+    }
+
+    pendingTree?.let { uri ->
+        WhoForDialog(
+            title = "Who can watch this folder?",
+            profiles = profiles,
+            initialIds = emptySet(),
+            confirmLabel = "Link folder",
+            onDismiss = { pendingTree = null },
+            onConfirm = { forKids ->
+                pendingTree = null
+                linkTree(uri, forKids)
+            }
+        )
+    }
+
     val pickFolder = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree()
     ) { uri ->
-        if (uri != null) scope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            library.addTree(uri)
-            library.rescan { done, total -> if (total > 0) progress = done to total }
-            progress = null
+        if (uri != null) {
+            if (profiles.size >= 2) pendingTree = uri
+            else linkTree(uri, emptySet())
         }
     }
     val pickVideos = androidx.activity.compose.rememberLauncherForActivityResult(
@@ -1764,6 +1998,18 @@ private fun LocalVideosSection() {
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)
             )
+            if (profiles.size >= 2) {
+                KidToggleChips(
+                    profiles = profiles,
+                    selectedIds = tree.profileIds,
+                    onChanged = { forKids ->
+                        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                            library.setTreeProfiles(tree.uri, forKids)
+                        }
+                    }
+                )
+                Spacer(Modifier.width(4.dp))
+            }
             TextButton(
                 modifier = Modifier.tvFocusHighlight(),
                 onClick = { scope.launch(kotlinx.coroutines.Dispatchers.IO) { library.forgetTree(tree.uri) } }
@@ -1825,12 +2071,24 @@ private fun formatSeconds(s: Long): String =
 // --- Grants -----------------------------------------------------------------
 
 @Composable
-private fun GrantTimeSection(pairingStore: PairingStore) {
+private fun GrantTimeSection(
+    pairingStore: PairingStore,
+    profiles: List<io.pickwick.app.data.Profile> = emptyList()
+) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val guard = remember { SessionGuard(context.applicationContext) }
     val scope = rememberCoroutineScope()
     var minutes by remember { mutableIntStateOf(15) }
     var granted by remember { mutableStateOf<String?>(null) }
+    var targetKidId by remember(profiles.map { it.id }) {
+        mutableStateOf(profiles.firstOrNull()?.id)
+    }
+
+    // Granting to a child, not to a device: the minutes land on that kid's
+    // guard here and on every paired device.
+    if (profiles.size >= 2) {
+        KidSelectorChips(profiles, targetKidId ?: profiles.first().id) { targetKidId = it }
+        Spacer(Modifier.height(4.dp))
+    }
 
     // Same stepper styling as the screen-time rows; Grant applies the amount.
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 2.dp)) {
@@ -1853,15 +2111,20 @@ private fun GrantTimeSection(pairingStore: PairingStore) {
             modifier = Modifier.tvFocusHighlight(),
             onClick = {
                 val amount = minutes
-                guard.grantExtraMinutes(amount)
+                val kidId = if (profiles.isEmpty()) null else targetKidId
+                val kidName = profiles.firstOrNull { it.id == kidId }?.name
+                val suffix = io.pickwick.app.data.ProfileNamespace(context.applicationContext)
+                    .suffixFor(kidId)
+                SessionGuard(context.applicationContext, suffix).grantExtraMinutes(amount)
                 val devices = pairingStore.paired()
+                val who = kidName?.let { " for $it" } ?: ""
                 if (devices.isEmpty()) {
-                    granted = "Granted $amount extra minutes 🎉"
+                    granted = "Granted $amount extra minutes$who 🎉"
                 } else {
                     scope.launch {
                         var ok = 0
-                        devices.forEach { if (LanClient.grant(it, amount)) ok++ }
-                        granted = "Granted $amount min here + $ok device(s) 🎉"
+                        devices.forEach { if (LanClient.grant(it, amount, kidId)) ok++ }
+                        granted = "Granted $amount min$who here + $ok device(s) 🎉"
                     }
                 }
             }
@@ -1975,13 +2238,22 @@ private fun QrImage(content: String) {
 private sealed interface DeviceSync {
     data object Checking : DeviceSync
     data object Offline : DeviceSync
-    data class Reachable(val hash: String, val updatedAt: Long) : DeviceSync
+    data class Reachable(
+        val hash: String,
+        val updatedAt: Long,
+        /** The device's own identity token — the key in deviceProfiles. */
+        val deviceToken: String? = null
+    ) : DeviceSync
 }
 
 @Composable
 private fun PhoneDevicesSection(
     pairingStore: PairingStore,
     configStore: ConfigStore,
+    profiles: List<io.pickwick.app.data.Profile> = emptyList(),
+    deviceProfiles: Map<String, String> = emptyMap(),
+    /** Assign a device (by its own token) to a kid; null = shared (picker). */
+    onAssign: (String, String?) -> Unit = { _, _ -> },
     onOpenStats: (PairedDevice) -> Unit,
     onConfigReplaced: () -> Unit = {}
 ) {
@@ -2006,11 +2278,50 @@ private fun PhoneDevicesSection(
         devices.forEach { device ->
             syncStates = syncStates + (device.token to DeviceSync.Checking)
             scope.launch {
-                val status = LanClient.status(device)
+                val status = LanClient.fullStatus(device)
                 syncStates = syncStates + (device.token to
-                    (status?.let { DeviceSync.Reachable(it.first, it.second) } ?: DeviceSync.Offline))
+                    (status?.let { DeviceSync.Reachable(it.hash, it.updatedAt, it.deviceToken) }
+                        ?: DeviceSync.Offline))
                 pendingByDevice = pendingByDevice + (device.token to LanClient.pendingRequests(device))
                 adminsByDevice = adminsByDevice + (device.token to LanClient.admins(device))
+            }
+        }
+    }
+
+    /** "Watching as" chips: Shared or one kid — for this phone and each device. */
+    @Composable
+    fun assignmentRow(label: String, deviceToken: String?) {
+        if (profiles.size < 2) return
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                label,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(end = 6.dp)
+            )
+            if (deviceToken == null) {
+                Text(
+                    "device must be online to set this",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                return@Row
+            }
+            val assigned = deviceProfiles[deviceToken]
+            FilterChip(
+                modifier = Modifier.tvFocusHighlight(),
+                selected = assigned == null,
+                onClick = { onAssign(deviceToken, null) },
+                label = { Text("Shared") }
+            )
+            profiles.forEach { p ->
+                Spacer(Modifier.width(4.dp))
+                FilterChip(
+                    modifier = Modifier.tvFocusHighlight(),
+                    selected = assigned == p.id,
+                    onClick = { onAssign(deviceToken, p.id) },
+                    label = { Text("${p.avatar} ${p.name}") }
+                )
             }
         }
     }
@@ -2099,6 +2410,9 @@ private fun PhoneDevicesSection(
         Text(it, style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+    // A phone can be a kid's own device too — dedicate it and it never asks
+    // who's watching.
+    assignmentRow("This phone:", myToken)
     if (devices.isEmpty()) {
         Text(
             "No kid devices paired. On the TV: Settings → Pair with a parent phone, " +
@@ -2169,6 +2483,7 @@ private fun PhoneDevicesSection(
                 devices = pairingStore.paired()
             }) { Text("Unpair") }
         }
+        assignmentRow("  Watching:", (sync as? DeviceSync.Reachable)?.deviceToken)
         // Admin phones approved on this device (revocable, except this phone).
         val admins = adminsByDevice[device.token].orEmpty()
         if (admins.size > 1 || (admins.size == 1 && admins[0].second != myToken)) {

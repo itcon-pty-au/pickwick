@@ -95,11 +95,21 @@ fun StatsScreen(
                 .padding(24.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    device.name,
-                    style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
-                    modifier = Modifier.weight(1f)
-                )
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        device.name,
+                        style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)
+                    )
+                    // Whose day these numbers describe — a shared TV reports
+                    // whichever kid it is currently showing.
+                    payload?.profileName?.let {
+                        Text(
+                            "showing $it",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
                 TextButton(modifier = Modifier.tvFocusHighlight(), onClick = onBack) { Text("Close") }
             }
 

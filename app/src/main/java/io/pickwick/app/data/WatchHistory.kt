@@ -19,13 +19,14 @@ data class WatchProgress(
 }
 
 /**
- * Local, on-device watch history. No accounts, no cloud — the device is the profile.
- * Keyed by video page URL.
+ * Local, on-device watch history, keyed by video page URL. No accounts, no
+ * cloud — one store per kid profile ([profileSuffix] from [ProfileNamespace];
+ * the first kid keeps the legacy unsuffixed store, so upgrades lose nothing).
  */
-class WatchHistoryStore(context: Context) {
+class WatchHistoryStore(context: Context, profileSuffix: String = "") {
 
-    private val prefs =
-        context.applicationContext.getSharedPreferences("watch_history", Context.MODE_PRIVATE)
+    private val prefs = context.applicationContext
+        .getSharedPreferences("watch_history$profileSuffix", Context.MODE_PRIVATE)
 
     fun progress(videoUrl: String): WatchProgress? {
         val raw = prefs.getString(videoUrl, null) ?: return null

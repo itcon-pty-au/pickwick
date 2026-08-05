@@ -19,14 +19,20 @@ import java.io.File
 class ScreeningStore(context: Context) {
 
     data class Entry(
+        /** Strictest across kids — profile-unaware readers stay fail-closed. */
         val verdict: AiScreener.Verdict,
         val reason: String,
         val title: String,
         val channel: String,
         val thumb: String?,
         val rulesVersion: Int,
-        val at: Long
-    )
+        val at: Long,
+        /** Per-kid verdicts (profile id → verdict); empty on pre-profile entries. */
+        val perProfile: Map<String, AiScreener.Verdict> = emptyMap()
+    ) {
+        fun verdictFor(profileId: String?): AiScreener.Verdict =
+            profileId?.let { perProfile[it] } ?: verdict
+    }
 
     private val file = File(context.filesDir, "screening.json")
     private var cache: MutableMap<String, Entry>? = null
@@ -53,6 +59,12 @@ class ScreeningStore(context: Context) {
                 val root = JSONObject(file.readText())
                 root.keys().forEach { id ->
                     val o = root.getJSONObject(id)
+                    val pp = o.optJSONObject("pp")?.let { obj ->
+                        obj.keys().asSequence().associateWith { pid ->
+                            runCatching { AiScreener.Verdict.valueOf(obj.getString(pid)) }
+                                .getOrDefault(AiScreener.Verdict.REVIEW)
+                        }
+                    } ?: emptyMap()
                     map[id] = Entry(
                         verdict = runCatching { AiScreener.Verdict.valueOf(o.getString("v")) }
                             .getOrDefault(AiScreener.Verdict.REVIEW),
@@ -61,7 +73,8 @@ class ScreeningStore(context: Context) {
                         channel = o.optString("channel"),
                         thumb = o.optString("thumb").ifEmpty { null },
                         rulesVersion = o.optInt("rv"),
-                        at = o.optLong("at")
+                        at = o.optLong("at"),
+                        perProfile = pp
                     )
                 }
             }
@@ -111,7 +124,14 @@ class ScreeningStore(context: Context) {
                     .put("channel", e.channel)
                     .put("thumb", e.thumb ?: "")
                     .put("rv", e.rulesVersion)
-                    .put("at", e.at))
+                    .put("at", e.at)
+                    .apply {
+                        if (e.perProfile.isNotEmpty()) {
+                            put("pp", JSONObject().apply {
+                                e.perProfile.forEach { (pid, v) -> put(pid, v.name) }
+                            })
+                        }
+                    })
             }
             file.writeText(root.toString())
             // Our own write must not read as someone else's to the next all().
@@ -128,7 +148,12 @@ class ScreeningStore(context: Context) {
 class Screener(private val store: ScreeningStore) {
 
     @Volatile var config: AiConfig = AiConfig()
+    /** Parent allow-overrides already resolved for the active kid (global + per-kid). */
     @Volatile var allowedOverrides: Set<String> = emptySet()
+    /** The family's kids — screening judges all of them in one call. */
+    @Volatile var profiles: List<Profile> = emptyList()
+    /** Whose verdicts gate visibility right now; null = pre-profile behavior. */
+    @Volatile var activeProfileId: String? = null
 
     private val inFlight = mutableSetOf<String>()
 
@@ -154,7 +179,8 @@ class Screener(private val store: ScreeningStore) {
         val id = video.videoId ?: return false
         if (id in allowedOverrides) return true
         val e = store.get(id) ?: return false
-        return e.rulesVersion == config.rulesVersion && e.verdict == AiScreener.Verdict.ALLOW
+        return e.rulesVersion == config.rulesVersion &&
+            e.verdictFor(activeProfileId) == AiScreener.Verdict.ALLOW
     }
 
     /**
@@ -198,7 +224,7 @@ class Screener(private val store: ScreeningStore) {
         var attempt = 0
         while (true) {
             val results = try {
-                aiCalls.withPermit { AiScreener.screen(cfg, batch) }
+                aiCalls.withPermit { AiScreener.screen(cfg, batch, profiles) }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -219,7 +245,8 @@ class Screener(private val store: ScreeningStore) {
                     channel = v?.channelName ?: "",
                     thumb = v?.thumbnailUrl,
                     rulesVersion = cfg.rulesVersion,
-                    at = System.currentTimeMillis()
+                    at = System.currentTimeMillis(),
+                    perProfile = r.perProfile
                 )
             })
             onUpdated()

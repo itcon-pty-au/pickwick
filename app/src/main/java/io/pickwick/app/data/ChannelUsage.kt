@@ -3,10 +3,10 @@ package io.pickwick.app.data
 import android.content.Context
 
 /** Watch minutes attributed per channel name — "where does the time actually go". */
-class ChannelUsage(context: Context) {
+class ChannelUsage(context: Context, profileSuffix: String = "") {
 
-    private val prefs =
-        context.applicationContext.getSharedPreferences("channel_usage", Context.MODE_PRIVATE)
+    private val prefs = context.applicationContext
+        .getSharedPreferences("channel_usage$profileSuffix", Context.MODE_PRIVATE)
 
     fun addSeconds(channelName: String, seconds: Long) {
         if (channelName.isBlank() || seconds <= 0) return

@@ -19,7 +19,25 @@ object AiScreener {
 
     enum class Verdict { ALLOW, BLOCK, REVIEW }
 
-    data class Result(val videoId: String, val verdict: Verdict, val reason: String)
+    /**
+     * One video's screening outcome. With kid profiles, [perProfile] carries a
+     * verdict per profile id from a single batched call ("fine for the
+     * 12-year-old, not the 4-year-old"); [verdict] is then the strictest of
+     * them, which keeps every profile-unaware consumer fail-closed.
+     */
+    data class Result(
+        val videoId: String,
+        val verdict: Verdict,
+        val reason: String,
+        val perProfile: Map<String, Verdict> = emptyMap()
+    )
+
+    /** BLOCK dominates REVIEW dominates ALLOW. */
+    fun strictest(verdicts: Collection<Verdict>): Verdict = when {
+        Verdict.BLOCK in verdicts -> Verdict.BLOCK
+        Verdict.REVIEW in verdicts -> Verdict.REVIEW
+        else -> Verdict.ALLOW
+    }
 
     /** Longer read timeout than the shared client: batch verdicts can take a while. */
     private val llmClient by lazy {
@@ -28,17 +46,39 @@ object AiScreener {
             .build()
     }
 
-    fun systemPrompt(cfg: AiConfig): String = buildString {
-        append("You review YouTube videos for a child")
-        cfg.childAge?.let { append(" aged $it") }
-        append(", judging only by title, channel name and duration.\n")
+    /** Stable prompt keys p1..pn — kid names are free text and can collide. */
+    fun profileKeys(profiles: List<Profile>): Map<String, String> =
+        profiles.mapIndexed { i, p -> "p${i + 1}" to p.id }.toMap()
+
+    fun systemPrompt(cfg: AiConfig, profiles: List<Profile> = emptyList()): String = buildString {
+        if (profiles.isEmpty()) {
+            append("You review YouTube videos for a child")
+            cfg.childAge?.let { append(" aged $it") }
+            append(", judging only by title, channel name and duration.\n")
+        } else {
+            append("You review YouTube videos for these children, judging only by ")
+            append("title, channel name and duration:\n")
+            profiles.forEachIndexed { i, p ->
+                append("  p${i + 1} = ${p.name}")
+                p.age?.let { append(" (age $it)") }
+                append('\n')
+            }
+        }
         append("Family rules:\n")
         append(cfg.rules.ifBlank { "Content must be broadly appropriate for a young child." })
         append("\n\n")
         append("The videos come from channels the parents already trust, so most are fine — ")
-        append("block only real rule violations, and use \"review\" when genuinely unsure.\n")
+        append("block only real rule violations, and use \"review\" when genuinely unsure ")
+        append("(a parent then decides).\n")
         append("Reply with JSON only, no other text, in this exact shape:\n")
-        append("{\"verdicts\":[{\"id\":\"<video id>\",\"v\":\"allow|block|review\",\"why\":\"<max 12 words>\"}]}\n")
+        if (profiles.isEmpty()) {
+            append("{\"verdicts\":[{\"id\":\"<video id>\",\"v\":\"allow|block|review\",\"why\":\"<max 12 words>\"}]}\n")
+        } else {
+            val keys = profiles.indices.joinToString(",") { "\"p${it + 1}\":\"allow|block|review\"" }
+            append("{\"verdicts\":[{\"id\":\"<video id>\",\"v\":{$keys},\"why\":\"<max 12 words>\"}]}\n")
+            append("Judge each child separately by their age — a video can be fine for an ")
+            append("older child and blocked for a younger one.\n")
+        }
         append("Include every id you were given exactly once.")
     }
 
@@ -59,29 +99,56 @@ object AiScreener {
     /**
      * Parses the model's reply. Tolerates code fences and stray prose around the
      * JSON. Requested ids the model skipped come back as REVIEW — a video is never
-     * silently allowed or endlessly retried because the model dropped it.
+     * silently allowed or endlessly retried because the model dropped it. The
+     * same fail-safe applies per kid: a profile key the model dropped is REVIEW.
+     *
+     * [keyToProfile] maps prompt keys (p1, p2…) to profile ids; empty means the
+     * pre-profile single-verdict shape, where "v" is a plain string.
      */
-    fun parseVerdicts(content: String, requestedIds: Set<String>): List<Result> {
+    fun parseVerdicts(
+        content: String,
+        requestedIds: Set<String>,
+        keyToProfile: Map<String, String> = emptyMap()
+    ): List<Result> {
         val start = content.indexOf('{')
         val end = content.lastIndexOf('}')
         require(start in 0 until end) { "No JSON object in model reply" }
         val root = JSONObject(content.substring(start, end + 1))
         val arr = root.optJSONArray("verdicts") ?: JSONArray()
 
+        fun verdictOf(raw: String) = when (raw.lowercase()) {
+            "allow" -> Verdict.ALLOW
+            "block" -> Verdict.BLOCK
+            else -> Verdict.REVIEW
+        }
+
         val byId = mutableMapOf<String, Result>()
         for (i in 0 until arr.length()) {
             val o = arr.optJSONObject(i) ?: continue
             val id = o.optString("id")
             if (id !in requestedIds) continue
-            val verdict = when (o.optString("v").lowercase()) {
-                "allow" -> Verdict.ALLOW
-                "block" -> Verdict.BLOCK
-                else -> Verdict.REVIEW
+            val why = o.optString("why")
+            val vObj = o.optJSONObject("v")
+            byId[id] = if (keyToProfile.isEmpty() || vObj == null) {
+                // Plain-string verdict: either the legacy shape, or a model that
+                // ignored the per-kid instruction — apply it to every kid.
+                val v = verdictOf(o.optString("v"))
+                Result(id, v, why, keyToProfile.values.associateWith { v })
+            } else {
+                val perProfile = keyToProfile.entries.associate { (key, pid) ->
+                    val raw = vObj.optString(key).ifEmpty { null }
+                    pid to (raw?.let(::verdictOf) ?: Verdict.REVIEW)
+                }
+                Result(id, strictest(perProfile.values), why, perProfile)
             }
-            byId[id] = Result(id, verdict, o.optString("why"))
         }
         requestedIds.forEach { id ->
-            byId.getOrPut(id) { Result(id, Verdict.REVIEW, "model returned no verdict") }
+            byId.getOrPut(id) {
+                Result(
+                    id, Verdict.REVIEW, "model returned no verdict",
+                    keyToProfile.values.associateWith { Verdict.REVIEW }
+                )
+            }
         }
         return byId.values.toList()
     }
@@ -152,13 +219,24 @@ object AiScreener {
         }
 
     /**
-     * One batched screening call. Throws on network/HTTP/parse failure — callers
-     * leave the batch unscreened (and therefore hidden) and retry on a later feed load.
+     * One batched screening call — still one call with profiles: the prompt
+     * lists every kid and the reply carries a verdict per kid per video, so
+     * per-kid precision costs no extra API traffic. Throws on network/HTTP/
+     * parse failure — callers leave the batch unscreened (and therefore
+     * hidden) and retry on a later feed load.
      */
-    suspend fun screen(cfg: AiConfig, videos: List<Video>): List<Result> {
+    suspend fun screen(
+        cfg: AiConfig,
+        videos: List<Video>,
+        profiles: List<Profile> = emptyList()
+    ): List<Result> {
         val ids = videos.mapNotNull { it.videoId }.toSet()
         if (ids.isEmpty()) return emptyList()
-        return parseVerdicts(chatCompletion(cfg, systemPrompt(cfg), userPrompt(videos)), ids)
+        return parseVerdicts(
+            chatCompletion(cfg, systemPrompt(cfg, profiles), userPrompt(videos)),
+            ids,
+            profileKeys(profiles)
+        )
     }
 
     // --- Discovery: parent's natural-language ask → channel/playlist candidates ---

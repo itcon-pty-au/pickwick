@@ -19,10 +19,10 @@ import java.util.Locale
  *  - Bedtime blocks a clock window outright.
  *  - Rules left unset simply don't apply.
  */
-class SessionGuard(context: Context) {
+class SessionGuard(context: Context, profileSuffix: String = "") {
 
-    private val prefs =
-        context.applicationContext.getSharedPreferences("limits", Context.MODE_PRIVATE)
+    private val prefs = context.applicationContext
+        .getSharedPreferences("limits$profileSuffix", Context.MODE_PRIVATE)
 
     companion object {
         private const val DEFAULT_BREAK_MIN = 60
@@ -232,6 +232,20 @@ class SessionGuard(context: Context) {
                 .putLong("bedtimePassUntil", 0)
                 .apply()
         }
+    }
+
+    /**
+     * Minutes left in today's budget under [l] (limits straight from the
+     * config, so the who's-watching tiles don't depend on this profile having
+     * been active since the last rules push). Null when no budget is set.
+     */
+    fun remainingTodayMin(l: Limits): Int? {
+        rolloverIfNewDay()
+        if (isPaused(l)) return 0
+        val perSession = l.sessionMinutes ?: return null
+        val count = (if (isWeekend()) l.weekendSessions else l.weekdaySessions) ?: return null
+        val budget = perSession * count * 60_000L + prefs.getLong("bonusMs", 0)
+        return ((budget - prefs.getLong("dailyWatchedMs", 0)).coerceAtLeast(0) / 60_000L).toInt()
     }
 
     /** yyyyMMdd → minutes watched, for the trend chart (excludes today). */
