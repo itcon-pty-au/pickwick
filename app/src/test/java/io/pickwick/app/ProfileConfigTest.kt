@@ -135,6 +135,9 @@ class ProfileConfigTest {
     fun `direction pins validate and malformed stored pins are dropped on parse`() {
         assertTrue(isValidDirectionPin("UDLR"))
         assertTrue(isValidDirectionPin("UUUU"))
+        // The center/OK button counts as a step too.
+        assertTrue(isValidDirectionPin("UCDC"))
+        assertTrue(isValidDirectionPin("CCCC"))
         assertFalse(isValidDirectionPin("UDL"))
         assertFalse(isValidDirectionPin("UDLRX"))
         assertFalse(isValidDirectionPin("1234"))

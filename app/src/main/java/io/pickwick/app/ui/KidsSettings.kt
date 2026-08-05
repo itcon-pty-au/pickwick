@@ -257,8 +257,9 @@ private fun KidEditorDialog(
                 if (settingPin) {
                     var entered by remember { mutableStateOf("") }
                     Text(
-                        "Tap four arrows — on the TV, ${name.ifBlank { "your kid" }} " +
-                            "presses them on the remote, and the screen shows only dots.",
+                        "Tap four buttons (arrows or OK) — on the TV, " +
+                            "${name.ifBlank { "your kid" }} presses them on the remote, " +
+                            "and the screen shows only dots.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

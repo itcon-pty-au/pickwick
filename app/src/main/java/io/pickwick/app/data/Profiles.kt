@@ -58,9 +58,10 @@ val PROFILE_AVATARS = listOf(
     "🤖", "👻", "🌟", "🌈", "🍉", "⚽", "🎸", "🧁"
 )
 
-/** True when [pin] is a valid stored PIN: exactly four D-pad steps. */
+/** True when [pin] is a valid stored PIN: exactly four D-pad steps
+ *  (the four directions plus C for the center/OK button). */
 fun isValidDirectionPin(pin: String): Boolean =
-    pin.length == 4 && pin.all { it in "UDLR" }
+    pin.length == 4 && pin.all { it in "UDLRC" }
 
 /**
  * Device-local mapping profileId → SharedPreferences/file suffix. The first

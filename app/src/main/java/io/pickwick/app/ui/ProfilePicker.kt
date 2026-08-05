@@ -195,9 +195,9 @@ fun WhosWatchingScreen(
 
 /**
  * Blind PIN entry, Google-TV style: the code is four D-pad presses
- * (↑ ↓ ◀ ▶) and the screen shows only dots filling up — a sibling on the
- * couch sees nothing worth memorizing. Touch devices get the same four
- * arrows as buttons, so one code works everywhere.
+ * (↑ ↓ ◀ ▶ and the OK button) and the screen shows only dots filling up —
+ * a sibling on the couch sees nothing worth memorizing. Touch devices get
+ * the same five buttons, so one code works everywhere.
  *
  * [onEntered] returns false on a wrong code; the dots reset with an error.
  */
@@ -237,6 +237,7 @@ fun DirectionPinScreen(
                         Key.DirectionDown -> { press('D'); true }
                         Key.DirectionLeft -> { press('L'); true }
                         Key.DirectionRight -> { press('R'); true }
+                        Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> { press('C'); true }
                         Key.Back, Key.Escape -> { onCancel(); true }
                         else -> false
                     }
@@ -245,7 +246,7 @@ fun DirectionPinScreen(
             Text(title, style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(8.dp))
             Text(
-                "Press the secret arrows on the remote",
+                "Press the secret buttons on the remote",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -277,29 +278,36 @@ fun DirectionPinScreen(
     }
 }
 
-/** The ↑/←→/↓ diamond used for entering and setting direction codes. */
+/** The D-pad diamond (↑ ↓ ← → around OK) for entering and setting codes. */
 @Composable
 fun DirectionArrowPad(onPress: (Char) -> Unit) {
     @Composable
-    fun arrow(label: String, dir: Char) {
+    fun key(label: String, dir: Char, emphasized: Boolean = false) {
         IconButton(
             onClick = { onPress(dir) },
             modifier = Modifier
                 .size(56.dp)
                 .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .background(
+                    if (emphasized) MaterialTheme.colorScheme.primaryContainer
+                    else MaterialTheme.colorScheme.surfaceVariant
+                )
         ) {
-            Text(label, style = MaterialTheme.typography.titleLarge)
+            Text(
+                label,
+                style = if (emphasized) MaterialTheme.typography.labelLarge
+                else MaterialTheme.typography.titleLarge
+            )
         }
     }
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        arrow("↑", 'U')
+        key("↑", 'U')
         Row(verticalAlignment = Alignment.CenterVertically) {
-            arrow("←", 'L')
-            Spacer(Modifier.width(56.dp))
-            arrow("→", 'R')
+            key("←", 'L')
+            key("OK", 'C', emphasized = true)
+            key("→", 'R')
         }
-        arrow("↓", 'D')
+        key("↓", 'D')
     }
 }
 
@@ -308,6 +316,6 @@ fun directionPinArrows(pin: String): String =
     if (!isValidDirectionPin(pin)) pin
     else pin.map {
         when (it) {
-            'U' -> '↑'; 'D' -> '↓'; 'L' -> '←'; else -> '→'
+            'U' -> "↑"; 'D' -> "↓"; 'L' -> "←"; 'R' -> "→"; else -> "OK"
         }
     }.joinToString(" ")
