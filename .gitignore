@@ -1,5 +1,6 @@
 .gradle/
 build/
+.wrangler/
 local.properties
 .idea/
 *.iml
