@@ -486,6 +486,12 @@ private fun AdminScreen(
             pairingStore, configStore,
             profiles = profiles,
             deviceProfiles = deviceProfiles,
+            // The form's fingerprint, not the file's: "in sync ✓" measured against
+            // disk stays green while the parent edits, so a changed bedtime looks
+            // already delivered and the Push button (shown only when out of sync)
+            // never appears. Recomputed on every form edit — hashing a few KB is
+            // nothing next to the recomposition that triggered it.
+            localHash = ConfigStore.fingerprint(buildCurrentConfig()),
             // Push must deliver what the parent is LOOKING AT, unsaved edits
             // included — pushing the stale disk config while the form showed
             // freshly-added kids read as "the button does nothing".
@@ -2434,6 +2440,13 @@ private fun PhoneDevicesSection(
     configStore: ConfigStore,
     profiles: List<io.pickwick.app.data.Profile> = emptyList(),
     deviceProfiles: Map<String, String> = emptyMap(),
+    /**
+     * Fingerprint of the form as it stands right now (unsaved edits included) —
+     * what a device must match to count as in sync. Derived by the caller, so it
+     * follows every edit; a value snapshotted from disk here would go stale the
+     * moment the parent changed anything.
+     */
+    localHash: String,
     /** Saves the form's current state to disk and returns its JSON — what Push sends. */
     saveCurrent: () -> String,
     /** Assign a device (by its own token) to a kid; null = shared (picker). */
@@ -2456,7 +2469,6 @@ private fun PhoneDevicesSection(
     var renaming by remember { mutableStateOf<PairedDevice?>(null) }
     var pullMessage by remember { mutableStateOf<String?>(null) }
     val myToken = remember { pairingStore.deviceToken() }
-    var localHash by remember { mutableStateOf(ConfigStore.fingerprint(configStore.load())) }
 
     fun checkAll() {
         devices.forEach { device ->
@@ -2548,7 +2560,8 @@ private fun PhoneDevicesSection(
                     scope.launch {
                         val remote = LanClient.fetchConfig(device)
                         pullMessage = if (remote != null && configStore.saveRaw(remote)) {
-                            localHash = ConfigStore.fingerprint(configStore.load())
+                            // onConfigReplaced reloads the whole form from disk,
+                            // which re-derives localHash on its own.
                             onConfigReplaced()
                             checkAll()
                             "Copied ${device.name}'s settings to this phone ✓"
@@ -2656,7 +2669,6 @@ private fun PhoneDevicesSection(
                             // Push = "make the device match this screen": saves the
                             // form (unsaved edits included), then overwrites the device.
                             val json = saveCurrent()
-                            localHash = ConfigStore.fingerprint(configStore.load())
                             scope.launch {
                                 LanClient.pushConfig(device, json)
                                 checkAll()

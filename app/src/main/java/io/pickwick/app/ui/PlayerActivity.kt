@@ -217,6 +217,10 @@ class PlayerActivity : ComponentActivity() {
                     mutableStateOf<YouTubeRepository.Playback?>(null)
                 }
                 var error by remember { mutableStateOf<String?>(null) }
+                // Latches on the first resolved video. Before it there is no frame
+                // to hold, so a bare spinner is honest; after it the PlayerView
+                // stays composed for the rest of the session (see below).
+                var everPlayed by remember { mutableStateOf(false) }
 
                 advance = {
                     if (index < queue.lastIndex) index += 1 else finish()
@@ -247,6 +251,7 @@ class PlayerActivity : ComponentActivity() {
                         .onSuccess { pb ->
                             currentTitle = pb.title
                             playback = pb
+                            everPlayed = true
                         }
                         .onFailure { e ->
                             // Mid-playlist failure: skip to the next video instead of dying.
@@ -314,7 +319,12 @@ class PlayerActivity : ComponentActivity() {
                             style = MaterialTheme.typography.headlineMedium
                         )
                         error != null -> Text("Could not play video: $error", color = Color.White)
-                        playback == null -> CircularProgressIndicator()
+                        !everPlayed -> CircularProgressIndicator()
+                        // Composed from the first video onwards and never swapped
+                        // out again — resolving the *next* one used to replace this
+                        // view with a spinner, which destroys the SurfaceView and
+                        // takes the last frame with it. Keeping it mounted holds
+                        // that frame under the spinner instead of cutting to black.
                         else -> AndroidView(
                             modifier = Modifier.fillMaxSize(),
                             factory = { context ->
@@ -324,14 +334,18 @@ class PlayerActivity : ComponentActivity() {
                                     // playback directly (OK, ◀ ▶, play/pause keys).
                                     useController = !isTv
                                     setShowSubtitleButton(true)
+                                    // Without this the view drops its shutter (opaque
+                                    // black) the moment the player is re-prepared with
+                                    // the next video — the other half of the cut to black.
+                                    setKeepContentOnPlayerReset(true)
                                 }
                             }
                         )
                     }
-                    // Buffering after streams resolved (initial buffer, seek,
-                    // stall) would otherwise be a plain black screen.
-                    if (timeUp == null && error == null && playback != null &&
-                        buffering.value
+                    // Spinner over the held frame: resolving the next video's
+                    // streams, initial buffer, seek, or a mid-video stall.
+                    if (timeUp == null && error == null && everPlayed &&
+                        (playback == null || buffering.value)
                     ) {
                         CircularProgressIndicator()
                     }

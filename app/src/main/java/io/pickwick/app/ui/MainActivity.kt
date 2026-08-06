@@ -341,7 +341,15 @@ class MainViewModel(
                 screener?.profiles = list.profiles
                 screener?.activeProfileId = activeProfileId
                 screener?.allowedOverrides = list.allowedIdsFor(activeProfileId)
-                sessionGuard.saveLimits(list.limitsFor(activeProfileId))
+                // Only the kid whose home this is owns these prefs. With nobody
+                // picked yet (who's-watching screen) `sessionGuard` is still the
+                // legacy unsuffixed store — which ProfileNamespace hands to the
+                // *first* kid — so writing the family-wide limits there would wipe
+                // that kid's real rules every time a push lands on the picker.
+                // Their own refresh writes them properly the moment they're picked.
+                if (activeProfileId != null || list.profiles.isEmpty()) {
+                    sessionGuard.saveLimits(list.limitsFor(activeProfileId))
+                }
                 // Fast publish: entries merged with cached tile artwork (keyed by URL,
                 // which survives id canonicalization). Adds/removes land right here.
                 val cachedByUrl = cached.associateBy { it.url }
