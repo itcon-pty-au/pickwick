@@ -2924,12 +2924,19 @@ private fun UpdateSection(tv: Boolean = false, onUpdateFound: () -> Unit = {}) {
         busy = false
     }
 
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        // The rest of the TV screen is a centred column; a weighted text would
+        // stretch this row to the full width and leave the version stranded on
+        // the left of it. On the phone that same weight is what pushes the
+        // check/install button to the trailing edge of the form row.
+        horizontalArrangement = if (tv) Arrangement.Center else Arrangement.Start
+    ) {
         Text(
             "Pickwick ${BuildConfig.VERSION_NAME}",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.weight(1f)
+            modifier = if (tv) Modifier.padding(end = 12.dp) else Modifier.weight(1f)
         )
         val pending = update
         if (pending == null) {

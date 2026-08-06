@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="108" height="108" role="img" aria-label="Pickwick">
+  <!-- Same geometry as app/src/main/res/drawable/ic_launcher.xml: the tile and
+       triangle must read as one mark wherever it appears. -->
+  <path fill="#00695C" d="M20,4 h68 a16,16 0 0 1 16,16 v68 a16,16 0 0 1 -16,16 h-68 a16,16 0 0 1 -16,-16 v-68 a16,16 0 0 1 16,-16 z"/>
+  <path fill="#FFFFFF" d="M42,32 L80,54 L42,76 Z"/>
+</svg>
