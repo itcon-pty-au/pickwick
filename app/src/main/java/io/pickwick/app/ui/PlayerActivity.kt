@@ -19,7 +19,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -559,12 +558,12 @@ private fun BoxScope.TvControlsOverlay(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    (if (playing) "▶  " else "⏸  ") + formatTime(positionMs),
+                    (if (playing) "▶  " else "⏸  ") + formatClock(positionMs / 1000),
                     color = Color.White,
                     style = MaterialTheme.typography.titleMedium
                 )
                 Text(
-                    "${formatTime(durationMs - positionMs)} remaining",
+                    "${formatClock((durationMs - positionMs) / 1000)} remaining",
                     color = Color(0xCCFFFFFF),
                     style = MaterialTheme.typography.titleMedium
                 )
@@ -585,12 +584,4 @@ private fun BoxScope.TvControlsOverlay(
             }
         }
     }
-}
-
-private fun formatTime(ms: Long): String {
-    val totalSec = (ms / 1000).coerceAtLeast(0)
-    val h = totalSec / 3600
-    val m = (totalSec % 3600) / 60
-    val s = totalSec % 60
-    return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
 }

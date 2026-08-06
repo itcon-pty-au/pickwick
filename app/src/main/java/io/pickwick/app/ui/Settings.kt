@@ -183,17 +183,23 @@ fun SettingsFlow(
             }
             Stage.Confirm -> key(stage) {
                 val scope = rememberCoroutineScope()
+                var saving by remember { mutableStateOf(false) }
                 PinPad(title = "Enter the same PIN again to confirm") { pin ->
-                    if (pin == firstPin) {
-                        scope.launch {
-                            kotlinx.coroutines.withContext(
-                                kotlinx.coroutines.Dispatchers.Default
-                            ) { settings.setPin(pin) }
-                            stage = Stage.Editor
+                    when {
+                        saving -> {}
+                        pin == firstPin -> {
+                            saving = true
+                            scope.launch {
+                                kotlinx.coroutines.withContext(
+                                    kotlinx.coroutines.Dispatchers.Default
+                                ) { settings.setPin(pin) }
+                                stage = Stage.Editor
+                            }
                         }
-                    } else {
-                        error = "PINs didn't match — start again"
-                        stage = Stage.Create
+                        else -> {
+                            error = "PINs didn't match — start again"
+                            stage = Stage.Create
+                        }
                     }
                 }
             }
@@ -2330,7 +2336,7 @@ private fun LocalVideosSection(profiles: List<io.pickwick.app.data.Profile> = em
                 )
                 Text(
                     if (item.available) {
-                        "${item.video.channelName} · ${formatSeconds(item.video.durationSeconds)}"
+                        "${item.video.channelName} · ${formatClock(item.video.durationSeconds)}"
                     } else "File missing — rescan, or forget its folder",
                     maxLines = 1, overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodySmall,
@@ -2357,10 +2363,6 @@ private fun LocalVideosSection(profiles: List<io.pickwick.app.data.Profile> = em
         )
     }
 }
-
-private fun formatSeconds(s: Long): String =
-    if (s >= 3600) "%d:%02d:%02d".format(s / 3600, (s % 3600) / 60, s % 60)
-    else "%d:%02d".format(s / 60, s % 60)
 
 // --- Grants -----------------------------------------------------------------
 

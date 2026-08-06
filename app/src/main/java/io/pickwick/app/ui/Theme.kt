@@ -1,7 +1,16 @@
 package io.pickwick.app.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 
 /**
  * Pickwick brand: the logo's dark teal (#00695C), lightened to the tones a
@@ -26,6 +35,26 @@ val PickwickDarkColors = darkColorScheme(
  * appears (thumbnail bars and the player scrubber).
  */
 val WatchedProgressRed = Color(0xFFFF0000)
+
+/** The thumbnail-bottom watched bar, one spelling for every grid and row. */
+@Composable
+fun BoxScope.WatchedProgressBar(fraction: Float) {
+    Box(
+        Modifier.align(Alignment.BottomStart).fillMaxWidth()
+            .height(4.dp).background(Color(0x66FFFFFF))
+    )
+    Box(
+        Modifier.align(Alignment.BottomStart).fillMaxWidth(fraction)
+            .height(4.dp).background(WatchedProgressRed)
+    )
+}
+
+/** "h:mm:ss" over an hour, "m:ss" under — one spelling of a duration everywhere. */
+fun formatClock(totalSeconds: Long): String {
+    val s = totalSeconds.coerceAtLeast(0)
+    return if (s >= 3600) "%d:%02d:%02d".format(s / 3600, (s % 3600) / 60, s % 60)
+    else "%d:%02d".format(s / 60, s % 60)
+}
 
 /** "1.5x" / "0.5x" / "FREE" — one shared spelling of a screen-time multiplier. */
 fun timeMultiplierLabel(percent: Int): String = when (percent) {

@@ -158,7 +158,7 @@ fun StatsScreen(
                             )
                             Spacer(Modifier.height(4.dp))
                             Text(
-                                "${fmt(np.positionMs)} / ${fmt(np.durationMs)}",
+                                "${formatClock(np.positionMs / 1000)} / ${formatClock(np.durationMs / 1000)}",
                                 style = MaterialTheme.typography.bodySmall
                             )
                         }
@@ -375,12 +375,6 @@ private fun StatsSection(title: String) {
         color = MaterialTheme.colorScheme.primary
     )
     Spacer(Modifier.height(6.dp))
-}
-
-private fun fmt(ms: Long): String {
-    val s = (ms / 1000).coerceAtLeast(0)
-    return if (s >= 3600) "%d:%02d:%02d".format(s / 3600, (s % 3600) / 60, s % 60)
-    else "%d:%02d".format(s / 60, s % 60)
 }
 
 private fun prettyDay(yyyymmdd: String): String = runCatching {

@@ -2,7 +2,6 @@ package io.pickwick.app.ui
 
 import android.content.Intent
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -198,6 +197,9 @@ class MainViewModel(
      * older* config, push ours again; a device carrying a newer config (another
      * admin phone edited meanwhile) is left alone for a deliberate Push/Pull.
      */
+    // Volatile + reset in finally: set on Main, cleared from IO, and one
+    // escaping exception must not latch it and silently kill sync for good.
+    @Volatile
     private var configSyncInFlight = false
 
     fun syncConfigState() {
@@ -207,36 +209,40 @@ class MainViewModel(
         if (devices.isEmpty() || configSyncInFlight) return
         configSyncInFlight = true
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            val localHash = ConfigStore.fingerprint(store.load())
-            val localAt = store.updatedAt()
-            devices.forEach { device ->
-                val status = LanClient.status(device)
-                if (status == null) {
-                    android.util.Log.i("Pickwick", "config sync: ${device.name} unreachable")
-                    return@forEach
-                }
-                val (remoteHash, remoteAt) = status
-                when {
-                    remoteHash == localHash -> {}
-                    remoteAt < localAt -> {
-                        val ok = LanClient.pushConfig(device, store.rawJson())
-                        android.util.Log.i(
+            try {
+                val localHash = ConfigStore.fingerprint(store.load())
+                val localAt = store.updatedAt()
+                devices.forEach { device ->
+                    val status = LanClient.status(device)
+                    if (status == null) {
+                        android.util.Log.i("Pickwick", "config sync: ${device.name} unreachable")
+                        return@forEach
+                    }
+                    val (remoteHash, remoteAt) = status
+                    when {
+                        remoteHash == localHash -> {}
+                        remoteAt < localAt -> {
+                            val ok = LanClient.pushConfig(device, store.rawJson())
+                            android.util.Log.i(
+                                "Pickwick",
+                                "config sync: pushed #$localHash to ${device.name} " +
+                                    "(had #$remoteHash) → ${if (ok) "accepted" else "REJECTED"}"
+                            )
+                        }
+                        else -> android.util.Log.i(
                             "Pickwick",
-                            "config sync: pushed #$localHash to ${device.name} " +
-                                "(had #$remoteHash) → ${if (ok) "accepted" else "REJECTED"}"
+                            "config sync: ${device.name} differs (#$remoteHash) but its copy is " +
+                                "newer (theirs $remoteAt >= ours $localAt) — leaving for Push/Pull"
                         )
                     }
-                    else -> android.util.Log.i(
-                        "Pickwick",
-                        "config sync: ${device.name} differs (#$remoteHash) but its copy is " +
-                            "newer (theirs $remoteAt >= ours $localAt) — leaving for Push/Pull"
-                    )
                 }
+            } finally {
+                configSyncInFlight = false
             }
-            configSyncInFlight = false
         }
     }
 
+    @Volatile
     private var watchSyncInFlight = false
 
     /**
@@ -249,35 +255,38 @@ class MainViewModel(
         if (devices.isEmpty() || watchSyncInFlight) return
         watchSyncInFlight = true
         viewModelScope.launch {
-            var changed = false
-            var newVerdicts = false
-            devices.forEach { device ->
-                // Merge/export are prefs + JSON work — same off-main rule as the
-                // verdict pair below.
-                LanClient.fetchWatchState(device)?.let { json ->
-                    if (withContext(Dispatchers.IO) { mergeWatchState(json) }) changed = true
-                }
-                LanClient.pushWatchState(device, withContext(Dispatchers.IO) { exportWatchState() })
-                // Verdict-sharing: pull-merge what each device has screened, so a
-                // video the TV already ruled on is never re-billed to the AI here.
-                LanClient.fetchVerdicts(device)?.let { json ->
-                    val fresh = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        mergeVerdicts(json)
+            try {
+                var changed = false
+                var newVerdicts = false
+                devices.forEach { device ->
+                    // Merge/export are prefs + JSON work — same off-main rule as
+                    // the verdict pair below.
+                    LanClient.fetchWatchState(device)?.let { json ->
+                        if (withContext(Dispatchers.IO) { mergeWatchState(json) }) changed = true
                     }
-                    if (fresh) newVerdicts = true
+                    LanClient.pushWatchState(device, withContext(Dispatchers.IO) { exportWatchState() })
+                    // Verdict-sharing: pull-merge what each device has screened, so a
+                    // video the TV already ruled on is never re-billed to the AI here.
+                    LanClient.fetchVerdicts(device)?.let { json ->
+                        val fresh = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            mergeVerdicts(json)
+                        }
+                        if (fresh) newVerdicts = true
+                    }
+                    cacheStats(device)
                 }
-                cacheStats(device)
+                // Push the merged set back after every pull, so verdicts also hop
+                // between kid devices through this phone (they never talk directly).
+                val export = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    exportVerdicts()
+                }
+                devices.forEach { LanClient.pushVerdicts(it, export) }
+                if (changed) refreshProgress()
+                // Imported verdicts can clear or hold videos on the current screen.
+                if (newVerdicts) reapplyScreening()
+            } finally {
+                watchSyncInFlight = false
             }
-            // Push the merged set back after every pull, so verdicts also hop
-            // between kid devices through this phone (they never talk directly).
-            val export = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                exportVerdicts()
-            }
-            devices.forEach { LanClient.pushVerdicts(it, export) }
-            watchSyncInFlight = false
-            if (changed) refreshProgress()
-            // Imported verdicts can clear or hold videos on the current screen.
-            if (newVerdicts) reapplyScreening()
         }
     }
 
@@ -540,10 +549,7 @@ class MainViewModel(
         viewModelScope.launch {
             // Watchlist pruning and the row rebuilds are all file reads — off-main.
             val watchlisted = withContext(Dispatchers.IO) {
-                // Watched-to-the-end videos leave the saved list automatically.
-                watchlistStore.load()
-                    .filter { history.progress(it.url)?.isFinished == true }
-                    .forEach { watchlistStore.remove(it.url) }
+                pruneFinishedWatchlist()
                 watchlistStore.urls()
             }
             if (_state.value.screen == Screen.Home) {
@@ -739,11 +745,16 @@ class MainViewModel(
         syncWatchState() // hearts propagate promptly
     }
 
-    fun openWatchlist() {
-        // Fully-watched entries have served their purpose — drop them silently.
+    /** Watched-to-the-end videos leave the saved list automatically. */
+    private fun pruneFinishedWatchlist() {
         watchlistStore.load()
             .filter { history.progress(it.url)?.isFinished == true }
             .forEach { watchlistStore.remove(it.url) }
+    }
+
+    fun openWatchlist() {
+        // Fully-watched entries have served their purpose — drop them silently.
+        pruneFinishedWatchlist()
         rawVideos = watchlistStore.load()
         feedHandle = null
         uploadsNextPage = null
@@ -1524,16 +1535,7 @@ private fun KeepWatchingRow(
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)
                         )
-                        item.progress?.let { fraction ->
-                            Box(
-                                Modifier.align(Alignment.BottomStart).fillMaxWidth()
-                                    .height(4.dp).background(Color(0x66FFFFFF))
-                            )
-                            Box(
-                                Modifier.align(Alignment.BottomStart).fillMaxWidth(fraction)
-                                    .height(4.dp).background(WatchedProgressRed)
-                            )
-                        }
+                        item.progress?.let { fraction -> WatchedProgressBar(fraction) }
                     }
                     Box(Modifier.padding(8.dp)) {
                         MarqueeTitle(item.video.title, focused,
@@ -2121,22 +2123,7 @@ private fun VideoGrid(
                             )
                         }
                         // YouTube-style watched-progress bar.
-                        item.progress?.let { fraction ->
-                            Box(
-                                Modifier
-                                    .align(Alignment.BottomStart)
-                                    .fillMaxWidth()
-                                    .height(4.dp)
-                                    .background(Color(0x66FFFFFF))
-                            )
-                            Box(
-                                Modifier
-                                    .align(Alignment.BottomStart)
-                                    .fillMaxWidth(fraction)
-                                    .height(4.dp)
-                                    .background(WatchedProgressRed)
-                            )
-                        }
+                        item.progress?.let { fraction -> WatchedProgressBar(fraction) }
                     }
                     Column(Modifier.padding(8.dp)) {
                         MarqueeTitle(item.video.title, focused)
