@@ -36,6 +36,7 @@ import io.pickwick.app.data.RemotePlayerControl
 import io.pickwick.app.data.SessionGuard
 import io.pickwick.app.data.WatchHistoryStore
 import io.pickwick.app.data.YouTubeRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -140,7 +141,11 @@ class PlayerActivity : ComponentActivity() {
                     buffering.value = playbackState == Player.STATE_BUFFERING
                     if (playbackState == Player.STATE_ENDED) {
                         // Mark fully watched, then move on (playlist) or stay (single).
-                        currentPageUrl?.let { history.save(it, duration, duration) }
+                        // The store commits (fsync, deliberate) — off-main.
+                        currentPageUrl?.let { url ->
+                            val dur = duration
+                            lifecycleScope.launch(Dispatchers.IO) { history.save(url, dur, dur) }
+                        }
                         advance?.invoke()
                     }
                 }
@@ -452,17 +457,30 @@ class PlayerActivity : ComponentActivity() {
         notice.value = Notice(if (captionsOn) "Subtitles on 💬" else "Subtitles off")
     }
 
+    /**
+     * Position is read here (ExoPlayer is main-thread only) but written on IO:
+     * history.save uses commit() on purpose (crash-safety), and its fsync would
+     * otherwise stall the UI thread mid-playback on every 5s tick.
+     */
     private fun saveProgress() {
         val exo = player ?: return
         val url = currentPageUrl ?: return
-        if (exo.duration > 0) {
-            history.save(url, exo.currentPosition, exo.duration)
-        }
+        val pos = exo.currentPosition
+        val dur = exo.duration
+        if (dur <= 0) return
+        lifecycleScope.launch(Dispatchers.IO) { history.save(url, pos, dur) }
     }
 
     override fun onStop() {
         super.onStop()
-        saveProgress()
+        // Inline, not dispatched: lifecycleScope dies with the activity, and the
+        // exit position is the one write that must not be dropped. Nothing is
+        // animating by now, so the blocking commit is harmless.
+        val exo = player
+        val url = currentPageUrl
+        if (exo != null && url != null && exo.duration > 0) {
+            history.save(url, exo.currentPosition, exo.duration)
+        }
         // Watching counts as presence — the who's-watching screen must not
         // re-ask right after a long video just because home sat idle.
         io.pickwick.app.data.ActiveProfileStore(this).touch()

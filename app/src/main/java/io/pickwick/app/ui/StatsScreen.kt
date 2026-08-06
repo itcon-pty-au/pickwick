@@ -23,6 +23,7 @@ import io.pickwick.app.data.PairedDevice
 import io.pickwick.app.data.Stats
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Per-device stats, pulled over the LAN. Refreshes while open so "now playing" is live. */
 @Composable
@@ -43,9 +44,13 @@ fun StatsScreen(
      * count doesn't include items resolved after a stale snapshot was taken.
      * Ruling itself happens in one place: Settings → "Waiting for your OK".
      */
-    val resolved = remember {
-        configStore.load().let {
-            it.aiAllowedVideoIds + it.blockedVideoIds + it.allowedFor.keys + it.blockedFor.keys
+    val resolved by produceState(initialValue = emptySet<String>()) {
+        // Config read is disk + JSON — off-main; the held count corrects itself
+        // a beat later.
+        value = withContext(kotlinx.coroutines.Dispatchers.IO) {
+            configStore.load().let {
+                it.aiAllowedVideoIds + it.blockedVideoIds + it.allowedFor.keys + it.blockedFor.keys
+            }
         }
     }
 
@@ -56,19 +61,27 @@ fun StatsScreen(
 
     LaunchedEffect(device, refreshTick) {
         // Paint instantly from the last snapshot — the parent can review the day
-        // and rule on flagged videos even while the TV is off.
-        if (payload == null) statsCache.load(device.token)?.let { (at, json) ->
-            Stats.parse(json)?.let { payload = it; fetchedAt = at; offline = true }
+        // and rule on flagged videos even while the TV is off. Snapshot file +
+        // stats JSON parse are off-main (same shape as AiReviewSection's poll).
+        if (payload == null) {
+            val cached = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                statsCache.load(device.token)?.let { (at, json) ->
+                    Stats.parse(json)?.let { it to at }
+                }
+            }
+            cached?.let { (p, at) -> payload = p; fetchedAt = at; offline = true }
         }
         while (true) {
             val json = LanClient.stats(device)
             if (json == null) offline = true
             else {
-                Stats.parse(json)?.let {
+                val parsed = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    Stats.parse(json)?.also { statsCache.save(device.token, json) }
+                }
+                parsed?.let {
                     payload = it
                     offline = false
                     fetchedAt = System.currentTimeMillis()
-                    statsCache.save(device.token, json)
                 }
             }
             delay(5_000) // keeps now-playing current

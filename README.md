@@ -148,8 +148,7 @@ technical background assumed.
 The short version: grab the APK from
 [Releases](https://github.com/itcon-pty-au/pickwick/releases)
 (or build it yourself, below). Phone/tablet — open the APK and install;
-Google TV — install via the Downloader app (code **1037466**), or enable Developer mode and
-`adb install` (USB or `adb connect <tv-ip>` over Wi-Fi). After that, updates
+Google TV — install via the Downloader app (code **1037466**). After that, updates
 come from inside the app (parent settings → Check for updates).
 
 ## Privacy & good-citizen notes
