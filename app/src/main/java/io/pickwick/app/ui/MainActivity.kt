@@ -1105,6 +1105,12 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                     pairFlow.value =
                                         PairFlow.Result("No approval received — ask on the paired phone, then scan again")
                                 }
+                                // The TV has no admin yet and isn't showing its
+                                // pairing code, so it won't hand the first slot
+                                // to whoever asks. Put the QR back on screen.
+                                "closed" -> pairFlow.value = PairFlow.Result(
+                                    "Open Settings on ${flow.name} so its pairing code is showing, then scan again"
+                                )
                                 else -> pairFlow.value =
                                     PairFlow.Result("Couldn't reach ${flow.name} — same Wi-Fi, app open on it?")
                             }

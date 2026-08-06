@@ -57,15 +57,8 @@ class PairingStore(context: Context) {
         prefs.edit().putString(key, JSONObject(map).toString()).apply()
     }
 
-    /** token → phone name. Migrates the legacy single-token model on first read. */
-    fun approvedPhones(): Map<String, String> {
-        if (!prefs.contains("approved") && prefs.contains("device_token")) {
-            // Pre-approval builds handed the device token to the paired phone —
-            // keep that phone working as the first approved admin.
-            writeMap("approved", mapOf(deviceToken() to "Family phone"))
-        }
-        return readMap("approved")
-    }
+    /** token → phone name. Empty until the first phone is approved. */
+    fun approvedPhones(): Map<String, String> = readMap("approved")
 
     fun isApproved(token: String): Boolean = approvedPhones().containsKey(token)
 
@@ -79,7 +72,9 @@ class PairingStore(context: Context) {
     fun addPendingRequest(token: String, name: String) {
         val pending = pendingRequests()
         if (pending.size < 5 && token !in pending) {
-            writeMap("pending", pending + (token to name))
+            // The name is attacker-supplied and lands in SharedPreferences —
+            // bound it so a request can't bloat the prefs file.
+            writeMap("pending", pending + (token to name.take(40)))
         }
     }
 
@@ -131,9 +126,47 @@ object ConfigEvents {
 }
 
 /**
+ * Open only while the TV is actually showing its pairing QR, and gates
+ * first-admin approval.
+ *
+ * Without it, any device on the LAN — including a web page in a browser, since
+ * a cross-site POST needs no preflight — could claim the admin slot on a fresh
+ * install just by asking first. That is worse than it sounds: only an approved
+ * phone can approve another one, so a stolen slot leaves the family with no
+ * route back except an uninstall, which wipes their curation.
+ *
+ * The QR on screen is the parent's consent. [keepOpen] is pumped by the
+ * pairing screen's existing tick, so the window lapses seconds after that
+ * screen goes away.
+ */
+object PairingWindow {
+    private const val LINGER_MS = 15_000L
+
+    @Volatile
+    private var openUntil = 0L
+
+    // elapsedRealtime, not wall clock: an NTP correction or timezone change
+    // while the QR is up must not silently close (or stretch) the window.
+    fun keepOpen() {
+        openUntil = android.os.SystemClock.elapsedRealtime() + LINGER_MS
+    }
+
+    fun close() {
+        openUntil = 0L
+    }
+
+    fun isOpen(): Boolean = android.os.SystemClock.elapsedRealtime() < openUntil
+}
+
+/**
  * Minimal HTTP listener the TV runs so a paired phone can push config and grants.
  * Plain HTTP on the home LAN, gated by the pairing token — appropriate for the
  * household threat model this app lives in.
+ *
+ * It does face the whole LAN before any token has been checked, though, so
+ * every read here is bounded and connections run on a fixed pool: an
+ * unbounded header, body or thread count is a remote crash of the kids' TV
+ * that needs no credential at all.
  */
 class LanServer(
     private val configStore: ConfigStore,
@@ -153,6 +186,20 @@ class LanServer(
 
     private var serverSocket: ServerSocket? = null
 
+    /**
+     * Fixed pool rather than a thread per connection: a flood of open sockets
+     * must cost a bounded number of threads. When both the pool and its short
+     * queue are full the connection is dropped, which keeps the TV responsive
+     * instead of letting it be talked into exhaustion.
+     */
+    private val workers = java.util.concurrent.ThreadPoolExecutor(
+        CORE_WORKERS, MAX_WORKERS, 30L, java.util.concurrent.TimeUnit.SECONDS,
+        java.util.concurrent.ArrayBlockingQueue(MAX_QUEUED)
+    ) { r -> Thread(r, "Pickwick-lan-worker").apply { isDaemon = true } }
+        // Core threads time out too: an idle TV should hold none, but a status
+        // poll shouldn't have to wait behind a slow config push either.
+        .apply { allowCoreThreadTimeOut(true) }
+
     fun start() {
         if (serverSocket != null) return
         for (candidate in 8765..8775) {
@@ -166,7 +213,10 @@ class LanServer(
         thread(isDaemon = true, name = "Pickwick-lan") {
             while (true) {
                 val client = runCatching { socket.accept() }.getOrNull() ?: break
-                thread(isDaemon = true) { runCatching { handle(client) } }
+                val queued = runCatching {
+                    workers.execute { runCatching { handle(client) } }
+                }.isSuccess
+                if (!queued) runCatching { client.close() }
             }
         }
     }
@@ -178,12 +228,20 @@ class LanServer(
         // emoji were the first non-ASCII to ever enter a config push — every
         // push then died in a silent socket timeout).
         val input = java.io.BufferedInputStream(sock.getInputStream())
+        // A line that never ends is as good as an OOM, so give up past the cap
+        // instead of growing the buffer. `aborted` separates that from a clean
+        // end of stream, which reads the same to the caller.
+        var aborted = false
         fun readLine(): String? {
             val buf = java.io.ByteArrayOutputStream()
             while (true) {
                 val b = input.read()
                 if (b == -1) return if (buf.size() == 0) null else buf.toString("UTF-8")
                 if (b == '\n'.code) break
+                if (buf.size() >= MAX_LINE_BYTES) {
+                    aborted = true
+                    return null
+                }
                 if (b != '\r'.code) buf.write(b)
             }
             return buf.toString("UTF-8")
@@ -195,16 +253,52 @@ class LanServer(
 
         var contentLength = 0
         var reqToken: String? = null
+        var contentType = ""
+        var hasOrigin = false
+        var headerCount = 0
         while (true) {
             val line = readLine() ?: break
             if (line.isEmpty()) break
-            val lower = line.lowercase()
-            if (lower.startsWith("content-length:")) {
-                contentLength = line.substringAfter(':').trim().toIntOrNull() ?: 0
+            if (++headerCount > MAX_HEADERS) {
+                aborted = true
+                break
             }
-            if (lower.startsWith("x-token:")) reqToken = line.substringAfter(':').trim()
+            val lower = line.lowercase()
+            when {
+                lower.startsWith("content-length:") ->
+                    contentLength = line.substringAfter(':').trim().toIntOrNull() ?: 0
+                lower.startsWith("x-token:") -> reqToken = line.substringAfter(':').trim()
+                lower.startsWith("content-type:") -> contentType = lower.substringAfter(':').trim()
+                // Browsers attach Origin to every cross-site request; no real
+                // client of this server ever sets it. See the /pair-request gate.
+                lower.startsWith("origin:") -> hasOrigin = true
+            }
         }
-        val body = if (contentLength > 0) {
+        if (aborted) return
+
+        fun respond(code: Int, text: String) {
+            val payload = text.toByteArray()
+            sock.getOutputStream().apply {
+                // text/plain + nosniff for every reply, JSON included: nothing
+                // here is meant for a browser, and the clients parse by shape
+                // rather than by content type.
+                write(
+                    ("HTTP/1.1 $code ${reason(code)}\r\n" +
+                        "Content-Length: ${payload.size}\r\n" +
+                        "Content-Type: text/plain; charset=utf-8\r\n" +
+                        "X-Content-Type-Options: nosniff\r\n" +
+                        "Connection: close\r\n\r\n").toByteArray()
+                )
+                write(payload)
+                flush()
+            }
+        }
+
+        // Read only once we've decided the request is worth reading — see the
+        // auth gate below, which answers unauthenticated callers without ever
+        // allocating their body.
+        fun readBody(): String {
+            if (contentLength <= 0) return ""
             val bytes = ByteArray(contentLength)
             var read = 0
             while (read < contentLength) {
@@ -212,39 +306,53 @@ class LanServer(
                 if (n < 0) break
                 read += n
             }
-            String(bytes, 0, read, Charsets.UTF_8)
-        } else ""
-
-        fun respond(code: Int, text: String) {
-            val payload = text.toByteArray()
-            sock.getOutputStream().apply {
-                write("HTTP/1.1 $code OK\r\nContent-Length: ${payload.size}\r\nConnection: close\r\n\r\n".toByteArray())
-                write(payload)
-                flush()
-            }
+            return String(bytes, 0, read, Charsets.UTF_8)
         }
 
         val path = target.substringBefore('?')
 
+        // Declared length is attacker-controlled and allocated in one go, so
+        // this check has to come before any body read.
+        if (contentLength > MAX_BODY_BYTES) {
+            respond(413, "too large")
+            return
+        }
+
         // Unauthenticated pairing endpoints: requesting is open (approval is the
         // security), so a photographed QR grants nothing by itself.
         if (method == "POST" && path == "/pair-request") {
-            val json = runCatching { JSONObject(body) }.getOrNull()
+            // Drive-by defence. A page open in a browser anywhere on this LAN
+            // can post here — a simple cross-site POST triggers no preflight —
+            // and on a TV with no admin yet that is enough to take the slot.
+            // A browser cannot send application/json cross-site without a
+            // preflight, and always tells us where it came from.
+            if (hasOrigin || !contentType.startsWith("application/json")) {
+                respond(403, "forbidden"); return
+            }
+            val json = runCatching { JSONObject(readBody()) }.getOrNull()
             val phoneToken = json?.optString("token").orEmpty()
             val phoneName = json?.optString("name").orEmpty().ifEmpty { "Phone" }
             if (!Regex("^[0-9a-f]{32}$").matches(phoneToken)) {
                 respond(400, "bad token"); return
             }
-            val status = when {
-                pairingStore.isApproved(phoneToken) -> "approved"
-                pairingStore.approvedPhones().isEmpty() -> {
-                    // Bootstrap: the very first phone becomes the admin.
-                    pairingStore.approvePhone(phoneToken, phoneName)
-                    "approved"
-                }
-                else -> {
-                    pairingStore.addPendingRequest(phoneToken, phoneName)
-                    "pending"
+            // One decision at a time: two requests racing through the
+            // empty-approved check would otherwise both bootstrap as admin.
+            val status = synchronized(pairingStore) {
+                when {
+                    pairingStore.isApproved(phoneToken) -> "approved"
+                    pairingStore.approvedPhones().isNotEmpty() -> {
+                        pairingStore.addPendingRequest(phoneToken, phoneName)
+                        "pending"
+                    }
+                    // Bootstrap: the very first phone becomes the admin, but only
+                    // while the TV is showing its pairing QR — see [PairingWindow].
+                    PairingWindow.isOpen() -> {
+                        pairingStore.approvePhone(phoneToken, phoneName.take(40))
+                        "approved"
+                    }
+                    // Nothing to approve against and no open window: say so rather
+                    // than parking the request where no one can ever reach it.
+                    else -> "closed"
                 }
             }
             respond(200, JSONObject().put("status", status).toString())
@@ -292,12 +400,12 @@ class LanServer(
             method == "GET" && path == "/stats" -> respond(200, statsProvider())
             method == "GET" && path == "/watchstate" -> respond(200, watchStateProvider())
             method == "POST" && path == "/watchstate" -> {
-                watchStateMerger(body)
+                watchStateMerger(readBody())
                 respond(200, "merged")
             }
             method == "GET" && path == "/verdicts" -> respond(200, verdictsProvider())
             method == "POST" && path == "/verdicts" -> {
-                verdictsMerger(body)
+                verdictsMerger(readBody())
                 respond(200, "merged")
             }
             method == "GET" && path == "/admins" -> {
@@ -336,7 +444,7 @@ class LanServer(
             // one re-pair, not the curation history.
             method == "GET" && path == "/config" -> respond(200, configStore.rawJson())
             method == "POST" && path == "/config" -> {
-                if (configStore.saveRaw(body)) {
+                if (configStore.saveRaw(readBody())) {
                     ConfigEvents.onConfigChanged?.invoke()
                     respond(200, "saved")
                 } else respond(400, "bad config")
@@ -362,6 +470,31 @@ class LanServer(
     }
 
     companion object {
+        /** Generous for a request line or header, far below anything harmful. */
+        private const val MAX_LINE_BYTES = 8 * 1024
+        private const val MAX_HEADERS = 50
+
+        /**
+         * Config pushes and verdict merges are the big ones — a family with a
+         * long safe-list and a season of cached verdicts still lands well
+         * inside this, and it caps what a single request can make us allocate.
+         */
+        private const val MAX_BODY_BYTES = 1024 * 1024
+
+        private const val CORE_WORKERS = 2
+        private const val MAX_WORKERS = 8
+        private const val MAX_QUEUED = 16
+
+        private fun reason(code: Int): String = when (code) {
+            200 -> "OK"
+            400 -> "Bad Request"
+            403 -> "Forbidden"
+            404 -> "Not Found"
+            409 -> "Conflict"
+            413 -> "Payload Too Large"
+            else -> "OK"
+        }
+
         /** The TV's LAN IPv4, for the pairing QR. */
         fun localIp(): String? =
             NetworkInterface.getNetworkInterfaces().asSequence()

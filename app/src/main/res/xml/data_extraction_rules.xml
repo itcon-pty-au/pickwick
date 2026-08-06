@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- API 31+ twin of backup_rules.xml — same include set for cloud backup and
-     device-to-device transfer. Keep the two files in lockstep. -->
+     device-to-device transfer. Keep the two files in lockstep.
+
+     Include-mode: the AI API key in "secrets" is unlisted on purpose and so
+     never leaves the device. Don't add it. -->
 <data-extraction-rules>
     <cloud-backup>
         <include domain="file" path="config.json" />

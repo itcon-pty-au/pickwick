@@ -15,6 +15,11 @@ class ConfigStore(context: Context) {
     private val appContext = context.applicationContext
     private val file = File(context.filesDir, "config.json")
 
+    // Lazy on purpose: opening this is a Keystore round trip and load() sits on
+    // the cold-start path, so a family that never turns on AI screening never
+    // pays for it. See [withSecrets].
+    private val secrets by lazy { SecretStore(appContext) }
+
     /**
      * Every config that touches disk registers its kids with the device-local
      * [ProfileNamespace] — the one place the first kid claims the legacy
@@ -29,24 +34,65 @@ class ConfigStore(context: Context) {
 
     fun load(): Whitelist = registered(
         runCatching {
-            if (file.exists()) fromJson(file.readText()) else null
+            if (file.exists()) withSecrets(fromJson(file.readText())) else null
         }.getOrNull() ?: Whitelist(emptyList(), emptySet())
     )
 
+    /** Whether this config has AI screening set up at all. */
+    private fun aiInUse(w: Whitelist) = w.ai.enabled || w.ai.model.isNotBlank()
+
+    /**
+     * The API key is kept out of `config.json` (see [SecretStore]); put it back
+     * on the way out so every in-memory [Whitelist] is complete — screening,
+     * the settings form and [fingerprint] all expect it to be there.
+     */
+    private fun withSecrets(w: Whitelist): Whitelist {
+        if (w.ai.apiKey.isNotBlank()) {
+            // Written by a build that still stored the key on disk. Move it and
+            // rewrite the file without it, once — even when AI isn't set up,
+            // because the key rides cloud backup for as long as it sits there.
+            secrets.setAiApiKey(w.ai.apiKey)
+            runCatching { file.writeText(stripSecrets(file.readText())) }
+            return w
+        }
+        if (!aiInUse(w)) return w
+        return w.copy(ai = w.ai.copy(apiKey = secrets.aiApiKey()))
+    }
+
+    /**
+     * Persist the key separately, but only when this config actually speaks to
+     * the key — otherwise a save from a screen that never loaded it (AI off and
+     * unconfigured) would quietly wipe a key the parent had set.
+     */
+    private fun rememberSecrets(w: Whitelist) {
+        if (w.ai.apiKey.isNotBlank() || aiInUse(w)) secrets.setAiApiKey(w.ai.apiKey)
+    }
+
     fun save(whitelist: Whitelist) {
-        runCatching { file.writeText(toJson(registered(whitelist))) }
+        runCatching {
+            val w = registered(whitelist)
+            rememberSecrets(w)
+            file.writeText(toJson(w, includeSecrets = false))
+        }
     }
 
     fun saveRaw(json: String): Boolean = runCatching {
         val w = registered(fromJson(json)) // validate before accepting
-        file.writeText(json)
+        rememberSecrets(w)
+        // The pushed payload carries the key so this device can screen; the copy
+        // that lands on disk must not. Stripped surgically rather than
+        // re-serialized, so a field a newer phone knows about and this build
+        // doesn't still survives the round trip.
+        file.writeText(stripSecrets(json))
         // Symmetric with the reject log below: an accepted push names its hash
         // and the break rules it carried, so "the TV never got it" vs "it got
-        // it but didn't enforce it" is answerable from logcat alone.
+        // it but didn't enforce it" is answerable from logcat alone. Kids appear
+        // by id rather than name — logcat is readable by anyone with the device
+        // on a cable, and the id answers the same question.
         android.util.Log.i(
             "Pickwick",
             "config accepted #${fingerprint(w)} break=${w.limits.breakMinutes} " +
-                "perKid=${w.profiles.map { "${it.name}=${it.limits.breakMinutes}" }}"
+                "perKid=${w.profiles.map { "${it.id}=${it.limits.breakMinutes}" }}"
         )
         true
     }.getOrElse { e ->
@@ -147,7 +193,25 @@ class ConfigStore(context: Context) {
                 .joinToString("") { "%02x".format(it) }
         }
 
-        fun toJson(w: Whitelist): String {
+        /**
+         * Drops the API key from a config payload, leaving every other field —
+         * including ones this build doesn't know about — byte-for-byte alone.
+         * Returns the input unchanged if it isn't parseable.
+         */
+        fun stripSecrets(json: String): String = runCatching {
+            val root = JSONObject(json)
+            val ai = root.optJSONObject("ai") ?: return@runCatching json
+            if (!ai.has("apiKey")) return@runCatching json
+            ai.remove("apiKey")
+            root.toString(2)
+        }.getOrDefault(json)
+
+        /**
+         * [includeSecrets] is true for anything that goes to another device (a
+         * paired TV needs the key to screen), false for the copy that lands on
+         * disk, which is cloud-backed-up.
+         */
+        fun toJson(w: Whitelist, includeSecrets: Boolean = true): String {
             val root = JSONObject()
             root.put("updatedAt", System.currentTimeMillis())
             root.put("entries", JSONArray().apply {
@@ -170,7 +234,7 @@ class ConfigStore(context: Context) {
                 put("enabled", w.ai.enabled)
                 put("baseUrl", w.ai.baseUrl)
                 put("model", w.ai.model)
-                put("apiKey", w.ai.apiKey)
+                if (includeSecrets) put("apiKey", w.ai.apiKey)
                 put("rules", w.ai.rules)
                 w.ai.childAge?.let { put("childAge", it) }
                 put("rulesVersion", w.ai.rulesVersion)

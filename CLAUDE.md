@@ -20,6 +20,14 @@ Downloader-code URL — never goes stale). The release type
 is signed with the **debug key** on purpose (`app/build.gradle.kts`), so it
 side-loads and upgrades over previous installs with no keystore setup.
 
+Set `PICKWICK_KEYSTORE` (plus `_PASSWORD`, `PICKWICK_KEY_ALIAS`,
+`PICKWICK_KEY_PASSWORD`) in `local.properties` or the environment to sign with a
+real key instead. Note what that costs before doing it: Android won't upgrade an
+install across a signature change, so every already-installed family would need
+an uninstall — which wipes their curation. Until that switch happens,
+`~/.android/debug.keystore` is a release credential, since it is the only thing
+vouching for a self-update.
+
 A debug build is *debuggable*, which enables `-Xcheck:jni` and skips
 ahead-of-time compilation, leaving the Compose runtime interpreted on first
 launch. Measured cold start to first frame on a Chromecast with Google TV:
@@ -93,8 +101,15 @@ GET /status   (header X-Token: <approved token>)  -> {"hash":...,"updatedAt":...
 ```
 
 **Never send `POST /pair-request` while testing.** When the TV has no approved
-phones yet, the first requester is auto-approved as the admin — a stray test
-request would seize that slot and force the real phone into `pending`.
+phones yet and its pairing QR is on screen, the first requester is auto-approved
+as the admin — a stray test request would seize that slot and force the real
+phone into `pending`, where only an approved phone could rescue it.
+
+That bootstrap is gated on `PairingWindow`, which the QR screen holds open and
+which lapses ~15 s after that screen goes away; off-window requests get
+`{"status":"closed"}`. `/pair-request` also refuses anything carrying an
+`Origin` header or a non-JSON content type, so a page in a browser on the LAN
+can't take the slot with a no-preflight cross-site POST.
 
 ## Conventions
 
@@ -108,3 +123,13 @@ request would seize that slot and force the real phone into `pending`.
   `withContext(Dispatchers.IO)`; `ConfigStore`/`PairingStore` calls are all
   synchronous. Long operations need visible progress, not a frozen dialog.
 - `gradlew test` runs the JVM unit tests.
+- The AI API key is **not** in `config.json`. It lives in `SecretStore`
+  (Keystore-encrypted, unlisted in the backup rules so it never reaches cloud
+  backup) and is overlaid onto `AiConfig` by `ConfigStore.load()`. It still
+  travels to paired devices in the pushed payload — they need it to screen —
+  and `saveRaw` strips it before the copy hits disk. Keep it out of the backup
+  include lists, and keep `stripSecrets` surgical so unknown fields from newer
+  builds survive the round trip.
+- The `LanServer` faces the whole LAN before any token is checked, so every
+  read there is bounded (line, header count, body, worker threads). Anything
+  new that allocates from request data needs the same treatment.

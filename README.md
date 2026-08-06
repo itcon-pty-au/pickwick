@@ -104,8 +104,10 @@ Open settings (fingerprint-gated, with a 4-digit parent PIN as fallback) on the 
 1. Install the APK on the TV and on the parent's phone.
 2. TV: settings → a QR code appears.
 3. Phone: scan it with the camera → Pickwick opens → confirm.
-4. The **first** phone becomes the admin automatically; any later phone needs
-   approval on an existing admin phone (the QR itself grants nothing).
+4. The **first** phone becomes the admin automatically, but only while the TV is
+   actually showing that QR — so nothing else on the network can quietly claim
+   the slot. Any later phone needs approval on an existing admin phone (the QR
+   itself grants nothing).
 
 From then on the phone manages the TV over the home network: settings pushes,
 grants, stats, and watch-state sync (resume positions + saved list follow the kid

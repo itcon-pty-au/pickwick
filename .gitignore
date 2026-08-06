@@ -8,3 +8,6 @@ local.properties
 /captures
 .externalNativeBuild
 .cxx
+# Release signing material never belongs in the repo (see app/build.gradle.kts).
+*.jks
+*.keystore

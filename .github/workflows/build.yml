@@ -43,7 +43,9 @@ jobs:
         run: >
           ./gradlew :app:testDebugUnitTest
           --tests "io.pickwick.app.AiScreenerTest"
+          --tests "io.pickwick.app.ConfigSecretsTest"
           --tests "io.pickwick.app.ConfigStoreJsonTest"
+          --tests "io.pickwick.app.EndpointSafetyTest"
           --tests "io.pickwick.app.RetryPolicyTest"
           --tests "io.pickwick.app.WhitelistParserTest"
           --tests "io.pickwick.app.WhitelistImporterUrlTest"

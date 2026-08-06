@@ -39,6 +39,55 @@ object AiScreener {
         else -> Verdict.ALLOW
     }
 
+    /**
+     * Whether it's safe to talk to this endpoint in the clear.
+     *
+     * The app permits cleartext traffic app-wide (phone→TV pairing needs it),
+     * so nothing at the platform layer stops an `http://` base URL from putting
+     * the API key — plus every title, the kids' ages and the house rules — on
+     * the wire. A LAN or loopback endpoint is the one legitimate cleartext case
+     * (Ollama, LM Studio), so allow exactly that and require TLS elsewhere.
+     */
+    fun isEndpointSafe(baseUrl: String): Boolean {
+        val uri = runCatching { java.net.URI(baseUrl.trim()) }.getOrNull() ?: return false
+        return when (uri.scheme?.lowercase()) {
+            "https" -> true
+            "http" -> isPrivateHost(uri.host?.lowercase()?.trim('[', ']').orEmpty())
+            else -> false
+        }
+    }
+
+    /** Loopback, link-local, or an RFC 1918 range — i.e. can't leave the house. */
+    fun isPrivateHost(host: String): Boolean {
+        if (host.isEmpty()) return false
+        if (host == "localhost" || host.endsWith(".localhost") || host.endsWith(".local")) return true
+        // Only IPv6 literals contain a colon, so prefix tests are safe inside
+        // this branch — outside it "fdic.gov" would match "fd" and sail through.
+        if (':' in host) {
+            return host == "::1" || host.startsWith("fe80:") ||
+                host.startsWith("fc") || host.startsWith("fd")
+        }
+        // Range checks only mean anything on a literal address: "10.example.com"
+        // is a public hostname that would otherwise sail through a prefix test.
+        val octets = host.split('.')
+            .takeIf { it.size == 4 }
+            ?.mapNotNull { it.toIntOrNull()?.takeIf { n -> n in 0..255 } }
+            ?.takeIf { it.size == 4 }
+            ?: return false
+        val (a, b) = octets
+        return a == 127 || a == 10 ||
+            (a == 192 && b == 168) ||
+            (a == 169 && b == 254) ||
+            (a == 172 && b in 16..31)
+    }
+
+    private fun requireSafeEndpoint(cfg: AiConfig) {
+        require(isEndpointSafe(cfg.baseUrl)) {
+            "Refusing to send screening data in the clear to ${cfg.baseUrl} — " +
+                "use https://, or a local address for an in-house model."
+        }
+    }
+
     /** Longer read timeout than the shared client: batch verdicts can take a while. */
     private val llmClient by lazy {
         Http.client.newBuilder()
@@ -159,6 +208,7 @@ object AiScreener {
      * native endpoint wants x-api-key instead of Bearer, so 401s get one retry that way.
      */
     suspend fun listModels(cfg: AiConfig): List<String> = withContext(Dispatchers.IO) {
+        requireSafeEndpoint(cfg)
         fun fetch(authorize: Request.Builder.() -> Request.Builder): Pair<Int, String> {
             val request = Request.Builder()
                 .url(cfg.baseUrl.trimEnd('/') + "/models")
@@ -206,6 +256,7 @@ object AiScreener {
     /** One chat-completions round trip; returns the assistant's text content. */
     private suspend fun chatCompletion(cfg: AiConfig, system: String, user: String): String =
         withContext(Dispatchers.IO) {
+            requireSafeEndpoint(cfg)
             val body = JSONObject()
                 .put("model", cfg.model)
                 .put("temperature", 0)

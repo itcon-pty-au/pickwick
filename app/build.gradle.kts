@@ -1,8 +1,30 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
 }
+
+// Release signing. Point PICKWICK_KEYSTORE (local.properties or the
+// environment) at a real keystore and release builds use it; leave it unset and
+// they fall back to the debug key, exactly as before.
+//
+// The fallback is not laziness — the debug key is what every installed family's
+// copy is signed with, and Android refuses an in-place upgrade across a
+// signature change. Switching keys therefore means an uninstall (which wipes
+// their curation) and has to stay a deliberate, announced act. Until then,
+// treat ~/.android/debug.keystore as a release credential: it is the sole trust
+// anchor for self-update.
+val signingProps = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+
+fun signingProp(name: String): String? =
+    (signingProps.getProperty(name) ?: System.getenv(name))?.takeIf { it.isNotBlank() }
+
+val releaseKeystore: String? = signingProp("PICKWICK_KEYSTORE")
 
 android {
     namespace = "io.pickwick.app"
@@ -32,12 +54,22 @@ android {
         )
     }
 
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = signingProp("PICKWICK_KEYSTORE_PASSWORD")
+                keyAlias = signingProp("PICKWICK_KEY_ALIAS")
+                keyPassword = signingProp("PICKWICK_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
-            // Debug-key signing so local perf/family installs can side-load the
-            // optimized build; swap in a real keystore for wider distribution.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig =
+                signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
     compileOptions {
@@ -82,6 +114,7 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.okhttp.dnsoverhttps)
     implementation(libs.androidx.biometric)
+    implementation(libs.androidx.security.crypto)
     implementation(libs.zxing.core)
     implementation(libs.coil.compose)
     testImplementation("junit:junit:4.13.2")

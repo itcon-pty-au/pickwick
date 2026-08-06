@@ -3,7 +3,10 @@
      The precious, hand-curated state — config (channels, blocked videos,
      parent safe-list, screen-time rules), AI verdicts, pairing, watch state.
      Caches (video_cache, source_cache, thumbnails) rebuild themselves and
-     would blow the 25 MB quota, so they are deliberately absent. -->
+     would blow the 25 MB quota, so they are deliberately absent.
+
+     Include-mode means anything unlisted stays on the device — which is how the
+     AI API key in "secrets" is kept out of cloud backup. Don't add it. -->
 <full-backup-content>
     <include domain="file" path="config.json" />
     <include domain="file" path="screening.json" />

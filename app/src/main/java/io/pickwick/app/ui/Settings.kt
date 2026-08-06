@@ -46,6 +46,7 @@ import io.pickwick.app.data.Limits
 import io.pickwick.app.data.LocalLibrary
 import io.pickwick.app.data.PairedDevice
 import io.pickwick.app.data.PairingStore
+import io.pickwick.app.data.PairingWindow
 import io.pickwick.app.data.ScreeningStore
 import io.pickwick.app.data.SessionGuard
 import io.pickwick.app.data.SettingsStore
@@ -147,12 +148,25 @@ fun SettingsFlow(
                 }
             }
             Stage.Enter -> key(stage, error) {
+                // The stretched hash costs ~100ms of CPU — off the main thread,
+                // or every PIN entry drops frames on a TV box.
+                val scope = rememberCoroutineScope()
+                var checking by remember { mutableStateOf(false) }
                 PinPad(title = "Enter parent PIN", error = error) { pin ->
-                    if (settings.checkPin(pin)) {
-                        error = null
-                        stage = Stage.Editor
-                    } else {
-                        error = "Wrong PIN — try again"
+                    if (!checking) {
+                        checking = true
+                        scope.launch {
+                            val ok = kotlinx.coroutines.withContext(
+                                kotlinx.coroutines.Dispatchers.Default
+                            ) { settings.checkPin(pin) }
+                            checking = false
+                            if (ok) {
+                                error = null
+                                stage = Stage.Editor
+                            } else {
+                                error = "Wrong PIN — try again"
+                            }
+                        }
                     }
                 }
             }
@@ -168,10 +182,15 @@ fun SettingsFlow(
                 }
             }
             Stage.Confirm -> key(stage) {
+                val scope = rememberCoroutineScope()
                 PinPad(title = "Enter the same PIN again to confirm") { pin ->
                     if (pin == firstPin) {
-                        settings.setPin(pin)
-                        stage = Stage.Editor
+                        scope.launch {
+                            kotlinx.coroutines.withContext(
+                                kotlinx.coroutines.Dispatchers.Default
+                            ) { settings.setPin(pin) }
+                            stage = Stage.Editor
+                        }
                     } else {
                         error = "PINs didn't match — start again"
                         stage = Stage.Create
@@ -198,15 +217,22 @@ private enum class Stage { Biometric, Enter, Create, Confirm, Editor }
 private fun TvSettingsScreen(configStore: ConfigStore, pairingStore: PairingStore) {
     var hash by remember { mutableStateOf("") }
     var edited by remember { mutableStateOf(0L) }
+    val server = LanServerHolder.server
+    val ip = remember { LanServer.localIp() }
     // Live: a push from the phone changes the fingerprint on screen within 2s,
     // so the parent can watch the two devices match.
     LaunchedEffect(Unit) {
         while (true) {
             hash = ConfigStore.fingerprint(configStore.load())
             edited = configStore.updatedAt()
+            // A QR on screen is the parent's consent to hand out the first
+            // admin slot; this tick is what holds that window open, and it
+            // lapses seconds after the screen goes away.
+            if (server != null && ip != null) PairingWindow.keepOpen()
             kotlinx.coroutines.delay(2_000)
         }
     }
+    DisposableEffect(Unit) { onDispose { PairingWindow.close() } }
 
     Column(
         modifier = Modifier.fillMaxSize().padding(32.dp),
@@ -226,8 +252,6 @@ private fun TvSettingsScreen(configStore: ConfigStore, pairingStore: PairingStor
         )
         Spacer(Modifier.height(20.dp))
 
-        val server = LanServerHolder.server
-        val ip = remember { LanServer.localIp() }
         if (server == null || ip == null) {
             Text("Pairing needs Wi-Fi — check the network connection.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1208,13 +1232,27 @@ private fun AiScreeningSection(
             )
         }
     }
+    val endpointSafe = ai.baseUrl.isBlank() ||
+        io.pickwick.app.data.AiScreener.isEndpointSafe(ai.baseUrl)
     OutlinedTextField(
         value = ai.baseUrl,
         onValueChange = { onChanged(ai.copy(baseUrl = it.trim())) },
         label = { Text("API base URL (OpenAI-compatible)") },
         singleLine = true,
+        isError = !endpointSafe,
         modifier = Modifier.fillMaxWidth()
     )
+    // Screening refuses to run against this rather than leak the key and the
+    // kids' details in the clear, so say why here instead of failing silently.
+    if (!endpointSafe) {
+        Text(
+            "Use https:// — a plain http:// address sends your API key and the " +
+                "video titles unencrypted. http:// is allowed only for a model " +
+                "running on your own network.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error
+        )
+    }
     Spacer(Modifier.height(8.dp))
     OutlinedTextField(
         value = ai.apiKey,
