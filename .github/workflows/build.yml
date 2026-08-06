@@ -3,10 +3,21 @@
 # schedule in extractor-smoke.yml) so PR checks never fail on throttling.
 name: Build
 
+# Skips commits that touch nothing the build can see — the site under docs/ is
+# published by deploy-pages.yml, and prose has no bearing on whether the app
+# compiles. Everything else, including gradle and manifest files, still runs.
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+      - ".github/workflows/deploy-pages.yml"
   pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+      - ".github/workflows/deploy-pages.yml"
 
 permissions:
   contents: read
