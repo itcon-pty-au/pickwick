@@ -20,9 +20,7 @@ import coil.compose.AsyncImage
 import io.pickwick.app.data.ConfigStore
 import io.pickwick.app.data.LanClient
 import io.pickwick.app.data.PairedDevice
-import io.pickwick.app.data.PairingStore
 import io.pickwick.app.data.Stats
-import io.pickwick.app.data.Whitelist
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -31,7 +29,6 @@ import kotlinx.coroutines.launch
 fun StatsScreen(
     device: PairedDevice,
     configStore: ConfigStore,
-    pairingStore: PairingStore,
     onBack: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -42,22 +39,13 @@ fun StatsScreen(
     /** When the payload on screen was actually fetched from the device. */
     var fetchedAt by remember { mutableStateOf(0L) }
     /**
-     * Flagged videos already ruled on — seeded from this phone's config so items
-     * resolved earlier don't resurface from a stale snapshot, then grown as the
-     * parent taps Allow/Block (hidden instantly; the push catches up).
+     * Flagged videos already ruled on — from this phone's config, so the held-back
+     * count doesn't include items resolved after a stale snapshot was taken.
+     * Ruling itself happens in one place: Settings → "Waiting for your OK".
      */
-    var resolved by remember {
-        mutableStateOf(configStore.load().let { it.aiAllowedVideoIds + it.blockedVideoIds })
-    }
-
-    /** Applies a config change locally and pushes it to every paired device. */
-    fun resolveFlagged(videoId: String, mutate: (Whitelist) -> Whitelist) {
-        resolved = resolved + videoId
-        scope.launch {
-            val updated = mutate(configStore.load())
-            configStore.save(updated)
-            val json = ConfigStore.toJson(updated)
-            pairingStore.paired().forEach { LanClient.pushConfig(it, json) }
+    val resolved = remember {
+        configStore.load().let {
+            it.aiAllowedVideoIds + it.blockedVideoIds + it.allowedFor.keys + it.blockedFor.keys
         }
     }
 
@@ -125,8 +113,7 @@ fun StatsScreen(
             if (offline) {
                 val age = relativeTime(fetchedAt).ifEmpty { "earlier" }
                 Text(
-                    "Device unreachable — showing its last report from $age. " +
-                        "Allow/Block still works; decisions sync when it's back online.",
+                    "Device unreachable — showing its last report from $age.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -230,17 +217,26 @@ fun StatsScreen(
             }
 
             // --- AI screening ------------------------------------------------
+            // Numbers only — the Allow/Block cards live in one place, Settings →
+            // "Waiting for your OK", which folds in this device's queue.
             data.aiScreened?.let { screened ->
                 StatsSection("AI screening")
-                val flagged = data.aiFlagged.filter { it.videoId !in resolved }
+                val held = data.aiFlagged.count { it.videoId !in resolved }
                 Text(
-                    "$screened video(s) screened" + when {
-                        flagged.isEmpty() -> " · nothing waiting for you"
-                        else -> " · ${flagged.size} held back"
+                    "$screened video(s) screened" + when (held) {
+                        0 -> " · nothing waiting for you"
+                        else -> " · $held held back"
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                if (held > 0) {
+                    Text(
+                        "Review them under \"Waiting for your OK\" in settings.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
                 // Unscreened videos are hidden on the device (fail-closed) but must
                 // never be *silently* hidden — the parent sees the backlog here.
                 if (data.aiPending > 0) {
@@ -251,74 +247,6 @@ fun StatsScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary
                     )
-                }
-                flagged.forEach { f ->
-                    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                        Column(Modifier.padding(12.dp)) {
-                            Row(verticalAlignment = Alignment.Top) {
-                                AsyncImage(
-                                    model = f.thumbnailUrl,
-                                    contentDescription = f.title,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.size(width = 104.dp, height = 58.dp)
-                                        .clip(RoundedCornerShape(4.dp))
-                                )
-                                Spacer(Modifier.width(12.dp))
-                                Column(Modifier.weight(1f)) {
-                                    // Full title, wrapping — the parent decides on this text.
-                                    Text(f.title, style = MaterialTheme.typography.bodyMedium)
-                                    Spacer(Modifier.height(2.dp))
-                                    Text(
-                                        listOfNotNull(
-                                            f.channel.takeIf { it.isNotBlank() },
-                                            if (f.verdict == "REVIEW") "AI unsure" else "AI blocked"
-                                        ).joinToString(" · "),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                            if (f.reason.isNotBlank()) {
-                                Spacer(Modifier.height(8.dp))
-                                Text(
-                                    "AI: ${f.reason}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                // Watch it yourself before ruling on the AI's call.
-                                val context = androidx.compose.ui.platform.LocalContext.current
-                                TextButton(modifier = Modifier.tvFocusHighlight(), onClick = {
-                                    runCatching {
-                                        context.startActivity(
-                                            android.content.Intent(
-                                                android.content.Intent.ACTION_VIEW,
-                                                android.net.Uri.parse(
-                                                    "https://www.youtube.com/watch?v=${f.videoId}"
-                                                )
-                                            )
-                                        )
-                                    }
-                                }) { Text("View in YouTube") }
-                                Spacer(Modifier.weight(1f))
-                                TextButton(modifier = Modifier.tvFocusHighlight(), onClick = {
-                                    resolveFlagged(f.videoId) {
-                                        it.copy(aiAllowedVideoIds = it.aiAllowedVideoIds + f.videoId)
-                                    }
-                                }) { Text("Allow") }
-                                Spacer(Modifier.width(8.dp))
-                                TextButton(modifier = Modifier.tvFocusHighlight(), onClick = {
-                                    resolveFlagged(f.videoId) {
-                                        it.copy(blockedVideoIds = it.blockedVideoIds + f.videoId)
-                                    }
-                                }) { Text("Block") }
-                            }
-                        }
-                    }
                 }
             }
 

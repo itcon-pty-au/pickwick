@@ -7,7 +7,8 @@ import java.io.File
 
 /**
  * Phone-side snapshot of each paired device's last stats payload, so the parent
- * can review the day — and rule on AI-flagged videos — while the TV is off.
+ * can review the day — and the "Waiting for your OK" queue can list videos the
+ * device is holding back — while the TV is off.
  * One file per device token, the payload wrapped with its fetch time so the UI
  * can say how old the snapshot is.
  */

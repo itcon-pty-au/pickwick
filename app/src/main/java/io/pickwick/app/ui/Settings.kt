@@ -331,7 +331,7 @@ private fun AdminScreen(
 
     // Stats takes over the screen while open.
     statsDevice?.let { device ->
-        StatsScreen(device, configStore, pairingStore) { statsDevice = null }
+        StatsScreen(device, configStore) { statsDevice = null }
         return
     }
 
@@ -526,6 +526,7 @@ private fun AdminScreen(
             AiReviewSection(
                 ai = ai,
                 profiles = profiles,
+                pairingStore = pairingStore,
                 resolved = blocked + aiAllowed + blockedFor.keys + allowedFor.keys,
                 onAllow = { id, forKids ->
                     if (forKids == null) {
@@ -1342,17 +1343,19 @@ private fun AiScreeningSection(
 // --- AI review queue ---------------------------------------------------------
 
 /**
- * The review queue, served from THIS device's own verdict store — so the parent
- * can rule on held videos even while the kid device is off or unreachable (each
- * device screens its own catalog and reaches the same verdicts). Decisions are
- * committed and pushed as they're tapped, not held for Save & close. The per-device
- * pages under "Kid devices" show the same queue live from that device.
+ * THE review queue — the one place a held-back video waits for the parent.
+ * Served from this device's own verdict store, merged with what each paired
+ * device reports as held (live over the LAN, or its last cached stats snapshot
+ * when it's off) — the models are not perfectly deterministic, so a kid device
+ * can hold a video this phone's own screening let through. Decisions are
+ * committed and pushed as they're tapped, not held for Save & close.
  */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun AiReviewSection(
     ai: io.pickwick.app.data.AiConfig,
     profiles: List<io.pickwick.app.data.Profile>,
+    pairingStore: PairingStore,
     /** Already ruled on (parent-blocked or allowed) — dropped from the queue. */
     resolved: Set<String>,
     /** Second arg: null = everyone (tap); a kid set = long-press per-kid ruling. */
@@ -1380,6 +1383,10 @@ private fun AiReviewSection(
     val context = androidx.compose.ui.platform.LocalContext.current
     val store = remember { io.pickwick.app.data.ScreeningStore(context.applicationContext) }
     var all by remember { mutableStateOf<List<Pair<String, ScreeningStore.Entry>>>(emptyList()) }
+    /** device token → videos that device says it is holding back. */
+    var remoteByDevice by remember {
+        mutableStateOf<Map<String, List<io.pickwick.app.data.Stats.AiFlagged>>>(emptyMap())
+    }
     /** Cached-feed videos with no verdict yet — the queue is still growing by this much. */
     var stillScreening by remember { mutableIntStateOf(0) }
     // The poll loop outlives any single value of `resolved`; read the latest each
@@ -1412,7 +1419,49 @@ private fun AiReviewSection(
         }
     }
 
-    val flagged = all.filterNot { (id, _) -> id in resolved }
+    // Kid devices can hold videos this phone let through, so their queues fold in
+    // here. First pass paints from the cached snapshots (instant, works with the
+    // TV off); later passes refresh live and update the cache the per-device
+    // stats page reads. Slower cadence than the local poll — this hits the LAN.
+    LaunchedEffect(Unit) {
+        val statsCache = io.pickwick.app.data.StatsCache(context.applicationContext)
+        var live = false
+        while (true) {
+            remoteByDevice = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                pairingStore.paired().associate { device ->
+                    val json = (if (live) LanClient.stats(device)
+                        ?.also { statsCache.save(device.token, it) } else null)
+                        ?: statsCache.load(device.token)?.second
+                    device.token to
+                        json?.let { io.pickwick.app.data.Stats.parse(it)?.aiFlagged }.orEmpty()
+                }
+            }
+            if (live) delay(15_000)
+            live = true
+        }
+    }
+
+    val localFlagged = all.filterNot { (id, _) -> id in resolved }
+    // A remote hold on a video the local store also flags is the same card; a
+    // remote hold on one it doesn't is still the parent's to rule on.
+    val localIds = localFlagged.map { it.first }.toSet()
+    val remoteOnly = remoteByDevice.values.flatten()
+        .distinctBy { it.videoId }
+        .filter { it.videoId !in localIds && it.videoId !in resolved }
+        .map { f ->
+            f.videoId to ScreeningStore.Entry(
+                verdict = if (f.verdict == io.pickwick.app.data.AiScreener.Verdict.REVIEW.name)
+                    io.pickwick.app.data.AiScreener.Verdict.REVIEW
+                else io.pickwick.app.data.AiScreener.Verdict.BLOCK,
+                reason = f.reason,
+                title = f.title,
+                channel = f.channel,
+                thumb = f.thumbnailUrl,
+                rulesVersion = ai.rulesVersion,
+                at = f.at
+            )
+        }
+    val flagged = (localFlagged + remoteOnly).sortedByDescending { it.second.at }
 
     val screeningNote = if (stillScreening > 0) {
         " $stillScreening more still being screened — they'll appear here as the AI finishes."

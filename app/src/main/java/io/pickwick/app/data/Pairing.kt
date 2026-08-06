@@ -142,7 +142,10 @@ class LanServer(
     private val pairingStore: PairingStore,
     private val statsProvider: () -> String = { "{}" },
     private val watchStateProvider: () -> String = { "{}" },
-    private val watchStateMerger: (String) -> Unit = {}
+    private val watchStateMerger: (String) -> Unit = {},
+    /** AI verdict-sharing: serve ours, merge a peer's — see ScreeningStore. */
+    private val verdictsProvider: () -> String = { "{}" },
+    private val verdictsMerger: (String) -> Unit = {}
 ) {
     @Volatile
     var port: Int = 0
@@ -290,6 +293,11 @@ class LanServer(
             method == "GET" && path == "/watchstate" -> respond(200, watchStateProvider())
             method == "POST" && path == "/watchstate" -> {
                 watchStateMerger(body)
+                respond(200, "merged")
+            }
+            method == "GET" && path == "/verdicts" -> respond(200, verdictsProvider())
+            method == "POST" && path == "/verdicts" -> {
+                verdictsMerger(body)
                 respond(200, "merged")
             }
             method == "GET" && path == "/admins" -> {
@@ -480,6 +488,22 @@ object LanClient {
         withContext(Dispatchers.IO) {
             runCatching {
                 request(device, "POST", "/watchstate", json).use { it.isSuccessful }
+            }.getOrDefault(false)
+        }
+
+    /** A device's AI screening verdicts, or null (unreachable, or a pre-verdict-sharing build). */
+    suspend fun fetchVerdicts(device: PairedDevice): String? = withContext(Dispatchers.IO) {
+        runCatching {
+            request(device, "GET", "/verdicts", null).use { resp ->
+                if (resp.isSuccessful) resp.body?.string() else null
+            }
+        }.getOrNull()
+    }
+
+    suspend fun pushVerdicts(device: PairedDevice, json: String): Boolean =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                request(device, "POST", "/verdicts", json).use { it.isSuccessful }
             }.getOrDefault(false)
         }
 

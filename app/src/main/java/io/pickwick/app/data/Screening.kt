@@ -57,32 +57,49 @@ class ScreeningStore(context: Context) {
         runCatching {
             if (file.exists()) {
                 val root = JSONObject(file.readText())
-                root.keys().forEach { id ->
-                    val o = root.getJSONObject(id)
-                    val pp = o.optJSONObject("pp")?.let { obj ->
-                        obj.keys().asSequence().associateWith { pid ->
-                            runCatching { AiScreener.Verdict.valueOf(obj.getString(pid)) }
-                                .getOrDefault(AiScreener.Verdict.REVIEW)
-                        }
-                    } ?: emptyMap()
-                    map[id] = Entry(
-                        verdict = runCatching { AiScreener.Verdict.valueOf(o.getString("v")) }
-                            .getOrDefault(AiScreener.Verdict.REVIEW),
-                        reason = o.optString("why"),
-                        title = o.optString("title"),
-                        channel = o.optString("channel"),
-                        thumb = o.optString("thumb").ifEmpty { null },
-                        rulesVersion = o.optInt("rv"),
-                        at = o.optLong("at"),
-                        perProfile = pp
-                    )
-                }
+                root.keys().forEach { id -> map[id] = parseEntry(root.getJSONObject(id)) }
             }
         }
         cache = map
         loadedFrom = signature()
         return map
     }
+
+    private fun parseEntry(o: JSONObject): Entry {
+        val pp = o.optJSONObject("pp")?.let { obj ->
+            obj.keys().asSequence().associateWith { pid ->
+                runCatching { AiScreener.Verdict.valueOf(obj.getString(pid)) }
+                    .getOrDefault(AiScreener.Verdict.REVIEW)
+            }
+        } ?: emptyMap()
+        return Entry(
+            verdict = runCatching { AiScreener.Verdict.valueOf(o.getString("v")) }
+                .getOrDefault(AiScreener.Verdict.REVIEW),
+            reason = o.optString("why"),
+            title = o.optString("title"),
+            channel = o.optString("channel"),
+            thumb = o.optString("thumb").ifEmpty { null },
+            rulesVersion = o.optInt("rv"),
+            at = o.optLong("at"),
+            perProfile = pp
+        )
+    }
+
+    private fun entryJson(e: Entry): JSONObject = JSONObject()
+        .put("v", e.verdict.name)
+        .put("why", e.reason)
+        .put("title", e.title)
+        .put("channel", e.channel)
+        .put("thumb", e.thumb ?: "")
+        .put("rv", e.rulesVersion)
+        .put("at", e.at)
+        .apply {
+            if (e.perProfile.isNotEmpty()) {
+                put("pp", JSONObject().apply {
+                    e.perProfile.forEach { (pid, v) -> put(pid, v.name) }
+                })
+            }
+        }
 
     @Synchronized
     fun get(videoId: String): Entry? = all()[videoId]
@@ -113,26 +130,45 @@ class ScreeningStore(context: Context) {
     fun screenedCount(rulesVersion: Int): Int =
         all().values.count { it.rulesVersion == rulesVersion }
 
+    /**
+     * This device's verdicts under [rulesVersion], serialized for LAN verdict-
+     * sharing: each video is billed to the AI once per rules version, by
+     * whichever device sees it first — peers import the verdict instead.
+     */
+    @Synchronized
+    fun exportJson(rulesVersion: Int): String {
+        val root = JSONObject()
+        all().forEach { (id, e) -> if (e.rulesVersion == rulesVersion) root.put(id, entryJson(e)) }
+        return root.toString()
+    }
+
+    /**
+     * Merges a peer's verdicts. Only entries under [rulesVersion] (this device's
+     * current rules) count, and never over one we already hold for the same
+     * rules — our own verdict is just as good, and not overwriting keeps a
+     * pull-then-push exchange from ping-ponging entries between devices.
+     * Returns how many were new.
+     */
+    @Synchronized
+    fun importJson(json: String, rulesVersion: Int): Int {
+        val incoming = runCatching { JSONObject(json) }.getOrNull() ?: return 0
+        val existing = all()
+        val fresh = mutableMapOf<String, Entry>()
+        incoming.keys().forEach { id ->
+            val e = runCatching { parseEntry(incoming.getJSONObject(id)) }.getOrNull()
+                ?: return@forEach
+            if (e.rulesVersion == rulesVersion && existing[id]?.rulesVersion != rulesVersion) {
+                fresh[id] = e
+            }
+        }
+        if (fresh.isNotEmpty()) putAll(fresh)
+        return fresh.size
+    }
+
     private fun persist(map: Map<String, Entry>) {
         runCatching {
             val root = JSONObject()
-            map.forEach { (id, e) ->
-                root.put(id, JSONObject()
-                    .put("v", e.verdict.name)
-                    .put("why", e.reason)
-                    .put("title", e.title)
-                    .put("channel", e.channel)
-                    .put("thumb", e.thumb ?: "")
-                    .put("rv", e.rulesVersion)
-                    .put("at", e.at)
-                    .apply {
-                        if (e.perProfile.isNotEmpty()) {
-                            put("pp", JSONObject().apply {
-                                e.perProfile.forEach { (pid, v) -> put(pid, v.name) }
-                            })
-                        }
-                    })
-            }
+            map.forEach { (id, e) -> root.put(id, entryJson(e)) }
             file.writeText(root.toString())
             // Our own write must not read as someone else's to the next all().
             loadedFrom = signature()

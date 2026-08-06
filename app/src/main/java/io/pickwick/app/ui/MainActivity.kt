@@ -108,6 +108,10 @@ class MainViewModel(
     private val exportWatchState: () -> String = { "{}" },
     /** Merges a peer's watch state into this device. Returns true if applied. */
     private val mergeWatchState: (String) -> Boolean = { false },
+    /** Serializes this device's AI verdicts for cross-device sharing. */
+    private val exportVerdicts: () -> String = { "{}" },
+    /** Imports a peer's AI verdicts. Returns true when any were new. */
+    private val mergeVerdicts: (String) -> Boolean = { false },
     /**
      * Snapshots a device's stats into the phone-side cache. Riding the periodic
      * sync keeps the snapshot warm, so the parent's Stats page has yesterday's
@@ -233,8 +237,9 @@ class MainViewModel(
     private var watchSyncInFlight = false
 
     /**
-     * Exchange watch progress + saved list with every paired device (phone acts
-     * as the hub): pull-merge theirs, push the merged state back. LWW converges.
+     * Exchange watch progress + saved list + AI verdicts with every paired device
+     * (phone acts as the hub): pull-merge theirs, push the merged state back.
+     * LWW converges; verdicts are add-only per rules version.
      */
     fun syncWatchState() {
         val devices = pairingStore?.paired().orEmpty()
@@ -242,13 +247,30 @@ class MainViewModel(
         watchSyncInFlight = true
         viewModelScope.launch {
             var changed = false
+            var newVerdicts = false
             devices.forEach { device ->
                 LanClient.fetchWatchState(device)?.let { if (mergeWatchState(it)) changed = true }
                 LanClient.pushWatchState(device, exportWatchState())
+                // Verdict-sharing: pull-merge what each device has screened, so a
+                // video the TV already ruled on is never re-billed to the AI here.
+                LanClient.fetchVerdicts(device)?.let { json ->
+                    val fresh = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        mergeVerdicts(json)
+                    }
+                    if (fresh) newVerdicts = true
+                }
                 cacheStats(device)
             }
+            // Push the merged set back after every pull, so verdicts also hop
+            // between kid devices through this phone (they never talk directly).
+            val export = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                exportVerdicts()
+            }
+            devices.forEach { LanClient.pushVerdicts(it, export) }
             watchSyncInFlight = false
             if (changed) refreshProgress()
+            // Imported verdicts can clear or hold videos on the current screen.
+            if (newVerdicts) reapplyScreening()
         }
     }
 
@@ -452,17 +474,20 @@ class MainViewModel(
      * they are cleared.
      */
     private fun kickScreening(videos: List<Video>) {
-        screener?.screenAsync(viewModelScope, videos) {
-            _state.value = _state.value.copy(
-                // Verdicts can clear (or fully hold) a source — tiles follow along.
-                channels = sortByUsage(visibleSources(sources.distinctBy { it.id })),
-                keepWatching = keepWatchingRow(),
-                videos = if (_state.value.screen == Screen.Home) _state.value.videos
-                else annotated(includeFinished = includeFinishedNow()),
-                held = if (_state.value.screen == Screen.Home) _state.value.held
-                else heldByScreening()
-            )
-        }
+        screener?.screenAsync(viewModelScope, videos) { reapplyScreening() }
+    }
+
+    /** Re-filters whatever is on screen after new verdicts land (AI batch or a peer's import). */
+    private fun reapplyScreening() {
+        _state.value = _state.value.copy(
+            // Verdicts can clear (or fully hold) a source — tiles follow along.
+            channels = sortByUsage(visibleSources(sources.distinctBy { it.id })),
+            keepWatching = keepWatchingRow(),
+            videos = if (_state.value.screen == Screen.Home) _state.value.videos
+            else annotated(includeFinished = includeFinishedNow()),
+            held = if (_state.value.screen == Screen.Home) _state.value.held
+            else heldByScreening()
+        )
     }
 
     /**
@@ -838,7 +863,14 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         val f = ConfigStore(appContext).load()
                         if (f.profiles.isEmpty()) null
                         else f.deviceProfiles[PairingStore(appContext).deviceToken()]
+                            // A remembered pick can outlive its kid (deleted on
+                            // the phone, picker not used since): suffixFor would
+                            // auto-register an orphan namespace and the grant
+                            // would vanish into it. Explicit ids stay unvalidated
+                            // on purpose — a grant can arrive moments before the
+                            // config push that introduces its (new) kid.
                             ?: ActiveProfileStore(appContext).activeId()
+                                ?.takeIf { f.profile(it) != null }
                     }
                     SessionGuard(appContext, ProfileNamespace(appContext).suffixFor(target))
                         .grantExtraMinutes(minutes)
@@ -851,6 +883,16 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         // Refresh keep-watching / hearts on the TV right away.
                         ConfigEvents.onConfigChanged?.invoke()
                     }
+                },
+                verdictsProvider = {
+                    io.pickwick.app.data.ScreeningStore(appContext)
+                        .exportJson(ConfigStore(appContext).load().ai.rulesVersion)
+                },
+                verdictsMerger = { json ->
+                    val imported = io.pickwick.app.data.ScreeningStore(appContext)
+                        .importJson(json, ConfigStore(appContext).load().ai.rulesVersion)
+                    // Imported ALLOWs reveal videos this device hadn't screened yet.
+                    if (imported > 0) ConfigEvents.onConfigChanged?.invoke()
                 }
             ).also { it.start() }
         }
@@ -897,6 +939,15 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         (assignedId(family) != null && assignedId(family) != activeProfileId)
                     ) activeProfileId = resolved
                 }
+                // PlayerActivity (screen-time gate, history, channel minutes)
+                // reads the active kid from ActiveProfileStore on its own. The
+                // picker writes it, but a *dedicated* device resolves its kid
+                // right here and never shows a picker — leaving whatever stale
+                // pick the store held, so the player enforced (and recorded
+                // into) the wrong kid's namespace. Mirror every resolution.
+                LaunchedEffect(activeProfileId) {
+                    activeProfileId?.let { activeProfiles.setActive(it) }
+                }
                 // New sitting on a shared device → ask again; leaving marks the
                 // moment the room emptied so the gap measures real absence.
                 val lifecycleOwner = LocalLifecycleOwner.current
@@ -904,10 +955,14 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     val observer = LifecycleEventObserver { _, event ->
                         when (event) {
                             Lifecycle.Event.ON_START -> {
+                                // Fires on every return from the player too — only a
+                                // set break rule defines a gap that means "new
+                                // sitting". With the rule off, the who's-watching ask
+                                // happens once per launch (resolveActive) instead of
+                                // ever re-asking mid-session.
+                                val breakMin = family.limitsFor(activeProfileId).breakMinutes
                                 if (family.profiles.size >= 2 && assignedId(family) == null &&
-                                    activeProfiles.needsReask(
-                                        family.limitsFor(activeProfileId).breakMinutes
-                                    )
+                                    breakMin != null && activeProfiles.needsReask(breakMin)
                                 ) activeProfileId = null
                             }
                             Lifecycle.Event.ON_STOP ->
@@ -943,6 +998,14 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         },
                         exportWatchState = { WatchSync.exportJson(appContext) },
                         mergeWatchState = { WatchSync.mergeJson(appContext, it) },
+                        exportVerdicts = {
+                            io.pickwick.app.data.ScreeningStore(appContext)
+                                .exportJson(configStore.load().ai.rulesVersion)
+                        },
+                        mergeVerdicts = {
+                            io.pickwick.app.data.ScreeningStore(appContext)
+                                .importJson(it, configStore.load().ai.rulesVersion) > 0
+                        },
                         cacheStats = { device ->
                             LanClient.stats(device)?.let {
                                 io.pickwick.app.data.StatsCache(appContext).save(device.token, it)
@@ -1128,6 +1191,11 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         }
                         // Channel name travels with the intent for per-channel stats.
                         intent.putExtra(PlayerActivity.EXTRA_CHANNEL, item.video.channelName)
+                        // Whose stores the player must use (screen-time gate, resume
+                        // points, channel minutes) — decided here, where the kid was
+                        // resolved, so the player never re-derives it and can never
+                        // disagree with the home screen that launched it.
+                        intent.putExtra(PlayerActivity.EXTRA_PROFILE_SUFFIX, profileSuffix)
                         // Screen-time drain rate: exact from the open source; for
                         // mixed rows (Surprise, My list, Keep watching) resolved by
                         // the video's channel name, defaulting to normal speed.
