@@ -1,6 +1,7 @@
 <!-- Same mark the app's header carries (docs/logo.svg is ic_launcher.xml's
      geometry), so the repo, the site and the phone read as one product. -->
-<img src="docs/logo.svg" alt="" width="30" align="left">
+<!-- hspace, not style: GitHub strips inline CSS but keeps hspace on <img>. -->
+<img src="docs/logo.svg" alt="" width="30" align="left" hspace="10">
 
 # Pickwick
 
