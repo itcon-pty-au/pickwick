@@ -45,5 +45,12 @@ jobs:
         with:
           path: site
 
+      # The Pages backend has been seen sitting on a deployment for ~10
+      # minutes before processing it (2026-08-06). The action's default
+      # timeout is exactly 10 minutes and it *cancels* the deployment on
+      # abort, which turned a slow queue into a string of failed deploys and
+      # a stale site. 30 minutes rides out the slow path.
       - id: deployment
         uses: actions/deploy-pages@v5
+        with:
+          timeout: 1800000
