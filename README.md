@@ -1,7 +1,7 @@
 
   <p align="center">
   <picture><img src="docs/logo.svg" alt="" width="50"></picture>
-    <h1 align="center">pickwick.tv</h1>
+    <h1 align="center">Pickwick</h1>
   </p>
 <p align="center">
   <a href="https://pickwick.tv/donate.html">
