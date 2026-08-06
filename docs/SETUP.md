@@ -19,10 +19,7 @@ you flip a permission switch first.
 
 ## Part 1 — Install Pickwick on the TV
 
-There are two ways. **Way A needs no computer** and is what most families
-should do. Way B is for people comfortable with a command line.
-
-### Way A: with the free "Downloader" app (no computer)
+You'll use the free **Downloader** app — no computer needed.
 
 First, two one-time preparations — doing them now means the install later
 runs straight through without security interruptions:
@@ -58,36 +55,6 @@ Now the install itself:
 If the code ever doesn't work, the newest release is always at
 `github.com/itcon-pty-au/pickwick/releases/latest/download/pickwick.apk` —
 typing that full address in Downloader does the same thing.
-
-### Way B: with a computer (adb)
-
-<details>
-<summary>Click to expand if you prefer the command-line route</summary>
-
-1. On the TV: **Settings → System → About**, scroll to **Android TV OS
-   build** and click it **seven times** — a message says "You are now a
-   developer!"
-2. Go back to **Settings → System → Developer options** (it just appeared),
-   and turn on **USB debugging** *and* **Wireless debugging**. Note: this
-   toggle sometimes resets after a TV system update — re-enable it if the
-   TV ever stops appearing in adb.
-3. On the computer, install
-   [Android platform-tools](https://developer.android.com/tools/releases/platform-tools)
-   and download `pickwick.apk` from the
-   [latest release](https://github.com/itcon-pty-au/pickwick/releases/latest).
-4. With computer and TV on the same Wi-Fi, pair using the code shown under
-   **Wireless debugging → Pair device with pairing code**:
-
-   ```
-   adb pair <ip>:<pairing-port>
-   adb connect <ip>:<port>
-   adb install -r pickwick.apk
-   ```
-
-5. A note for later reinstalls: `adb install -r` keeps the app's data, so
-   your channels and pairing survive.
-
-</details>
 
 ---
 
