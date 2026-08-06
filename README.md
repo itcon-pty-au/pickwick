@@ -26,9 +26,8 @@ Open source (GPL-3.0), sideloaded — not distributed via app stores.
 
 YouTube Kids' filters are algorithmic and leaky; commercial whitelist apps are paid,
 closed source, and still show ads. Pickwick flips the model: an explicit allow-list,
-curated from a parent's phone, enforced on the kid's device — with the streams played
-directly (via [NewPipeExtractor](https://github.com/TeamNewPipe/NewPipeExtractor)),
-so there are never ads.
+curated from a parent's phone, enforced on the kid's device with the streams are played
+with no ads.
 
 ## What the kid sees
 
