@@ -967,6 +967,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 }
             }
         }
+        // Once-a-day silent update check; drives the dot on the settings gear.
+        lifecycleScope.launch { io.pickwick.app.data.Updater(applicationContext).autoCheck() }
         setContent {
             MaterialTheme(colorScheme = PickwickDarkColors) {
                 // The family config drives who exists and whether this device is
@@ -1774,11 +1776,22 @@ private fun HomeHeader(
             modifier = Modifier.size(48.dp),
             onClick = onOpenSettings
         ) {
-            Icon(
-                Icons.Filled.Settings,
-                contentDescription = "Settings",
-                modifier = Modifier.size(32.dp)
-            )
+            val updatePending by UpdateEvents.pending.collectAsState()
+            Box {
+                Icon(
+                    Icons.Filled.Settings,
+                    contentDescription = "Settings",
+                    modifier = Modifier.size(32.dp)
+                )
+                // Quiet "a newer build exists" nudge for the parent; settings
+                // itself stays behind the PIN, so kids tapping it learn nothing.
+                if (updatePending != null) {
+                    Box(
+                        Modifier.align(Alignment.TopEnd).size(8.dp)
+                            .background(UpdateDot, androidx.compose.foundation.shape.CircleShape)
+                    )
+                }
+            }
         }
     }
 }

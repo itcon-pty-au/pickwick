@@ -56,6 +56,9 @@ fun formatClock(totalSeconds: Long): String {
     else "%d:%02d".format(s / 60, s % 60)
 }
 
+/** The "newer build available" dot on the settings gear. */
+val UpdateDot = Color(0xFFFF5252)
+
 /** "1.5x" / "0.5x" / "FREE" — one shared spelling of a screen-time multiplier. */
 fun timeMultiplierLabel(percent: Int): String = when (percent) {
     0 -> "FREE"

@@ -10,12 +10,20 @@ import okhttp3.Request
 import org.json.JSONObject
 import java.io.File
 
+/** Live "a newer build exists" signal, for the dot on the settings gear. */
+object UpdateEvents {
+    val pending = kotlinx.coroutines.flow.MutableStateFlow<Updater.UpdateInfo?>(null)
+}
+
 /**
  * Self-update over GitHub: `version.json` in the repo names the latest build and
  * where its APK lives (a GitHub Release asset). If it's newer than this install,
  * the parent can download it and the system installer takes over.
  */
 class Updater(private val context: Context) {
+
+    private val prefs =
+        context.applicationContext.getSharedPreferences("updater", Context.MODE_PRIVATE)
 
     data class UpdateInfo(
         val versionCode: Int,
@@ -36,6 +44,17 @@ class Updater(private val context: Context) {
                 }
             val json = JSONObject(body)
             val code = json.getInt("versionCode")
+            // Remember what the manifest said whether newer or not: [pending]
+            // filters against the running build, so a cached "update available"
+            // clears itself on the first check after installing it. A failed
+            // fetch never reaches here — the cached answer survives to retry.
+            prefs.edit()
+                .putLong("last_check_at", System.currentTimeMillis())
+                .putInt("manifest_code", code)
+                .putString("manifest_name", json.optString("versionName", code.toString()))
+                .putString("manifest_url", json.optString("apkUrl"))
+                .apply()
+            UpdateEvents.pending.value = pending()
             if (code <= BuildConfig.VERSION_CODE) null
             else UpdateInfo(
                 versionCode = code,
@@ -43,6 +62,23 @@ class Updater(private val context: Context) {
                 apkUrl = json.getString("apkUrl")
             )
         }.getOrNull()
+    }
+
+    /** The cached manifest answer, if it's still newer than this install. */
+    fun pending(): UpdateInfo? {
+        val code = prefs.getInt("manifest_code", 0)
+        if (code <= BuildConfig.VERSION_CODE) return null
+        val apkUrl = prefs.getString("manifest_url", null)?.ifBlank { null } ?: return null
+        return UpdateInfo(code, prefs.getString("manifest_name", null) ?: code.toString(), apkUrl)
+    }
+
+    /**
+     * Launch-time path: at most one real fetch a day, then publish the cached
+     * answer so the settings-gear dot shows without any network at all.
+     */
+    suspend fun autoCheck() {
+        val stale = System.currentTimeMillis() - prefs.getLong("last_check_at", 0L) >= CHECK_EVERY_MS
+        if (stale) check() else UpdateEvents.pending.value = pending()
     }
 
     /** Downloads the APK, then hands it to the system installer (user confirms). */
@@ -64,5 +100,9 @@ class Updater(private val context: Context) {
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
             }
         )
+    }
+
+    private companion object {
+        const val CHECK_EVERY_MS = 24 * 60 * 60 * 1000L
     }
 }

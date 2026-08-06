@@ -286,6 +286,11 @@ private fun TvSettingsScreen(configStore: ConfigStore, pairingStore: PairingStor
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+
+        // Same section the phone settings has: checks on open and offers the
+        // Install button right here, so the TV updates without a computer.
+        Spacer(Modifier.height(20.dp))
+        UpdateSection()
     }
 }
 
@@ -2874,6 +2879,17 @@ private fun UpdateSection() {
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var update by remember { mutableStateOf<Updater.UpdateInfo?>(null) }
+
+    // Check the moment the screen opens — the parent shouldn't need to know
+    // there's a button to press to find out. Offline falls back to the cached
+    // answer from the daily launch check, so the Install offer still shows.
+    LaunchedEffect(Unit) {
+        busy = true
+        val found = updater.check() ?: updater.pending()
+        update = found
+        if (found != null) message = "Version ${found.versionName} is available"
+        busy = false
+    }
 
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(
