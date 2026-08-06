@@ -2933,7 +2933,12 @@ private fun UpdateSection(tv: Boolean = false, onUpdateFound: () -> Unit = {}) {
         )
         val pending = update
         if (pending == null) {
-            TextButton(
+            // Nothing on TV: this screen already re-checks every time it opens,
+            // so a manual button there can never report anything the screen
+            // isn't about to say on its own — it would just be a dead control
+            // the D-pad can't reach. The phone keeps it: that form is long and
+            // a parent may want to force a check without reopening settings.
+            if (!tv) TextButton(
                 modifier = Modifier.tvFocusHighlight(),
                 enabled = !busy,
                 onClick = {
