@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.focusable
@@ -290,7 +291,7 @@ private fun TvSettingsScreen(configStore: ConfigStore, pairingStore: PairingStor
         // Same section the phone settings has: checks on open and offers the
         // Install button right here, so the TV updates without a computer.
         Spacer(Modifier.height(20.dp))
-        UpdateSection()
+        UpdateSection(tv = true)
     }
 }
 
@@ -444,10 +445,36 @@ private fun AdminScreen(
         }
     }
 
+    // The update offer lives at the very bottom of a long form, so a parent who
+    // came here because of the gear dot would have to scroll past every section
+    // to find it. Only scroll when there is actually something to install —
+    // otherwise opening settings would dump everyone at the bottom.
+    val formScroll = rememberScrollState()
+    var scrolledToUpdate by remember { mutableStateOf(false) }
+    fun revealUpdate() {
+        if (scrolledToUpdate) return
+        scrolledToUpdate = true
+        scope.launch {
+            // Wait for the form's height to stop changing before moving. Channel
+            // names resolve in async, which regrows rows underneath us; animating
+            // to a maxValue that is still climbing lands short and then jumps.
+            var previous = -1
+            while (true) {
+                val extent = formScroll.maxValue
+                if (extent > 0 && extent != Int.MAX_VALUE && extent == previous) break
+                previous = extent
+                delay(150)
+            }
+            // Positioned, not animated: a scroll the parent didn't ask for reads
+            // as the screen moving on its own. Landing there is calmer.
+            formScroll.scrollTo(formScroll.maxValue)
+        }
+    }
+
     Column(
         Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(formScroll)
             .padding(24.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -641,7 +668,7 @@ private fun AdminScreen(
         }
 
         SectionTitle("App")
-        UpdateSection()
+        UpdateSection(onUpdateFound = ::revealUpdate)
 
         Spacer(Modifier.height(24.dp))
     }
@@ -2872,7 +2899,7 @@ private fun PhoneDevicesSection(
 // --- App / updates ----------------------------------------------------------
 
 @Composable
-private fun UpdateSection() {
+private fun UpdateSection(tv: Boolean = false, onUpdateFound: () -> Unit = {}) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val updater = remember { Updater(context.applicationContext) }
     val scope = rememberCoroutineScope()
@@ -2887,7 +2914,13 @@ private fun UpdateSection() {
         busy = true
         val found = updater.check() ?: updater.pending()
         update = found
-        if (found != null) message = "Version ${found.versionName} is available"
+        if (found != null) {
+            // On TV the button itself names the version, so the status line is
+            // free to carry the thing a remote user actually needs told.
+            message = if (tv) "Press OK on the remote to install"
+            else "Version ${found.versionName} is available"
+            onUpdateFound()
+        }
         busy = false
     }
 
@@ -2909,16 +2942,51 @@ private fun UpdateSection() {
                         message = "Checking…"
                         val found = updater.check()
                         update = found
-                        message = if (found != null) "Version ${found.versionName} is available"
-                        else "You're up to date"
+                        message = when {
+                            found == null -> "You're up to date"
+                            tv -> "Press OK on the remote to install"
+                            else -> "Version ${found.versionName} is available"
+                        }
                         busy = false
                     }
                 }
             ) { Text(if (busy) "Checking…" else "Check for updates") }
         } else {
+            // The rest of the TV settings screen is static text and a QR image,
+            // so this button is the only focusable thing on it — without an
+            // explicit request nothing holds focus and the D-pad does nothing.
+            // Retried because the node isn't placed on the first composition.
+            val installFocus = remember { FocusRequester() }
+            // Re-requested when [busy] clears: disabling the button during a
+            // download drops focus, and with nothing else focusable a failed
+            // attempt would leave the remote dead with no way to retry.
+            LaunchedEffect(tv, pending.versionCode, busy) {
+                if (!tv || busy) return@LaunchedEffect
+                repeat(10) {
+                    if (runCatching { installFocus.requestFocus() }.isSuccess) return@LaunchedEffect
+                    delay(100)
+                }
+            }
+            // The shared 1.04 focus scale vanishes against a solid fill, and this
+            // button arrives already focused — with nothing else on screen to
+            // move focus between, a parent can't tell it's live. A ring makes the
+            // selection legible from the couch; the hint line below names the key.
+            var focused by remember { mutableStateOf(false) }
+            // Same red as the settings-gear dot, so the nudge that got the
+            // parent here and the button that resolves it read as one thing.
             Button(
-                modifier = Modifier.tvFocusHighlight(),
+                modifier = Modifier
+                    .focusRequester(installFocus)
+                    .tvFocusHighlight { focused = it }
+                    .then(
+                        if (tv && focused) Modifier.border(3.dp, Color.White, CircleShape)
+                        else Modifier
+                    ),
                 enabled = !busy,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = UpdateDot,
+                    contentColor = Color.White
+                ),
                 onClick = {
                     scope.launch {
                         busy = true
@@ -2929,7 +2997,17 @@ private fun UpdateSection() {
                         busy = false
                     }
                 }
-            ) { Text(if (busy) "Downloading…" else "Install ${pending.versionName}") }
+            ) {
+                // The TV has no comfortable place for a separate status line to
+                // be read from ten feet, so the button states the version itself.
+                Text(
+                    when {
+                        busy -> "Downloading…"
+                        tv -> "Version ${pending.versionName} available"
+                        else -> "Install ${pending.versionName}"
+                    }
+                )
+            }
         }
     }
     message?.let {
