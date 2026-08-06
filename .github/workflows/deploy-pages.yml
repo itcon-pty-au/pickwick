@@ -1,4 +1,4 @@
-# Publishes docs/ to pickwick.tv.
+# Publishes site/ to pickwick.tv.
 #
 # This replaces GitHub's built-in "legacy" Pages builder, which fired on every
 # push to main — a Kotlin-only commit rebuilt the site for nothing, and five
@@ -11,7 +11,11 @@ on:
   push:
     branches: [main]
     paths:
-      - "docs/**"
+      - "site/**"
+      # Channel-directory data is served live from the repo via raw CDN (see
+      # directory.html), so a merged suggestion needn't rebuild the whole site.
+      # A push that also touches real site files still deploys normally.
+      - "!site/directory/**"
       - ".github/workflows/deploy-pages.yml"
   workflow_dispatch:
 
@@ -35,11 +39,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # docs/ is served verbatim — CNAME and .nojekyll ride along in the
+      # site/ is served verbatim — CNAME and .nojekyll ride along in the
       # artifact. No Jekyll step, so nothing rewrites the hand-written HTML.
       - uses: actions/upload-pages-artifact@v5
         with:
-          path: docs
+          path: site
 
       - id: deployment
         uses: actions/deploy-pages@v5

@@ -1,14 +1,14 @@
 /**
  * Pickwick channel-suggestion receiver — a stateless mail-slot, not a backend.
  *
- * POST { url, ages[], topics[], note, website, turnstile } from docs/suggest.html.
+ * POST { url, ages[], topics[], note, website, turnstile } from site/suggest.html.
  * Gates, in cost order (everything before the PR is free):
  *   1. honeypot ("website" filled → pretend success, tell the bot nothing)
  *   2. Turnstile verification
  *   3. URL shape + channel/playlist existence on YouTube
  *   4. dedup against the published directory and open submission PRs
  *   5. open-queue cap (bill protection for the AI screening Action)
- * Survivors become a PR against docs/directory/en.json; the AI screening
+ * Survivors become a PR against site/directory/en.json; the AI screening
  * workflow comments a verdict and a human merges. This worker never writes
  * to main directly.
  *
@@ -123,7 +123,7 @@ async function verifyTurnstile(token, request, env) {
  * /channel/UC…, /user/name, /c/name, playlist?list=…. Deliberately lenient —
  * parents paste whatever YouTube's Share button gave them (missing scheme,
  * m. host, trailing /videos tab, watch?v=…&list=… share links). Mirrors
- * parseYouTubeLink in docs/suggest.html; keep the two in sync.
+ * parseYouTubeLink in site/suggest.html; keep the two in sync.
  */
 function parseSuggestionUrl(raw) {
   raw = raw.trim();

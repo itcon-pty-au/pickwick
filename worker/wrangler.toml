@@ -9,6 +9,6 @@ compatibility_date = "2026-08-01"
 
 [vars]
 GITHUB_REPO = "itcon-pty-au/pickwick"
-DIRECTORY_PATH = "docs/directory/en.json"
+DIRECTORY_PATH = "site/directory/en.json"
 ALLOWED_ORIGINS = "https://pickwick.tv,https://www.pickwick.tv"
 MAX_OPEN_SUBMISSIONS = "25"

@@ -1,6 +1,6 @@
 
   <p align="center">
-  <picture><img src="docs/logo.svg" alt="" width="50"></picture>
+  <picture><img src="site/logo.svg" alt="" width="50"></picture>
     <h1 align="center">Pickwick</h1>
   </p>
 <p align="center">

@@ -347,8 +347,14 @@
     render();
   });
 
-  fetch('directory/en.json')
+  // Read the directory straight from the repo via GitHub's raw CDN rather than
+  // this deployed copy, so a merged channel suggestion shows up within ~5 min
+  // (raw's cache) with no Pages rebuild — deploy-pages.yml skips
+  // site/directory/** for exactly this reason. Falls back to the bundled copy.
+  var LIVE_DIR = 'https://raw.githubusercontent.com/itcon-pty-au/pickwick/main/site/directory/en.json';
+  fetch(LIVE_DIR)
     .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .catch(function () { return fetch('directory/en.json').then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); }); })
     .then(function (data) {
       state.entries = data.entries || [];
       buildFilters();

@@ -1,8 +1,8 @@
 # Suggestion Worker — deploy guide
 
-The receiving end of `docs/suggest.html`. A stateless Cloudflare Worker: it
+The receiving end of `site/suggest.html`. A stateless Cloudflare Worker: it
 gate-checks each suggestion (honeypot → Turnstile → channel exists → not a
-duplicate → queue not full) and opens a PR against `docs/directory/en.json`.
+duplicate → queue not full) and opens a PR against `site/directory/en.json`.
 Merging that PR is what publishes; the Worker never touches `main`.
 
 ## One-time setup (~15 minutes)
@@ -33,7 +33,7 @@ Merging that PR is what publishes; the Worker never touches `main`.
    `deploy` prints the worker URL, e.g.
    `https://pickwick-suggest.<your-subdomain>.workers.dev`.
 
-5. **Connect the form**: in `docs/suggest.html`, fill in the two constants at
+5. **Connect the form**: in `site/suggest.html`, fill in the two constants at
    the top of the script block —
 
    ```js
