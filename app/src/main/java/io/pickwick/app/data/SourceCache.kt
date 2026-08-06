@@ -33,7 +33,7 @@ class SourceCache(context: Context) {
     fun save(sources: List<Source>) {
         val text = sources.joinToString("\n") { s ->
             listOf(
-                s.id, s.kind.name, s.name.replace('\t', ' '), s.avatarUrl.orEmpty(), s.url,
+                s.id, s.kind.name, s.name.tsvCell(), s.avatarUrl.orEmpty(), s.url,
                 s.timeMultiplierPercent.toString()
             ).joinToString("\t")
         }

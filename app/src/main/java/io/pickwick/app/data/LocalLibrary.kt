@@ -398,8 +398,8 @@ class LocalLibrary(private val context: Context) {
             index.writeText(items.joinToString("\n") { it ->
                 listOf(
                     it.video.url,
-                    it.video.title.replace('\t', ' ').replace('\n', ' '),
-                    it.video.channelName.replace('\t', ' ').replace('\n', ' '),
+                    it.video.title.tsvCell(),
+                    it.video.channelName.tsvCell(),
                     it.video.thumbnailUrl.orEmpty(),
                     it.video.durationSeconds.toString(),
                     it.docUri,
@@ -428,7 +428,7 @@ class LocalLibrary(private val context: Context) {
     private fun saveTrees(trees: List<Tree>) {
         runCatching {
             treesFile.writeText(trees.joinToString("\n") {
-                "${it.uri}\t${it.name.replace('\t', ' ').replace('\n', ' ')}\t" +
+                "${it.uri}\t${it.name.tsvCell()}\t" +
                     it.profileIds.joinToString(",")
             })
         }

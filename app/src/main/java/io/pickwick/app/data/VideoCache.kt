@@ -37,8 +37,8 @@ class VideoCache(context: Context) {
                 videos.joinToString("\n") { v ->
                     listOf(
                         v.url,
-                        v.title.replace('\t', ' ').replace('\n', ' '),
-                        v.channelName.replace('\t', ' '),
+                        v.title.tsvCell(),
+                        v.channelName.tsvCell(),
                         v.thumbnailUrl.orEmpty(),
                         v.durationSeconds.toString()
                     ).joinToString("\t")

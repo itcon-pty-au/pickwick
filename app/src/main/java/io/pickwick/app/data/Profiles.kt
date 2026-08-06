@@ -103,14 +103,19 @@ class ProfileNamespace(context: Context) {
         prefs.edit().putString("map", JSONObject(map as Map<String, String>).toString()).apply()
     }
 
-    /** Suffix for a profile ("" = legacy stores). Null/unknown ids fall back to legacy. */
+    /** Suffix for a profile ("" = legacy stores). Null falls back to legacy. */
     @Synchronized
     fun suffixFor(profileId: String?): String {
         profileId ?: return ""
-        return load()[profileId] ?: run {
-            register(listOf(profileId))
-            load()[profileId] ?: "_$profileId"
-        }
+        val map = load()
+        map[profileId]?.let { return it }
+        // An id that arrives ahead of any config registration (a peer's
+        // watch-state push can beat the config push to a fresh device) gets a
+        // real suffix, never the legacy "" — only a config load may decide who
+        // inherits the pre-profile stores.
+        map[profileId] = "_$profileId"
+        prefs.edit().putString("map", JSONObject(map as Map<String, String>).toString()).apply()
+        return "_$profileId"
     }
 
     private fun load(): MutableMap<String, String> = runCatching {

@@ -42,6 +42,14 @@ object Http {
         private const val SYSTEM_DNS_BUDGET_S = 2L
         private const val DOH_PREFERRED_MS = 5 * 60 * 1000L
 
+        /**
+         * googlevideo stream hosts are effectively unique per video
+         * (rr3---sn-….googlevideo.com), so without a cap a TV that stays up for
+         * weeks accumulates hostnames forever. Entries expire on read but were
+         * never removed.
+         */
+        private const val MAX_CACHE_ENTRIES = 256
+
         private val cache = ConcurrentHashMap<String, Pair<Long, List<InetAddress>>>()
         private val executor = Executors.newCachedThreadPool { r ->
             Thread(r, "Pickwick-dns").apply { isDaemon = true }
@@ -70,6 +78,12 @@ object Http {
                 println("Pickwick: IPv6-only DNS answer for $hostname — fetching IPv4 via DoH")
                 runCatching { doh.lookup(hostname).filter { it is java.net.Inet4Address } }
                     .getOrNull()?.takeIf { it.isNotEmpty() } ?: addrs
+            }
+            if (cache.size >= MAX_CACHE_ENTRIES) {
+                cache.entries.removeIf { now - it.value.first >= CACHE_TTL_MS }
+                // All still fresh (a burst of unique hosts): dropping everything
+                // costs one extra lookup each, versus growing without bound.
+                if (cache.size >= MAX_CACHE_ENTRIES) cache.clear()
             }
             cache[hostname] = now to sorted
             return sorted

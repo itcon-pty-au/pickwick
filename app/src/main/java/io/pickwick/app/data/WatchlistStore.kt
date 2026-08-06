@@ -15,7 +15,7 @@ class WatchlistStore(context: Context, profileSuffix: String = "") {
     private val file = File(context.filesDir, "watchlist$profileSuffix.tsv")
     private val removedFile = File(context.filesDir, "watchlist_removed$profileSuffix.tsv")
 
-    fun loadEntries(): List<Entry> {
+    fun loadEntries(): List<Entry> = synchronized(LOCK) {
         if (!file.exists()) return emptyList()
         return runCatching {
             file.readLines().mapNotNull { line ->
@@ -35,7 +35,7 @@ class WatchlistStore(context: Context, profileSuffix: String = "") {
     fun urls(): Set<String> = loadEntries().map { it.video.url }.toSet()
 
     /** url → when it was removed (tombstones for merge). */
-    fun removedMap(): Map<String, Long> {
+    fun removedMap(): Map<String, Long> = synchronized(LOCK) {
         if (!removedFile.exists()) return emptyMap()
         return runCatching {
             removedFile.readLines().mapNotNull { line ->
@@ -45,7 +45,7 @@ class WatchlistStore(context: Context, profileSuffix: String = "") {
         }.getOrDefault(emptyMap())
     }
 
-    fun add(video: Video) {
+    fun add(video: Video) = synchronized(LOCK) {
         saveEntries(
             listOf(Entry(video, System.currentTimeMillis())) +
                 loadEntries().filter { it.video.url != video.url }
@@ -53,27 +53,28 @@ class WatchlistStore(context: Context, profileSuffix: String = "") {
         saveRemoved(removedMap() - video.url)
     }
 
-    fun remove(videoUrl: String) {
+    fun remove(videoUrl: String) = synchronized(LOCK) {
         saveEntries(loadEntries().filter { it.video.url != videoUrl })
         saveRemoved(removedMap() + (videoUrl to System.currentTimeMillis()))
     }
 
     /** Merge another device's list: per video, the latest add/remove event wins. */
-    fun merge(incoming: List<Entry>, incomingRemoved: Map<String, Long>) {
+    fun merge(incoming: List<Entry>, incomingRemoved: Map<String, Long>) = synchronized(LOCK) {
         val localEntries = loadEntries().associateBy { it.video.url }
+        val incomingByUrl = HashMap<String, Entry>(incoming.size)
+        incoming.forEach { incomingByUrl.putIfAbsent(it.video.url, it) }
         val localRemoved = removedMap()
         val allUrls = localEntries.keys + localRemoved.keys +
-            incoming.map { it.video.url } + incomingRemoved.keys
+            incomingByUrl.keys + incomingRemoved.keys
 
         val mergedEntries = mutableListOf<Entry>()
         val mergedRemoved = mutableMapOf<String, Long>()
         allUrls.forEach { url ->
             val addTs = maxOf(localEntries[url]?.addedAt ?: 0L,
-                incoming.firstOrNull { it.video.url == url }?.addedAt ?: 0L)
+                incomingByUrl[url]?.addedAt ?: 0L)
             val remTs = maxOf(localRemoved[url] ?: 0L, incomingRemoved[url] ?: 0L)
             if (addTs > remTs && addTs > 0) {
-                val video = localEntries[url]?.video
-                    ?: incoming.first { it.video.url == url }.video
+                val video = localEntries[url]?.video ?: incomingByUrl.getValue(url).video
                 mergedEntries += Entry(video, addTs)
             } else if (remTs > 0) {
                 mergedRemoved[url] = remTs
@@ -88,8 +89,8 @@ class WatchlistStore(context: Context, profileSuffix: String = "") {
             file.writeText(entries.take(200).joinToString("\n") { e ->
                 listOf(
                     e.video.url,
-                    e.video.title.replace('\t', ' ').replace('\n', ' '),
-                    e.video.channelName.replace('\t', ' '),
+                    e.video.title.tsvCell(),
+                    e.video.channelName.tsvCell(),
                     e.video.thumbnailUrl.orEmpty(),
                     e.video.durationSeconds.toString(),
                     e.addedAt.toString()
@@ -105,5 +106,11 @@ class WatchlistStore(context: Context, profileSuffix: String = "") {
                     .joinToString("\n") { "${it.key}\t${it.value}" }
             )
         }
+    }
+
+    companion object {
+        /** Written from the UI (kid taps) and LAN sync workers over one file —
+         *  an unsynchronized read-modify-write would drop one of the two. */
+        private val LOCK = Any()
     }
 }

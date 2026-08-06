@@ -199,13 +199,13 @@ class DownloadStore(context: Context) {
             index.writeText(entries.joinToString("\n") { e ->
                 listOf(
                     e.video.url,
-                    e.video.title.replace('\t', ' ').replace('\n', ' '),
-                    e.video.channelName.replace('\t', ' '),
+                    e.video.title.tsvCell(),
+                    e.video.channelName.tsvCell(),
                     e.video.thumbnailUrl.orEmpty(),
                     e.video.durationSeconds.toString(),
                     e.status.name,
                     e.requestedAt.toString(),
-                    e.error.orEmpty().replace('\t', ' ').replace('\n', ' ')
+                    e.error.orEmpty().tsvCell()
                 ).joinToString("\t")
             })
         }
