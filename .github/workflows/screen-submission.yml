@@ -115,11 +115,20 @@ jobs:
               }}}
             }')
 
-            resp=$(curl -s --max-time 300 https://api.anthropic.com/v1/messages \
-              -H "Content-Type: application/json" \
-              -H "x-api-key: $ANTHROPIC_API_KEY" \
-              -H "anthropic-version: 2023-06-01" \
-              -d "$body")
+            # 529 Overloaded / 5xx are transient and worth a couple of retries —
+            # curl's --retry list doesn't include 529, so do it by hand.
+            for attempt in 1 2 3; do
+              resp=$(curl -s --max-time 300 https://api.anthropic.com/v1/messages \
+                -H "Content-Type: application/json" \
+                -H "x-api-key: $ANTHROPIC_API_KEY" \
+                -H "anthropic-version: 2023-06-01" \
+                -d "$body")
+              errtype=$(jq -r '.error.type // empty' <<< "$resp")
+              case "$errtype" in
+                overloaded_error|api_error) sleep $((attempt * 20)) ;;
+                *) break ;;
+              esac
+            done
 
             echo "### [$name]($url)" >> comment.md
             stop=$(jq -r '.stop_reason // empty' <<< "$resp")
