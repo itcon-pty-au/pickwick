@@ -14,7 +14,9 @@ performance requirement, not a preference.
 gradlew assembleRelease
 ```
 
-APK lands at `app/build/outputs/apk/release/app-release.apk`. The release type
+APK lands at `app/build/outputs/apk/release/pickwick.apk` (renamed in Gradle;
+keep the asset name constant so `releases/latest/download/pickwick.apk` — the
+Downloader-code URL — never goes stale). The release type
 is signed with the **debug key** on purpose (`app/build.gradle.kts`), so it
 side-loads and upgrades over previous installs with no keystore setup.
 

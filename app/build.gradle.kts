@@ -54,6 +54,18 @@ android {
     packaging {
         resources.excludes += "META-INF/{AL2.0,LGPL2.1}"
     }
+
+    // Parents see this filename in download bars and release assets. Kept
+    // constant (no version suffix) so releases/latest/download/pickwick.apk
+    // never goes stale — the version lives in the release tag.
+    applicationVariants.all {
+        if (buildType.name == "release") {
+            outputs.all {
+                (this as com.android.build.gradle.internal.api.BaseVariantOutputImpl)
+                    .outputFileName = "pickwick.apk"
+            }
+        }
+    }
 }
 
 dependencies {
