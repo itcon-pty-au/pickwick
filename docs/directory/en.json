@@ -565,6 +565,20 @@
       ],
       "note": "Picture books read by actors",
       "added": "2026-08-06"
+    },
+    {
+      "url": "https://www.youtube.com/@Numberblocks",
+      "name": "Numberblocks",
+      "kind": "channel",
+      "ages": [
+        "2-4",
+        "5-7"
+      ],
+      "topics": [
+        "Math"
+      ],
+      "note": "Visually learn math",
+      "added": "2026-08-06"
     }
   ]
 }
