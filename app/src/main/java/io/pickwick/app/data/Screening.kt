@@ -16,7 +16,9 @@ import java.io.File
  * every launch. Title/channel/thumb are stored so stats can show what was blocked
  * even after the feed cache moves on.
  */
-class ScreeningStore(context: Context) {
+class ScreeningStore(private val file: File) {
+
+    constructor(context: Context) : this(File(context.filesDir, "screening.json"))
 
     data class Entry(
         /** Strictest across kids — profile-unaware readers stay fail-closed. */
@@ -34,25 +36,21 @@ class ScreeningStore(context: Context) {
             profileId?.let { perProfile[it] } ?: verdict
     }
 
-    private val file = File(context.filesDir, "screening.json")
-    private var cache: MutableMap<String, Entry>? = null
-
-    /** (lastModified, length) of the file the cache was built from — see [all]. */
-    private var loadedFrom: Pair<Long, Long> = 0L to 0L
-
-    private fun signature() = file.lastModified() to file.length()
+    private fun signature() = Triple(file.path, file.lastModified(), file.length())
 
     /**
      * More than one instance of this store is alive at a time (the feed's screener
-     * writes; the parent's review queue reads), so a cache pinned at construction
-     * serves a snapshot that ages out — the review queue used to reveal verdicts a
-     * batch at a time, one batch per reopen. Re-read whenever the file has moved
-     * on. Length is checked alongside mtime because filesystem timestamps are only
-     * second-granular, and a screening batch lands well inside one second.
+     * writes; the parent's review queue reads; the LAN server imports peer
+     * verdicts), which is why the parsed map lives in the companion, not the
+     * instance: a per-instance cache went stale after another instance wrote, and
+     * rebuilding it re-parsed ~5000 entries of JSON on the main thread during feed
+     * filtering. The signature check remains as cheap insurance against a write
+     * that somehow bypassed [LOCK]. Length is checked alongside mtime because
+     * filesystem timestamps are only second-granular, and a screening batch lands
+     * well inside one second. Callers must hold [LOCK].
      */
-    @Synchronized
     private fun all(): MutableMap<String, Entry> {
-        cache?.let { if (signature() == loadedFrom) return it }
+        cache?.let { if (signature() == cacheKey) return it }
         val map = mutableMapOf<String, Entry>()
         runCatching {
             if (file.exists()) {
@@ -61,7 +59,7 @@ class ScreeningStore(context: Context) {
             }
         }
         cache = map
-        loadedFrom = signature()
+        cacheKey = signature()
         return map
     }
 
@@ -101,45 +99,44 @@ class ScreeningStore(context: Context) {
             }
         }
 
-    @Synchronized
-    fun get(videoId: String): Entry? = all()[videoId]
+    fun get(videoId: String): Entry? = synchronized(LOCK) { all()[videoId] }
 
-    @Synchronized
     fun putAll(entries: Map<String, Entry>) {
-        val map = all()
-        map.putAll(entries)
-        // Cap the file: keep the newest verdicts, drop ancient ones (they'd
-        // simply be re-screened if that video ever resurfaces).
-        if (map.size > 5000) {
-            val keep = map.entries.sortedByDescending { it.value.at }.take(4000)
-            map.clear()
-            keep.forEach { map[it.key] = it.value }
+        synchronized(LOCK) {
+            val map = all()
+            map.putAll(entries)
+            // Cap the file: keep the newest verdicts, drop ancient ones (they'd
+            // simply be re-screened if that video ever resurfaces).
+            if (map.size > 5000) {
+                val keep = map.entries.sortedByDescending { it.value.at }.take(4000)
+                map.clear()
+                keep.forEach { map[it.key] = it.value }
+            }
+            persist(map)
         }
-        persist(map)
     }
 
     /** Blocked/review verdicts for the current rules, newest first — the stats feed. */
-    @Synchronized
-    fun flagged(rulesVersion: Int): List<Pair<String, Entry>> =
+    fun flagged(rulesVersion: Int): List<Pair<String, Entry>> = synchronized(LOCK) {
         all().entries
             .filter { it.value.rulesVersion == rulesVersion && it.value.verdict != AiScreener.Verdict.ALLOW }
             .sortedByDescending { it.value.at }
             .map { it.key to it.value }
+    }
 
-    @Synchronized
-    fun screenedCount(rulesVersion: Int): Int =
+    fun screenedCount(rulesVersion: Int): Int = synchronized(LOCK) {
         all().values.count { it.rulesVersion == rulesVersion }
+    }
 
     /**
      * This device's verdicts under [rulesVersion], serialized for LAN verdict-
      * sharing: each video is billed to the AI once per rules version, by
      * whichever device sees it first — peers import the verdict instead.
      */
-    @Synchronized
-    fun exportJson(rulesVersion: Int): String {
+    fun exportJson(rulesVersion: Int): String = synchronized(LOCK) {
         val root = JSONObject()
         all().forEach { (id, e) -> if (e.rulesVersion == rulesVersion) root.put(id, entryJson(e)) }
-        return root.toString()
+        root.toString()
     }
 
     /**
@@ -149,30 +146,61 @@ class ScreeningStore(context: Context) {
      * pull-then-push exchange from ping-ponging entries between devices.
      * Returns how many were new.
      */
-    @Synchronized
     fun importJson(json: String, rulesVersion: Int): Int {
         val incoming = runCatching { JSONObject(json) }.getOrNull() ?: return 0
-        val existing = all()
-        val fresh = mutableMapOf<String, Entry>()
-        incoming.keys().forEach { id ->
-            val e = runCatching { parseEntry(incoming.getJSONObject(id)) }.getOrNull()
-                ?: return@forEach
-            if (e.rulesVersion == rulesVersion && existing[id]?.rulesVersion != rulesVersion) {
-                fresh[id] = e
+        // The existing-check and the merge must sit under one lock acquisition:
+        // the LAN server calls this from its own thread while the feed screener
+        // is writing, and a gap between them re-creates the lost-update race.
+        synchronized(LOCK) {
+            val existing = all()
+            val fresh = mutableMapOf<String, Entry>()
+            incoming.keys().forEach { id ->
+                val e = runCatching { parseEntry(incoming.getJSONObject(id)) }.getOrNull()
+                    ?: return@forEach
+                if (e.rulesVersion == rulesVersion && existing[id]?.rulesVersion != rulesVersion) {
+                    fresh[id] = e
+                }
             }
+            if (fresh.isNotEmpty()) putAll(fresh)
+            return fresh.size
         }
-        if (fresh.isNotEmpty()) putAll(fresh)
-        return fresh.size
     }
 
+    /** Callers must hold [LOCK]. */
     private fun persist(map: Map<String, Entry>) {
         runCatching {
             val root = JSONObject()
             map.forEach { (id, e) -> root.put(id, entryJson(e)) }
-            file.writeText(root.toString())
+            // Sibling temp file, then rename into place: a crash or power cut
+            // mid-write must never truncate this file. all() swallows parse
+            // failures, so a torn write wouldn't surface as an error — the whole
+            // catalog would silently re-screen, re-billing the AI provider.
+            val tmp = File(file.parentFile, file.name + ".tmp")
+            tmp.writeText(root.toString())
+            if (!tmp.renameTo(file)) {
+                // Android's rename replaces the target atomically; Windows (JVM
+                // tests) refuses to, so fall back to delete-then-rename there.
+                file.delete()
+                tmp.renameTo(file)
+            }
             // Our own write must not read as someone else's to the next all().
-            loadedFrom = signature()
+            cacheKey = signature()
         }
+    }
+
+    companion object {
+        /**
+         * The store is constructed in several places (feed screener, review
+         * queue, stats, LAN import) over one file, so per-instance locking
+         * (@Synchronized) never protected anything: two instances could
+         * interleave read-modify-write and the last writer dropped the other's
+         * paid verdicts. Same pattern as [DownloadStore] and [LocalLibrary].
+         */
+        private val LOCK = Any()
+
+        /** Parsed map + source signature, shared across instances — see [all]. */
+        private var cache: MutableMap<String, Entry>? = null
+        private var cacheKey: Triple<String, Long, Long>? = null
     }
 }
 
