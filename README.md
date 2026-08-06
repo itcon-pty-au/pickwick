@@ -1,9 +1,12 @@
 <!-- Same mark the app's header carries (docs/logo.svg is ic_launcher.xml's
      geometry), so the repo, the site and the phone read as one product. -->
-<!-- hspace, not style: GitHub strips inline CSS but keeps hspace on <img>. -->
-<img src="docs/logo.svg" alt="" width="30" align="left" hspace="10">
-
-# Pickwick
+<!-- Logo nested in the <h1>: on GitHub a bare <img> before a "# " heading
+     renders as its own block above the title, not beside it. hspace (not
+     CSS) sets the gap — GitHub strips inline style but keeps the attribute. -->
+<h1>
+  <img src="docs/logo.svg" alt="" width="30" align="left" hspace="10">
+  Pickwick
+</h1>
 
 <p align="center">
   <a href="https://pickwick.tv/donate.html">
