@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Screenshots — Pickwick</title>
+<meta name="description" content="See Pickwick in action — the kid's calm home screen on Google TV, and the parent's phone that curates channels, screen time and AI screening. No ads, no Shorts, no cloud.">
+<style>
+  :root {
+    /* Pickwick brand teals — see app Theme.kt (#00695C logo, #4DB6AC primary) */
+    --bg: #eef6f4;
+    --card: #ffffff;
+    --text: #12211e;
+    --muted: #5c7370;
+    --accent: #00897b;
+    --accent-dark: #00695c;
+    --accent-text: #ffffff;
+    --pill-bg: #e2efec;
+    --shadow: 0 8px 30px rgba(0, 80, 68, .14);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1a18;
+      --card: #1b2825;
+      --text: #cce8e3;
+      --muted: #8fa8a3;
+      --accent: #4db6ac;
+      --accent-dark: #26a69a;
+      --accent-text: #00352f;
+      --pill-bg: #24342f;
+      --shadow: 0 8px 30px rgba(0, 0, 0, .45);
+    }
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.6;
+  }
+  /* Wider than index's 880px column so a two-up row of 16:9 TV shots has room;
+     the tagline keeps its own narrow max-width so prose still reads well. */
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 24px; }
+
+  header.wrap { text-align: center; padding: 64px 24px 32px; }
+  .logo {
+    width: 72px; height: 72px;
+    margin: 0 auto 18px;
+    border-radius: 18px;
+    background: #00695c;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 14px rgba(0, 80, 68, .3);
+  }
+  .logo svg { width: 32px; height: 32px; margin-left: 4px; }
+  h1 { font-size: 40px; letter-spacing: -1px; }
+  .tagline {
+    font-size: 19px;
+    color: var(--muted);
+    max-width: 560px;
+    margin: 10px auto 22px;
+  }
+  .tagline strong { color: var(--text); }
+
+  .cta { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; }
+  .btn {
+    display: inline-block;
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 16px;
+    padding: 13px 26px;
+    border-radius: 12px;
+    transition: background .15s ease, transform .1s ease;
+  }
+  .btn:active { transform: scale(.97); }
+  .btn-primary { background: var(--accent); color: var(--accent-text); }
+  .btn-primary:hover { background: var(--accent-dark); }
+  .btn-ghost { background: var(--pill-bg); color: var(--text); }
+  .btn-ghost:hover { background: var(--accent); color: var(--accent-text); }
+
+  .shots {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 22px;
+    margin: 34px 0 10px;
+  }
+  @media (max-width: 720px) { .shots { grid-template-columns: 1fr; } }
+  figure.shot {
+    margin: 0;
+    background: var(--card);
+    border-radius: 18px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  figure.shot img {
+    display: block;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 16 / 9;
+    background: #000; /* letterbox while the shot loads, matches the TV frame */
+  }
+  figure.shot figcaption { padding: 15px 18px 18px; }
+  figure.shot h3 { font-size: 17px; margin-bottom: 3px; }
+  figure.shot p { color: var(--muted); font-size: 14px; margin: 0; }
+
+  /* Section bands split the kid's TV shots from the parent's phone shots. */
+  h2.section { font-size: 25px; letter-spacing: -.5px; margin: 52px 0 0; }
+  h2.section:first-of-type { margin-top: 8px; }
+  p.section-sub { color: var(--muted); max-width: 640px; margin: 6px 0 0; }
+
+  /* Portrait phone shots: a tighter multi-column grid so tall frames stay small. */
+  .phones {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 20px;
+    margin: 24px 0 10px;
+  }
+  @media (max-width: 900px) { .phones { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 560px) { .phones { grid-template-columns: repeat(2, 1fr); } }
+  figure.phone {
+    margin: 0;
+    background: var(--card);
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  figure.phone img {
+    display: block;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1152 / 2496;
+    background: #000;
+  }
+  figure.phone figcaption { padding: 12px 14px 15px; }
+  figure.phone h3 { font-size: 15px; margin-bottom: 3px; }
+  figure.phone p { color: var(--muted); font-size: 13px; margin: 0; }
+
+  footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px;
+    padding: 34px 24px 50px;
+    line-height: 1.7;
+  }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+
+<header class="wrap">
+  <a href="./" style="text-decoration:none"><div class="logo" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="#ffffff"><path d="M6 3.5v17l14-8.5z"/></svg>
+  </div></a>
+  <h1>Screenshots</h1>
+  <p class="tagline">
+    Two sides of Pickwick — <strong>the kid's calm, ten-foot home on the TV, and
+    the parent's phone that quietly runs it.</strong> No ads, no Shorts, no recommendations.
+  </p>
+  <div class="cta">
+    <a class="btn btn-primary" href="https://github.com/itcon-pty-au/pickwick/releases">Download</a>
+    <a class="btn btn-ghost" href="./">🏠 Pickwick home</a>
+    <a class="btn btn-ghost" href="directory.html">📺 Channel directory</a>
+  </div>
+</header>
+
+<main class="wrap">
+  <h2 class="section">On the TV — what the kid sees</h2>
+  <p class="section-sub">A calm, D-pad-friendly home on Google&nbsp;TV, built from only the channels you chose.</p>
+  <div class="shots">
+    <figure class="shot">
+      <img src="screenshots/home.png" width="1920" height="1080" fetchpriority="high"
+           alt="Pickwick home screen on Google TV: a 'Keep watching' row above a grid of parent-chosen channels.">
+      <figcaption>
+        <h3>The kid's home</h3>
+        <p>Pick up where they left off, then a shelf of parent-approved channels — and nothing else on the whole screen.</p>
+      </figcaption>
+    </figure>
+
+    <figure class="shot">
+      <img src="screenshots/channels.png" width="1920" height="1080" loading="lazy"
+           alt="The channels shelf with an Explore row: a 'Surprise me!' dice tile and a 'My list' heart tile.">
+      <figcaption>
+        <h3>Browse &amp; explore</h3>
+        <p>Every allowed channel on one shelf, plus <strong>🎲 Surprise me</strong> and <strong>❤️ My list</strong> — each kid's own.</p>
+      </figcaption>
+    </figure>
+
+    <figure class="shot">
+      <img src="screenshots/ted-ed.png" width="1920" height="1080" loading="lazy"
+           alt="A grid of TED-Ed videos inside the channel, with colourful thumbnails and titles.">
+      <figcaption>
+        <h3>Inside a channel</h3>
+        <p>Open a channel for a clean grid of its videos — nowhere to wander off to, nothing to escape into.</p>
+      </figcaption>
+    </figure>
+
+    <figure class="shot">
+      <img src="screenshots/khan-academy.png" width="1920" height="1080" loading="lazy"
+           alt="A grid of Khan Academy videos inside the channel, ready to play fullscreen.">
+      <figcaption>
+        <h3>Curated, not recommended</h3>
+        <p>Only uploads from channels a parent added — here, Khan Academy — ready to play fullscreen, ad-free.</p>
+      </figcaption>
+    </figure>
+  </div>
+
+  <h2 class="section">On the parent's phone — what you set up</h2>
+  <p class="section-sub">Everything is curated from the parent's phone, fingerprint- or PIN-gated. There is no server — it all stays on your devices.</p>
+  <div class="phones">
+    <figure class="phone">
+      <img src="screenshots/phone-home.png" width="1152" height="2496" loading="lazy"
+           alt="Pickwick home screen on an Android phone: Keep watching, Surprise me, My list, and parent-chosen channels.">
+      <figcaption>
+        <h3>The kid's phone</h3>
+        <p>The same calm home as the TV — on any Android phone or tablet.</p>
+      </figcaption>
+    </figure>
+
+    <figure class="phone">
+      <img src="screenshots/phone-screen-time.png" width="1152" height="2496" loading="lazy"
+           alt="Parent settings: a kid profile with screen-time controls for sessions, breaks and bedtime.">
+      <figcaption>
+        <h3>Kids &amp; screen time</h3>
+        <p>A profile per child, each with its own time per session, daily sessions, breaks and bedtime.</p>
+      </figcaption>
+    </figure>
+
+    <figure class="phone">
+      <img src="screenshots/phone-ai-screening.png" width="1152" height="2496" loading="lazy"
+           alt="AI content screening settings: provider, model, and the parent's house rules the AI enforces.">
+      <figcaption>
+        <h3>AI content screening</h3>
+        <p>Optional — new uploads are checked against your own house rules first. Only titles are sent, never watch history.</p>
+      </figcaption>
+    </figure>
+
+    <figure class="phone">
+      <img src="screenshots/phone-approval.png" width="1440" height="3120" loading="lazy"
+           alt="The approval queue: videos held back with the AI's reasoning, each with Allow and Block buttons.">
+      <figcaption>
+        <h3>Your OK, first</h3>
+        <p>Anything the AI isn't sure about waits here — you see why it paused, then Allow or Block it before your kid ever sees it.</p>
+      </figcaption>
+    </figure>
+
+    <figure class="phone">
+      <img src="screenshots/phone-discover.png" width="1152" height="2496" loading="lazy"
+           alt="Discover with AI: describe what a kid loves and get channel suggestions verified on YouTube.">
+      <figcaption>
+        <h3>Discover with AI</h3>
+        <p>Describe what your kid loves and get channel ideas verified on YouTube — plus a directory other families vouch for.</p>
+      </figcaption>
+    </figure>
+
+    <figure class="phone">
+      <img src="screenshots/phone-channels.png" width="1152" height="2496" loading="lazy"
+           alt="The channel list: every allowed channel and playlist, each with a screen-time multiplier.">
+      <figcaption>
+        <h3>The channel list</h3>
+        <p>Every allowed channel and playlist in one place, each with its own screen-time price tag.</p>
+      </figcaption>
+    </figure>
+
+    <figure class="phone">
+      <img src="screenshots/phone-add-channels.png" width="1152" height="2496" loading="lazy"
+           alt="Adding channels: search YouTube, paste a link, import a whitelist file, or export your list.">
+      <figcaption>
+        <h3>Add, import &amp; share</h3>
+        <p>Search YouTube, paste a link, import a whitelist file, or export yours to hand to another parent.</p>
+      </figcaption>
+    </figure>
+
+    <figure class="phone">
+      <img src="screenshots/phone-downloads.png" width="1152" height="2496" loading="lazy"
+           alt="Screen-time grants, offline download quality, and paired kid devices shown in sync.">
+      <figcaption>
+        <h3>Downloads &amp; devices</h3>
+        <p>Grant bonus time, approve videos to watch offline, and keep every paired device in sync.</p>
+      </figcaption>
+    </figure>
+  </div>
+</main>
+
+<footer>
+  <a href="./">🏠 Pickwick home</a> ·
+  <a href="directory.html">Channel directory</a> ·
+  <a href="https://github.com/itcon-pty-au/pickwick">GitHub</a><br>
+  No accounts, no analytics, no cloud — everything stays inside your house.<br>
+  An independent project — not affiliated with, endorsed by, or connected to YouTube or Google.
+</footer>
+
+</body>
+</html>
