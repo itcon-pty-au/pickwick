@@ -202,8 +202,11 @@ private fun TvSettingsScreen(configStore: ConfigStore, pairingStore: PairingStor
     // so the parent can watch the two devices match.
     LaunchedEffect(Unit) {
         while (true) {
-            hash = ConfigStore.fingerprint(configStore.load())
-            edited = configStore.updatedAt()
+            val (h, e) = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                ConfigStore.fingerprint(configStore.load()) to configStore.updatedAt()
+            }
+            hash = h
+            edited = e
             kotlinx.coroutines.delay(2_000)
         }
     }
@@ -268,7 +271,17 @@ private fun AdminScreen(
     // Bumped when the config file is replaced underneath the form (a Pull from a
     // kid device) — the whole form reloads from disk, dropping unsaved edits.
     var configEpoch by remember { mutableIntStateOf(0) }
-    val initial = remember(configEpoch) { configStore.load() }
+    // Off-main read (file + JSON): opening settings shows a beat of spinner
+    // instead of freezing the tap that opened them.
+    val loadedConfig by produceState<Whitelist?>(initialValue = null, configEpoch) {
+        value = withContext(kotlinx.coroutines.Dispatchers.IO) { configStore.load() }
+    }
+    val initial = loadedConfig ?: run {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
+        return
+    }
     var entries by remember(initial) { mutableStateOf(initial.sources) }
     var limits by remember(initial) { mutableStateOf(initial.limits) }
     var blocked by remember(initial) { mutableStateOf(initial.blockedVideoIds) }
@@ -366,27 +379,32 @@ private fun AdminScreen(
 
     fun saveAndSync() {
         val config = buildCurrentConfig()
-        configStore.save(config)
-        val devices = pairingStore.paired()
-        // Close immediately — the save is already on disk. Blocking the button on
-        // the LAN round-trip read as "Save & close does nothing" whenever the TV
-        // was asleep (a standby Chromecast drops off Wi-Fi, so the push sits in
-        // connect-timeout for seconds with no feedback).
-        onDone(true)
-        if (devices.isEmpty()) return
-        val json = ConfigStore.toJson(config)
-        val appContext = context.applicationContext
-        io.pickwick.app.data.LanPushScope.scope.launch {
-            var ok = 0
-            devices.forEach { if (LanClient.pushConfig(it, json)) ok++ }
-            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                android.widget.Toast.makeText(
-                    appContext,
-                    if (ok == devices.size) "Synced to $ok device(s) ✓"
-                    else "Saved — ${devices.size - ok} device(s) unreachable; " +
-                        "they'll sync when back online",
-                    android.widget.Toast.LENGTH_LONG
-                ).show()
+        scope.launch {
+            // The save must land before onDone: closing settings makes
+            // MainActivity re-read the file, and it has to see this write.
+            val (devices, json) = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                configStore.save(config)
+                pairingStore.paired() to ConfigStore.toJson(config)
+            }
+            // Close as soon as the save is on disk. Blocking the button on the
+            // LAN round-trip read as "Save & close does nothing" whenever the TV
+            // was asleep (a standby Chromecast drops off Wi-Fi, so the push sits
+            // in connect-timeout for seconds with no feedback).
+            onDone(true)
+            if (devices.isEmpty()) return@launch
+            val appContext = context.applicationContext
+            io.pickwick.app.data.LanPushScope.scope.launch {
+                var ok = 0
+                devices.forEach { if (LanClient.pushConfig(it, json)) ok++ }
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    android.widget.Toast.makeText(
+                        appContext,
+                        if (ok == devices.size) "Synced to $ok device(s) ✓"
+                        else "Saved — ${devices.size - ok} device(s) unreachable; " +
+                            "they'll sync when back online",
+                        android.widget.Toast.LENGTH_LONG
+                    ).show()
+                }
             }
         }
     }
@@ -462,14 +480,15 @@ private fun AdminScreen(
             onChanged = { until ->
                 // Applied immediately — a timeout shouldn't wait for Save & close.
                 // Only the pause field changes on disk; other unsaved form edits
-                // stay unsaved until the parent commits them.
+                // stay unsaved until the parent commits them. Disk + push ride
+                // LanPushScope (IO), like the review-queue rulings above.
                 limits = limits.copy(pausedUntilMillis = until)
-                val updated = configStore.load().let { c ->
-                    c.copy(limits = c.limits.copy(pausedUntilMillis = until))
-                }
-                configStore.save(updated)
-                val json = ConfigStore.toJson(updated)
                 io.pickwick.app.data.LanPushScope.scope.launch {
+                    val updated = configStore.load().let { c ->
+                        c.copy(limits = c.limits.copy(pausedUntilMillis = until))
+                    }
+                    configStore.save(updated)
+                    val json = ConfigStore.toJson(updated)
                     pairingStore.paired().forEach { LanClient.pushConfig(it, json) }
                 }
             }
@@ -2440,13 +2459,17 @@ private fun endOfToday(): Long = java.util.Calendar.getInstance().apply {
 /** "Settings #a1b2c3d4 · edited 3 Aug 2:14 pm" — the comparable version line. */
 @Composable
 private fun VersionLine(configStore: ConfigStore, refreshKey: Any? = null) {
-    val text = remember(refreshKey) {
-        val config = configStore.load()
-        val hash = ConfigStore.fingerprint(config)
-        val edited = configStore.updatedAt().takeIf { it > 0 }?.let {
-            java.text.SimpleDateFormat("d MMM h:mm a", java.util.Locale.US).format(java.util.Date(it))
+    // refreshKey follows the live form fingerprint, i.e. every keystroke — the
+    // disk re-read behind it must not ride the recomposition on the main thread.
+    val text by produceState("", refreshKey) {
+        value = withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val config = configStore.load()
+            val hash = ConfigStore.fingerprint(config)
+            val edited = configStore.updatedAt().takeIf { it > 0 }?.let {
+                java.text.SimpleDateFormat("d MMM h:mm a", java.util.Locale.US).format(java.util.Date(it))
+            }
+            "Settings #$hash" + (edited?.let { " · edited $it" } ?: "")
         }
-        "Settings #$hash" + (edited?.let { " · edited $it" } ?: "")
     }
     Text(text, style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -2455,21 +2478,35 @@ private fun VersionLine(configStore: ConfigStore, refreshKey: Any? = null) {
 
 @Composable
 private fun QrImage(content: String) {
-    val bitmap = remember(content) {
-        val size = 480
-        val matrix = com.google.zxing.qrcode.QRCodeWriter()
-            .encode(content, com.google.zxing.BarcodeFormat.QR_CODE, size, size)
-        val bmp = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.RGB_565)
-        for (x in 0 until size) for (y in 0 until size) {
-            bmp.setPixel(x, y, if (matrix[x, y]) android.graphics.Color.BLACK else android.graphics.Color.WHITE)
+    // Built off-main: 480×480 is ~230k pixels, visible time on a TV CPU. One
+    // setPixels over an IntArray, not a JNI call per pixel.
+    val bitmap by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, content) {
+        value = withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val size = 480
+            val matrix = com.google.zxing.qrcode.QRCodeWriter()
+                .encode(content, com.google.zxing.BarcodeFormat.QR_CODE, size, size)
+            val pixels = IntArray(size * size) { i ->
+                if (matrix[i % size, i / size]) android.graphics.Color.BLACK
+                else android.graphics.Color.WHITE
+            }
+            val bmp = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.RGB_565)
+            bmp.setPixels(pixels, 0, size, 0, 0, size, size)
+            bmp.asImageBitmap()
         }
-        bmp.asImageBitmap()
     }
-    Image(
-        bitmap = bitmap,
-        contentDescription = "Pairing QR code",
-        modifier = Modifier.size(220.dp)
-    )
+    val ready = bitmap
+    if (ready != null) {
+        Image(
+            bitmap = ready,
+            contentDescription = "Pairing QR code",
+            modifier = Modifier.size(220.dp)
+        )
+    } else {
+        // Same footprint as the image, so the layout doesn't jump when it lands.
+        Box(Modifier.size(220.dp), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
+    }
 }
 
 private sealed interface DeviceSync {
@@ -2717,8 +2754,10 @@ private fun PhoneDevicesSection(
                         Button(modifier = Modifier.tvFocusHighlight(), onClick = {
                             // Push = "make the device match this screen": saves the
                             // form (unsaved edits included), then overwrites the device.
-                            val json = saveCurrent()
                             scope.launch {
+                                val json = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                    saveCurrent()
+                                }
                                 LanClient.pushConfig(device, json)
                                 checkAll()
                             }

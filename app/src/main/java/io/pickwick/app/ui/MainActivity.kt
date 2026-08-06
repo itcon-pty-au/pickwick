@@ -34,17 +34,20 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
 import io.pickwick.app.BuildConfig
 import io.pickwick.app.data.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 sealed interface Screen {
     data object Home : Screen
@@ -249,8 +252,12 @@ class MainViewModel(
             var changed = false
             var newVerdicts = false
             devices.forEach { device ->
-                LanClient.fetchWatchState(device)?.let { if (mergeWatchState(it)) changed = true }
-                LanClient.pushWatchState(device, exportWatchState())
+                // Merge/export are prefs + JSON work — same off-main rule as the
+                // verdict pair below.
+                LanClient.fetchWatchState(device)?.let { json ->
+                    if (withContext(Dispatchers.IO) { mergeWatchState(json) }) changed = true
+                }
+                LanClient.pushWatchState(device, withContext(Dispatchers.IO) { exportWatchState() })
                 // Verdict-sharing: pull-merge what each device has screened, so a
                 // video the TV already ruled on is never re-billed to the AI here.
                 LanClient.fetchVerdicts(device)?.let { json ->
@@ -316,14 +323,20 @@ class MainViewModel(
         }
 
     /** Update home-screen tiles without ever disturbing the screen the kid is on. */
-    private fun publishChannels(channels: List<Source>) {
+    private suspend fun publishChannels(channels: List<Source>) {
+        // distinctBy: two whitelist entries (URL form + UC id) can canonicalize
+        // to the same channel — duplicate grid keys crash Compose.
+        val distinct = channels.distinctBy { it.id }
+        // Tiles/rows/badges all re-read every source's cache file — a whole
+        // whitelist of disk reads, so computed off-main, applied in one write.
+        val (tiles, keepWatching, badges) = withContext(Dispatchers.IO) {
+            Triple(sortByUsage(visibleSources(distinct)), keepWatchingRow(), computeNewBadges())
+        }
         val onHome = _state.value.screen == Screen.Home
         _state.value = _state.value.copy(
-            // distinctBy: two whitelist entries (URL form + UC id) can canonicalize
-            // to the same channel — duplicate grid keys crash Compose.
-            channels = sortByUsage(visibleSources(channels.distinctBy { it.id })),
-            keepWatching = keepWatchingRow(),
-            newBadges = computeNewBadges(),
+            channels = tiles,
+            keepWatching = keepWatching,
+            newBadges = badges,
             loading = if (onHome) false else _state.value.loading
         )
     }
@@ -459,7 +472,7 @@ class MainViewModel(
                     emptyList()
                 }
             if (videos.isNotEmpty()) {
-                videoCache.save(source.id, videos)
+                withContext(Dispatchers.IO) { videoCache.save(source.id, videos) }
                 prefetchThumbs(videos.mapNotNull { it.thumbnailUrl })
                 // Initial sweep: the background warm walks every source, so a fresh
                 // whitelist (or new rules) gets its whole catalog screened here.
@@ -479,15 +492,23 @@ class MainViewModel(
 
     /** Re-filters whatever is on screen after new verdicts land (AI batch or a peer's import). */
     private fun reapplyScreening() {
-        _state.value = _state.value.copy(
-            // Verdicts can clear (or fully hold) a source — tiles follow along.
-            channels = sortByUsage(visibleSources(sources.distinctBy { it.id })),
-            keepWatching = keepWatchingRow(),
-            videos = if (_state.value.screen == Screen.Home) _state.value.videos
-            else annotated(includeFinished = includeFinishedNow()),
-            held = if (_state.value.screen == Screen.Home) _state.value.held
-            else heldByScreening()
-        )
+        viewModelScope.launch {
+            val onHome = _state.value.screen == Screen.Home
+            val includeFinished = includeFinishedNow()
+            // Tiles and the resume row walk the per-source cache files — off-main.
+            val (tiles, keepWatching) = withContext(Dispatchers.IO) {
+                sortByUsage(visibleSources(sources.distinctBy { it.id })) to keepWatchingRow()
+            }
+            _state.value = _state.value.copy(
+                // Verdicts can clear (or fully hold) a source — tiles follow along.
+                channels = tiles,
+                keepWatching = keepWatching,
+                videos = if (onHome) _state.value.videos
+                else annotated(includeFinished = includeFinished),
+                held = if (onHome) _state.value.held
+                else heldByScreening()
+            )
+        }
     }
 
     /**
@@ -516,32 +537,40 @@ class MainViewModel(
 
     /** Re-read watch progress (called when returning from the player). */
     fun refreshProgress() {
-        // Watched-to-the-end videos leave the saved list automatically.
-        watchlistStore.load()
-            .filter { history.progress(it.url)?.isFinished == true }
-            .forEach { watchlistStore.remove(it.url) }
-        val watchlisted = watchlistStore.urls()
-        if (_state.value.screen == Screen.Home) {
+        viewModelScope.launch {
+            // Watchlist pruning and the row rebuilds are all file reads — off-main.
+            val watchlisted = withContext(Dispatchers.IO) {
+                // Watched-to-the-end videos leave the saved list automatically.
+                watchlistStore.load()
+                    .filter { history.progress(it.url)?.isFinished == true }
+                    .forEach { watchlistStore.remove(it.url) }
+                watchlistStore.urls()
+            }
+            if (_state.value.screen == Screen.Home) {
+                val (keepWatching, badges) = withContext(Dispatchers.IO) {
+                    keepWatchingRow() to computeNewBadges()
+                }
+                _state.value = _state.value.copy(
+                    keepWatching = keepWatching,
+                    newBadges = badges,
+                    watchlisted = watchlisted
+                )
+                return@launch
+            }
+            _state.value = _state.value.copy(watchlisted = watchlisted)
+            if (_state.value.screen == Screen.Downloads) {
+                // Offline shelf: fresh red bars, but no screener/blocklist re-filtering.
+                _state.value = _state.value.copy(videos = downloadItems())
+                return@launch
+            }
+            if (_state.value.screen == Screen.Watchlist) {
+                rawVideos = withContext(Dispatchers.IO) { watchlistStore.load() }
+            }
             _state.value = _state.value.copy(
-                keepWatching = keepWatchingRow(),
-                newBadges = computeNewBadges(),
-                watchlisted = watchlisted
+                videos = annotated(includeFinished = includeFinishedNow()),
+                held = heldByScreening()
             )
-            return
         }
-        _state.value = _state.value.copy(watchlisted = watchlisted)
-        if (_state.value.screen == Screen.Downloads) {
-            // Offline shelf: fresh red bars, but no screener/blocklist re-filtering.
-            _state.value = _state.value.copy(videos = downloadItems())
-            return
-        }
-        if (_state.value.screen == Screen.Watchlist) {
-            rawVideos = watchlistStore.load()
-        }
-        _state.value = _state.value.copy(
-            videos = annotated(includeFinished = includeFinishedNow()),
-            held = heldByScreening()
-        )
     }
 
     /**
@@ -562,7 +591,7 @@ class MainViewModel(
         uploadsNextPage = null
 
         // Paint instantly from the last visit; refresh silently underneath.
-        val cachedVideos = videoCache.load(source.id)
+        val cachedVideos = withContext(Dispatchers.IO) { videoCache.load(source.id) }
         if (cachedVideos.isNotEmpty()) {
             rawVideos = cachedVideos
             usage.setLastSeenLatest(source.id, cachedVideos.first().url)
@@ -595,7 +624,7 @@ class MainViewModel(
                 rawVideos = (page.videos + cachedVideos).distinctBy { it.url }
                 feedHandle = page.handle
                 uploadsNextPage = page.nextPage
-                videoCache.save(source.id, rawVideos.take(500))
+                withContext(Dispatchers.IO) { videoCache.save(source.id, rawVideos.take(500)) }
                 rawVideos.firstOrNull()?.let { usage.setLastSeenLatest(source.id, it.url) }
                 // Give the on-screen thumbnails a head start before trickling the rest.
                 launch {
@@ -624,7 +653,7 @@ class MainViewModel(
         val channels = sources.filter { it.kind == SourceKind.CHANNEL }
 
         // Instant pool from the per-channel disk caches; fall back to a live fetch.
-        val diskPool = channels.flatMap { videoCache.load(it.id) }
+        val diskPool = withContext(Dispatchers.IO) { channels.flatMap { videoCache.load(it.id) } }
         if (diskPool.isNotEmpty()) {
             rawVideos = diskPool.shuffled()
             _state.value = _state.value.copy(loading = false, videos = annotated(includeFinished = false), held = heldByScreening())
@@ -635,7 +664,9 @@ class MainViewModel(
             channels.flatMap { source ->
                 runCatching { yt.uploadsPage(source, background = true).videos }
                     .getOrDefault(emptyList())
-                    .also { if (it.isNotEmpty()) videoCache.save(source.id, it) }
+                    .also {
+                        if (it.isNotEmpty()) withContext(Dispatchers.IO) { videoCache.save(source.id, it) }
+                    }
             }
         }
             .onSuccess { pool ->
@@ -667,7 +698,7 @@ class MainViewModel(
                     // Persist the whole accumulated list so the next visit paints
                     // this deep instantly (capped to keep the cache file sane).
                     (_state.value.screen as? Screen.ChannelVideos)?.let { s ->
-                        videoCache.save(s.source.id, rawVideos.take(500))
+                        withContext(Dispatchers.IO) { videoCache.save(s.source.id, rawVideos.take(500)) }
                     }
                     launch { prefetchThumbs(page.videos.mapNotNull { it.thumbnailUrl }) }
                     _state.value = _state.value.copy(videos = annotated(includeFinished = true), held = heldByScreening())
@@ -782,11 +813,18 @@ class MainViewModel(
      * leaves the row (and the channel grids treat it like any finished video).
      */
     fun dismissKeepWatching(item: VideoItem) {
-        history.progress(item.video.url)?.let {
-            history.save(item.video.url, it.durationMs, it.durationMs)
+        viewModelScope.launch {
+            // history.save commits (fsync) and the row rebuild reads every cache
+            // file — both off-main.
+            val keepWatching = withContext(Dispatchers.IO) {
+                history.progress(item.video.url)?.let {
+                    history.save(item.video.url, it.durationMs, it.durationMs)
+                }
+                keepWatchingRow()
+            }
+            _state.value = _state.value.copy(keepWatching = keepWatching)
+            syncWatchState() // the dismissal propagates like any other watch progress
         }
-        _state.value = _state.value.copy(keepWatching = keepWatchingRow())
-        syncWatchState() // the dismissal propagates like any other watch progress
     }
 
     fun goHome() {
@@ -796,10 +834,16 @@ class MainViewModel(
         _state.value = _state.value.copy(
             screen = Screen.Home, videos = emptyList(), held = 0, loading = false, error = null,
             // Re-rank right away so a freshly opened channel climbs immediately.
-            channels = sortByUsage(_state.value.channels),
-            keepWatching = keepWatchingRow(),
-            newBadges = computeNewBadges()
+            channels = sortByUsage(_state.value.channels)
         )
+        // Called synchronously from BackHandler — the rows re-read every source's
+        // cache file, so they refresh off-main after the screen has switched.
+        viewModelScope.launch {
+            val (keepWatching, badges) = withContext(Dispatchers.IO) {
+                keepWatchingRow() to computeNewBadges()
+            }
+            _state.value = _state.value.copy(keepWatching = keepWatching, newBadges = badges)
+        }
     }
 }
 
@@ -834,14 +878,19 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         val settings = SettingsStore(applicationContext)
         val appContext = applicationContext
         val configStore = ConfigStore(applicationContext)
+        // Cold start needs the config before the first frame (the screener must
+        // be seeded fail-closed), but the read + JSON parse doesn't have to
+        // serialize with the rest of onCreate — start it now, join below.
+        val initialConfigTask = java.util.concurrent.FutureTask { configStore.load() }
+        Thread(initialConfigTask, "config-preload").start()
         val pairingStore = PairingStore(applicationContext)
         val downloadStore = DownloadStore(applicationContext)
         val localLibrary = LocalLibrary(applicationContext)
         // A queue interrupted by a reboot or crash resumes on next open.
         DownloadService.startIfPending(this)
-        val initialConfig = configStore.load()
         val profileNs = ProfileNamespace(applicationContext)
         val activeProfiles = ActiveProfileStore(applicationContext)
+        val initialConfig = initialConfigTask.get()
         // Seeded before the ViewModel exists so the first cached paint is already
         // gated — a held video must never flash on screen while config loads.
         // Until the ViewModel's first refresh names the active kid, a null id
@@ -1019,8 +1068,10 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 // TV: a paired phone just pushed new config — apply it live.
                 SideEffect {
                     ConfigEvents.onConfigChanged = {
-                        runOnUiThread {
-                            family = configStore.load()
+                        // Fired from the LAN server's socket thread; the re-read
+                        // (file + JSON) stays off-main, only the apply lands there.
+                        lifecycleScope.launch {
+                            family = withContext(Dispatchers.IO) { configStore.load() }
                             vm.refresh()
                         }
                     }
@@ -1144,8 +1195,10 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     SettingsFlow(settings, configStore, pairingStore, deviceIsTv) { changed ->
                         showSettings = false
                         // Kids may have been added/edited — re-resolve everything.
-                        family = configStore.load()
-                        if (changed) vm.refresh()
+                        lifecycleScope.launch {
+                            family = withContext(Dispatchers.IO) { configStore.load() }
+                            if (changed) vm.refresh()
+                        }
                     }
                 } else if (family.profiles.size >= 2 && activeProfileId == null) {
                     WhosWatchingScreen(

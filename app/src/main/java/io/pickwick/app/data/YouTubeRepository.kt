@@ -46,7 +46,12 @@ data class Video(
         // Sideloaded files carry a synthetic pickwick://local/<hash> URL; the
         // hash is 16 hex chars so it can't collide with an 11-char YouTube id.
         get() = if (LocalLibrary.isLocal(url)) url.removePrefix(LocalLibrary.URL_PREFIX)
-        else Regex("[?&]v=([A-Za-z0-9_-]{11})").find(url)?.groupValues?.get(1)
+        else VIDEO_ID.find(url)?.groupValues?.get(1)
+
+    companion object {
+        // Compiled once: videoId runs per-video in every screening/filter pass.
+        private val VIDEO_ID = Regex("[?&]v=([A-Za-z0-9_-]{11})")
+    }
 }
 
 /** All YouTube access goes through NewPipeExtractor — no API key, no quota, no ads. */
