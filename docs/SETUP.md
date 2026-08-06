@@ -24,29 +24,40 @@ should do. Way B is for people comfortable with a command line.
 
 ### Way A: with the free "Downloader" app (no computer)
 
+First, two one-time preparations — doing them now means the install later
+runs straight through without security interruptions:
+
 1. On the TV, open the **Play Store** and search for **Downloader by
-   AFTVnews** (orange icon). Install and open it.
-2. The first time, it asks for permission to access files — allow it.
-3. In Downloader's URL box, type the Pickwick code:
+   AFTVnews** (orange icon). Install it.
+2. Flip the permission switch for it: go to **Settings → Apps → Security &
+   Restrictions → Unknown sources** (on some TVs: **Settings → Privacy →
+   Security & Restrictions**), find **Downloader** in the list and turn it
+   **on**. This tells the TV "apps this app downloads are allowed to
+   install" — it's the switch every sideload needs, and it only appears in
+   the list *after* Downloader is installed, which is why it's step 2.
+
+Now the install itself:
+
+3. Open Downloader. The first time, it asks for permission to access
+   files — allow it.
+4. In Downloader's URL box, type the Pickwick code:
 
    ```
    1037466
    ```
 
-   (If the code ever doesn't work, the newest release is always at
-   `github.com/itcon-pty-au/pickwick/releases/latest/download/pickwick.apk` —
-   typing that full address does the same thing.)
-
    The download starts straight away and asks to install.
-4. The TV now says *"For your security, your TV is not allowed to install
-   unknown apps from this source."* That's the switch mentioned above:
-   press **Settings** on that message (or go to
-   **Settings → Apps → Security & Restrictions → Unknown sources**),
-   find **Downloader**, and turn it **on**.
-5. Go back (the install screen returns) and press **Install**.
+5. Press **Install**. (If instead the TV says *"your TV is not allowed to
+   install unknown apps from this source"*, step 2 was missed — press
+   **Settings** right on that message, turn Downloader **on**, go back, and
+   the install screen returns.)
 6. Done — Pickwick appears in your TV's app row. You can uninstall
    Downloader now if you like; Pickwick updates itself from inside the app
    from here on.
+
+If the code ever doesn't work, the newest release is always at
+`github.com/itcon-pty-au/pickwick/releases/latest/download/pickwick.apk` —
+typing that full address in Downloader does the same thing.
 
 ### Way B: with a computer (adb)
 
@@ -82,14 +93,17 @@ should do. Way B is for people comfortable with a command line.
 
 ## Part 2 — Install Pickwick on the parent's phone
 
-1. On the phone, open this page in Chrome:
-   **github.com/itcon-pty-au/pickwick/releases/latest**
-2. Under **Assets**, tap **pickwick.apk**. Chrome warns that the file
-   "might be harmful" — that's the standard warning for *any* APK; tap
-   **Download anyway**.
+You'll see two security prompts along the way — both are the standard
+Android ritual for *any* app installed outside a store, not something wrong.
+
+1. On the phone, open this address in Chrome — the download starts
+   immediately:
+   **github.com/itcon-pty-au/pickwick/releases/latest/download/pickwick.apk**
+2. Chrome warns the file "might be harmful" (prompt one — it says this for
+   every APK): tap **Download anyway**.
 3. Open the downloaded file (notification shade, or Files → Downloads).
-4. Android asks to allow Chrome (or Files) to install unknown apps — allow
-   it, then press **Install**.
+4. Android asks to allow Chrome (or Files) to install unknown apps (prompt
+   two): allow it, then press **Install**.
 5. Open Pickwick. It looks empty — that's right, nothing is allowed yet.
 
 If a kid has their own phone or tablet, install Pickwick on it the same way.
