@@ -35,7 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url || steps.retry1.outputs.page_url || steps.retry2.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
 
@@ -45,12 +45,21 @@ jobs:
         with:
           path: site
 
-      # The Pages backend has been seen sitting on a deployment for ~10
-      # minutes before processing it (2026-08-06). The action's default
-      # timeout is exactly 10 minutes and it *cancels* the deployment on
-      # abort, which turned a slow queue into a string of failed deploys and
-      # a stale site. 30 minutes rides out the slow path.
+      # The Pages backend intermittently takes 10-20+ minutes to process a
+      # deployment (seen 2026-08-06; also community discussion #200817). The
+      # action clamps its wait to a hard 10-minute maximum and *cancels* the
+      # deployment when it trips, so one attempt turns backend slowness into
+      # a failed deploy and a stale site. Retrying reuses the uploaded
+      # artifact and opens another 10-minute window per attempt.
       - id: deployment
         uses: actions/deploy-pages@v5
-        with:
-          timeout: 1800000
+        continue-on-error: true
+
+      - id: retry1
+        if: steps.deployment.outcome == 'failure'
+        uses: actions/deploy-pages@v5
+        continue-on-error: true
+
+      - id: retry2
+        if: steps.retry1.outcome == 'failure'
+        uses: actions/deploy-pages@v5
