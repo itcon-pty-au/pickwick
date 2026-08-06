@@ -51,6 +51,14 @@ class PlayerActivity : ComponentActivity() {
         const val EXTRA_CHANNEL = "channel"
         /** Screen-time drain rate for this launch, percent (100 normal, 0 FREE). */
         const val EXTRA_TIME_PERCENT = "time_percent"
+        /**
+         * Store suffix of the kid this playback belongs to, resolved by the
+         * launching screen. The launcher is the only place with the full
+         * resolution rules (device assignment beats a remembered pick) — the
+         * player re-deriving it from device-local state is how a dedicated TV
+         * once enforced a stale kid's rules and wrote history into their stores.
+         */
+        const val EXTRA_PROFILE_SUFFIX = "profile_suffix"
     }
 
     private var player: ExoPlayer? = null
@@ -89,15 +97,16 @@ class PlayerActivity : ComponentActivity() {
         isTv = (getSystemService(UI_MODE_SERVICE) as android.app.UiModeManager)
             .currentModeType == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
 
-        // Progress, screen time and channel minutes all belong to whoever the
-        // who's-watching screen picked (dedicated devices set it at startup).
-        // The active id is only trusted while profiles exist — a stale pick
-        // from a removed setup must not strand data in an orphan namespace.
-        val profileSuffix = run {
-            val hasProfiles = io.pickwick.app.data.ConfigStore(this).load().profiles.isNotEmpty()
-            val active = if (hasProfiles) {
-                io.pickwick.app.data.ActiveProfileStore(this).activeId()
-            } else null
+        // Progress, screen time and channel minutes all belong to the kid the
+        // launching screen resolved — delivered in the intent, never re-derived
+        // here. Fallback (extra absent should be impossible; the activity isn't
+        // exported): the mirrored active pick, which MainActivity keeps current.
+        val profileSuffix = intent.getStringExtra(EXTRA_PROFILE_SUFFIX) ?: run {
+            val config = io.pickwick.app.data.ConfigStore(this).load()
+            // Membership-checked: a remembered pick can name a since-deleted kid,
+            // and suffixFor would silently mint an orphan namespace for it.
+            val active = io.pickwick.app.data.ActiveProfileStore(this).activeId()
+                ?.takeIf { config.profile(it) != null }
             io.pickwick.app.data.ProfileNamespace(this).suffixFor(active)
         }
         channelUsage = io.pickwick.app.data.ChannelUsage(this, profileSuffix)

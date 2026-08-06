@@ -124,7 +124,8 @@ class ProfileNamespace(context: Context) {
  * in the parent settings) the answer never changes; on a shared one the
  * who's-watching screen sets it, and a sitting-length gap re-asks — the same
  * rhythm as the session guard's break timer, so "new sitting" means the same
- * thing everywhere.
+ * thing everywhere. With no break rule set there is no such rhythm: the screen
+ * asks once each time the app launches and then leaves the pick alone.
  */
 class ActiveProfileStore(context: Context) {
 
@@ -148,11 +149,16 @@ class ActiveProfileStore(context: Context) {
     /**
      * Whether a shared device should ask who's watching again. Mid-sitting
      * (back from the player, between episodes) it must not nag.
+     *
+     * No break rule → no sitting rhythm to measure, and no hidden default: the
+     * ask happens once per app launch instead. Returning true here makes launch
+     * resolution skip the remembered kid; the mid-session ON_START re-ask is
+     * gated off separately (see MainActivity) so this never fires between videos.
      */
     fun needsReask(breakMinutes: Int?): Boolean {
+        if (breakMinutes == null) return true
         val last = prefs.getLong("last_active_at", 0L)
         if (last == 0L) return true
-        val gapMs = (breakMinutes ?: 60) * 60_000L
-        return System.currentTimeMillis() - last >= gapMs
+        return System.currentTimeMillis() - last >= breakMinutes * 60_000L
     }
 }

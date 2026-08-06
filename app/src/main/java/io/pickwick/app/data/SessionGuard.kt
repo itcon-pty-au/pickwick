@@ -14,19 +14,20 @@ import java.util.Locale
  *  - Daily budget = session minutes × weekday/weekend session count.
  *    Only actual watch time draws it down; stopping early wastes nothing.
  *  - The session length also caps one *sitting*: after that much
- *    continuous-ish watching, a break lock (default 60m) forces a rest.
+ *    continuous-ish watching, a break lock forces a rest — but only while a
+ *    break length is set. Break "Off" = sittings merge freely; the daily
+ *    budget and bedtime still apply.
  *  - A gap of the break length since last watching starts a fresh sitting.
  *  - Bedtime blocks a clock window outright.
- *  - Rules left unset simply don't apply.
+ *  - Rules left unset simply don't apply — no rule has a hidden default; the
+ *    parent's settings screen is the whole truth.
  */
-class SessionGuard(context: Context, profileSuffix: String = "") {
+class SessionGuard(context: Context, private val profileSuffix: String = "") {
 
     private val prefs = context.applicationContext
         .getSharedPreferences("limits$profileSuffix", Context.MODE_PRIVATE)
 
     companion object {
-        private const val DEFAULT_BREAK_MIN = 60
-
         /** Deliberately parent-attributed, so the kid doesn't read it as a bug. */
         private const val PAUSED_MESSAGE =
             "A parent paused screen time for today. See you tomorrow 💛"
@@ -35,6 +36,14 @@ class SessionGuard(context: Context, profileSuffix: String = "") {
     // ---- limits config (persisted at whitelist refresh) ----
 
     fun saveLimits(l: Limits) {
+        // Which store got which rules — the first question in any "the TV is
+        // still blocking" report, and invisible without this line.
+        android.util.Log.i(
+            "Pickwick",
+            "limits[$profileSuffix] <- session=${l.sessionMinutes} " +
+                "wd=${l.weekdaySessions} we=${l.weekendSessions} break=${l.breakMinutes} " +
+                "bedtime=${l.bedtimeStartMin}..${l.bedtimeEndMin} paused=${l.pausedUntilMillis}"
+        )
         prefs.edit()
             .putInt("l_session", l.sessionMinutes ?: -1)
             .putInt("l_wd", l.weekdaySessions ?: -1)
@@ -67,7 +76,6 @@ class SessionGuard(context: Context, profileSuffix: String = "") {
     private fun isPaused(l: Limits): Boolean =
         System.currentTimeMillis() < (l.pausedUntilMillis ?: 0L)
 
-    private fun breakMs(l: Limits) = (l.breakMinutes ?: DEFAULT_BREAK_MIN) * 60_000L
 
     /** Daily watch budget in ms (incl. parent-granted bonus), or null when not configured. */
     private fun dailyBudgetMs(l: Limits): Long? {
@@ -101,7 +109,22 @@ class SessionGuard(context: Context, profileSuffix: String = "") {
      * [multiplierPercent] is the source's screen-time drain rate: at 0 (FREE)
      * an exhausted budget doesn't block — but bedtime and break locks still do.
      */
-    fun checkStart(multiplierPercent: Int = 100): String? {
+    fun checkStart(multiplierPercent: Int = 100): String? =
+        checkStartInner(multiplierPercent).also { reason ->
+            // The enforced store + the rule state behind the verdict. Pairs with
+            // the saveLimits line: matching suffixes and values = config applied;
+            // anything else points straight at the broken link.
+            android.util.Log.i(
+                "Pickwick",
+                "checkStart[$profileSuffix] -> ${reason ?: "ok"} " +
+                    "(break=${prefs.getInt("l_break", -1)} " +
+                    "lockUntil=${prefs.getLong("lockUntil", 0)} " +
+                    "sitting=${prefs.getLong("sittingWatchedMs", 0) / 60_000}m " +
+                    "daily=${prefs.getLong("dailyWatchedMs", 0) / 60_000}m)"
+            )
+        }
+
+    private fun checkStartInner(multiplierPercent: Int): String? {
         rolloverIfNewDay()
         val l = limits()
         val now = System.currentTimeMillis()
@@ -110,7 +133,15 @@ class SessionGuard(context: Context, profileSuffix: String = "") {
         if (inBedtime(l)) return "It's bedtime! See you tomorrow 🌙"
 
         val lockUntil = prefs.getLong("lockUntil", 0)
-        if (now < lockUntil) {
+        if (l.breakMinutes == null) {
+            // The break rule was turned off while a lock was armed — the parent
+            // did that to end the lockout, so honor it now, not at midnight.
+            // The sitting counter goes too: it only feeds the lock, and letting
+            // it accumulate would spring an instant lock if the rule comes back.
+            if (lockUntil != 0L || prefs.getLong("sittingWatchedMs", 0) != 0L) {
+                prefs.edit().putLong("lockUntil", 0).putLong("sittingWatchedMs", 0).apply()
+            }
+        } else if (now < lockUntil) {
             return "Time for a break! You can watch again at ${timeOf(lockUntil)} ⏰"
         }
 
@@ -145,9 +176,13 @@ class SessionGuard(context: Context, profileSuffix: String = "") {
         dailyBudgetMs(l)?.let { budget ->
             if (daily >= budget) return "That's all the watching for today! 🌟"
         }
+        // No break rule → nothing to arm; the sitting cap only exists to force
+        // a rest of the configured length. The daily budget above still caps
+        // the day, so this isn't unlimited watching.
+        val breakLen = l.breakMinutes ?: return null
         val sittingCapMs = l.sessionMinutes?.let { it * 60_000L } ?: return null
         if (sitting >= sittingCapMs) {
-            prefs.edit().putLong("lockUntil", now + breakMs(l)).apply()
+            prefs.edit().putLong("lockUntil", now + breakLen * 60_000L).apply()
             return "Time for a break! Great watching 🎉"
         }
         return null
@@ -172,7 +207,8 @@ class SessionGuard(context: Context, profileSuffix: String = "") {
                 candidates += (budget - prefs.getLong("dailyWatchedMs", 0))
                     .coerceAtLeast(0) * 100 / multiplierPercent
             }
-            l.sessionMinutes?.let { cap ->
+            // The sitting cap only counts while it can actually lock (break set).
+            if (l.breakMinutes != null) l.sessionMinutes?.let { cap ->
                 candidates += (cap * 60_000L - prefs.getLong("sittingWatchedMs", 0))
                     .coerceAtLeast(0) * 100 / multiplierPercent
             }
@@ -199,10 +235,12 @@ class SessionGuard(context: Context, profileSuffix: String = "") {
         }
     }
 
-    /** A break-length gap since last watching starts a new sitting (nothing lost). */
+    /** A break-length gap since last watching starts a new sitting (nothing lost).
+     *  No break rule → no sitting rhythm to reset (checkStart zeroes it instead). */
     private fun startFreshSittingAfterGap(l: Limits, now: Long) {
+        val gapMs = l.breakMinutes?.let { it * 60_000L } ?: return
         val lastWatch = prefs.getLong("lastWatchAt", 0)
-        if (lastWatch > 0 && now - lastWatch >= breakMs(l)) {
+        if (lastWatch > 0 && now - lastWatch >= gapMs) {
             prefs.edit().putLong("sittingWatchedMs", 0).apply()
         }
     }
@@ -274,7 +312,9 @@ class SessionGuard(context: Context, profileSuffix: String = "") {
         rolloverIfNewDay()
         val l = limits()
         val now = System.currentTimeMillis()
-        val lockUntil = prefs.getLong("lockUntil", 0)
+        // A lock left over from before the break rule was disabled is dead
+        // (checkStart clears it on the next play attempt) — don't report it.
+        val lockUntil = if (l.breakMinutes == null) 0 else prefs.getLong("lockUntil", 0)
         val budget = dailyBudgetMs(l)
         val watched = prefs.getLong("dailyWatchedMs", 0)
         val state = when {

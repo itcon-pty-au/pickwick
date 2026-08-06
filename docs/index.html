@@ -79,7 +79,13 @@
     border-radius: 999px;
   }
 
-  .cta { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; }
+  /* Wider than .wrap's 880px so all five buttons fit on one line on desktop;
+     breaks out of the centered column without affecting the rest of the header. */
+  .cta {
+    display: flex; justify-content: center; gap: 12px; flex-wrap: wrap;
+    width: min(1080px, calc(100vw - 48px));
+    position: relative; left: 50%; transform: translateX(-50%);
+  }
   .btn {
     display: inline-block;
     text-decoration: none;
@@ -168,7 +174,7 @@
     <span>No recommendations</span><span>No accounts</span><span>No cloud</span>
   </div>
   <div class="cta">
-    <a class="btn btn-primary" href="https://github.com/itcon-pty-au/pickwick/releases">⬇ Download APK</a>
+    <a class="btn btn-primary" href="https://github.com/itcon-pty-au/pickwick/releases">⬇ Download</a>
     <a class="btn btn-ghost" href="directory.html">📺 Channel directory</a>
     <a class="btn btn-ghost" href="https://github.com/itcon-pty-au/pickwick/blob/main/docs/SETUP.md">📖 Setup guide</a>
     <a class="btn btn-ghost" href="donate.html">❤️ Donate</a>

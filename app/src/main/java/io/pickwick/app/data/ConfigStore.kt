@@ -38,8 +38,16 @@ class ConfigStore(context: Context) {
     }
 
     fun saveRaw(json: String): Boolean = runCatching {
-        registered(fromJson(json)) // validate before accepting
+        val w = registered(fromJson(json)) // validate before accepting
         file.writeText(json)
+        // Symmetric with the reject log below: an accepted push names its hash
+        // and the break rules it carried, so "the TV never got it" vs "it got
+        // it but didn't enforce it" is answerable from logcat alone.
+        android.util.Log.i(
+            "Pickwick",
+            "config accepted #${fingerprint(w)} break=${w.limits.breakMinutes} " +
+                "perKid=${w.profiles.map { "${it.name}=${it.limits.breakMinutes}" }}"
+        )
         true
     }.getOrElse { e ->
         // A rejected push is otherwise invisible on both ends — the phone shows
