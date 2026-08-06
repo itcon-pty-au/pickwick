@@ -1,5 +1,5 @@
 <h1>
-  <a href="#"><img src="docs/logo.svg" alt="" width="30" align="left" hspace="10"></a>
+  <picture><img src="docs/logo.svg" alt="" width="30" align="left" hspace="10"></picture>
   Pickwick
 </h1>
 
