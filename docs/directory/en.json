@@ -565,6 +565,20 @@
       ],
       "note": "Picture books read by actors",
       "added": "2026-08-06"
+    },
+    {
+      "url": "https://www.youtube.com/channel/UC_qs3c0ehDvZkbiEbOj6Drg",
+      "name": "Alphablocks",
+      "kind": "channel",
+      "ages": [
+        "2-4",
+        "5-7"
+      ],
+      "topics": [
+        "Reading & language"
+      ],
+      "note": "The Alphablocks are 26 living letters who discover that whenever they hold hands and make a word, something magical happens. With adventures",
+      "added": "2026-08-06"
     }
   ]
 }
