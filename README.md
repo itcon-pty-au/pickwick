@@ -146,7 +146,7 @@ technical background assumed.
 The short version: grab the APK from
 [Releases](https://github.com/itcon-pty-au/pickwick/releases)
 (or build it yourself, below). Phone/tablet — open the APK and install;
-Google TV — install via the Downloader app, or enable Developer mode and
+Google TV — install via the Downloader app (code **1037466**), or enable Developer mode and
 `adb install` (USB or `adb connect <tv-ip>` over Wi-Fi). After that, updates
 come from inside the app (parent settings → Check for updates).
 
@@ -204,7 +204,7 @@ Open in Android Studio, or:
 gradlew assembleRelease
 ```
 
-The APK lands at `app/build/outputs/apk/release/app-release.apk` — sideload as
+The APK lands at `app/build/outputs/apk/release/pickwick.apk` — sideload as
 above. The release type is signed with the debug key precisely so it can be
 side-loaded like this.
 
@@ -247,7 +247,7 @@ The app checks `version.json` in this repo (parent settings → Check for update
 
 ```json
 { "versionCode": 2, "versionName": "0.2.0",
-  "apkUrl": "https://github.com/<you>/pickwick/releases/download/v0.2.0/app-release.apk" }
+  "apkUrl": "https://github.com/<you>/pickwick/releases/download/v0.2.0/pickwick.apk" }
 ```
 
 Updates must be signed with the same key as the installed build. Ship the

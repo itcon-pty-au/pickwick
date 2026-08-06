@@ -27,15 +27,17 @@ should do. Way B is for people comfortable with a command line.
 1. On the TV, open the **Play Store** and search for **Downloader by
    AFTVnews** (orange icon). Install and open it.
 2. The first time, it asks for permission to access files — allow it.
-3. In Downloader's URL box, type the short code or full address of the
-   Pickwick APK. The current release is always at:
+3. In Downloader's URL box, type the Pickwick code:
 
    ```
-   github.com/itcon-pty-au/pickwick/releases/latest
+   1037466
    ```
 
-   Open that page in Downloader's browser, scroll to **Assets**, and click
-   **app-release.apk**. It downloads and asks to install.
+   (If the code ever doesn't work, the newest release is always at
+   `github.com/itcon-pty-au/pickwick/releases/latest/download/pickwick.apk` —
+   typing that full address does the same thing.)
+
+   The download starts straight away and asks to install.
 4. The TV now says *"For your security, your TV is not allowed to install
    unknown apps from this source."* That's the switch mentioned above:
    press **Settings** on that message (or go to
@@ -60,7 +62,7 @@ should do. Way B is for people comfortable with a command line.
    TV ever stops appearing in adb.
 3. On the computer, install
    [Android platform-tools](https://developer.android.com/tools/releases/platform-tools)
-   and download `app-release.apk` from the
+   and download `pickwick.apk` from the
    [latest release](https://github.com/itcon-pty-au/pickwick/releases/latest).
 4. With computer and TV on the same Wi-Fi, pair using the code shown under
    **Wireless debugging → Pair device with pairing code**:
@@ -68,7 +70,7 @@ should do. Way B is for people comfortable with a command line.
    ```
    adb pair <ip>:<pairing-port>
    adb connect <ip>:<port>
-   adb install -r app-release.apk
+   adb install -r pickwick.apk
    ```
 
 5. A note for later reinstalls: `adb install -r` keeps the app's data, so
@@ -82,7 +84,7 @@ should do. Way B is for people comfortable with a command line.
 
 1. On the phone, open this page in Chrome:
    **github.com/itcon-pty-au/pickwick/releases/latest**
-2. Under **Assets**, tap **app-release.apk**. Chrome warns that the file
+2. Under **Assets**, tap **pickwick.apk**. Chrome warns that the file
    "might be harmful" — that's the standard warning for *any* APK; tap
    **Download anyway**.
 3. Open the downloaded file (notification shade, or Files → Downloads).
