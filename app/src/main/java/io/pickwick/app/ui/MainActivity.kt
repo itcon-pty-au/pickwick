@@ -4,6 +4,7 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
@@ -1739,8 +1740,22 @@ private fun HomeHeader(
                     .size(30.dp)
                     .background(Color(0xFF00695C))
             ) {
-                Text("▶", color = Color.White,
-                    style = MaterialTheme.typography.titleMedium)
+                // Drawn, not the "▶" glyph: font side bearings and line-height
+                // padding left that mark visibly off-centre in the tile. These
+                // fractions are ic_launcher.xml's triangle scaled to the tile,
+                // so the centroid — not the bounding box — lands on the centre,
+                // which is what the eye reads as centred.
+                Canvas(Modifier.size(30.dp)) {
+                    val w = size.width
+                    val h = size.height
+                    val play = androidx.compose.ui.graphics.Path().apply {
+                        moveTo(w * 0.38f, h * 0.28f)
+                        lineTo(w * 0.76f, h * 0.50f)
+                        lineTo(w * 0.38f, h * 0.72f)
+                        close()
+                    }
+                    drawPath(play, Color.White)
+                }
             }
             Spacer(Modifier.width(10.dp))
             Text(
