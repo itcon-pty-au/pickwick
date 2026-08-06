@@ -6,8 +6,12 @@
       "url": "https://www.youtube.com/user/scishowkids",
       "name": "SciShow Kids",
       "kind": "channel",
-      "ages": ["5-7"],
-      "topics": ["Science"],
+      "ages": [
+        "5-7"
+      ],
+      "topics": [
+        "Science"
+      ],
       "note": "Squeaks the robot lab rat and friends answer little kids' science questions.",
       "added": "2026-08-06"
     },
@@ -15,8 +19,13 @@
       "url": "https://www.youtube.com/user/crashcoursekids",
       "name": "Crash Course Kids",
       "kind": "channel",
-      "ages": ["5-7", "8-10"],
-      "topics": ["Science"],
+      "ages": [
+        "5-7",
+        "8-10"
+      ],
+      "topics": [
+        "Science"
+      ],
       "note": "Fast, cheerful elementary science from the Crash Course family.",
       "added": "2026-08-06"
     },
@@ -24,8 +33,14 @@
       "url": "https://www.youtube.com/channel/UCxEmDFo1yUbbxjEb9RjitVA",
       "name": "Wild Kratts",
       "kind": "channel",
-      "ages": ["5-7", "8-10"],
-      "topics": ["Nature & animals", "Stories"],
+      "ages": [
+        "5-7",
+        "8-10"
+      ],
+      "topics": [
+        "Nature & animals",
+        "Stories"
+      ],
       "note": "Animal-powered adventures that sneak real zoology into every episode.",
       "added": "2026-08-06"
     },
@@ -33,8 +48,13 @@
       "url": "https://www.youtube.com/@natgeokids",
       "name": "Nat Geo Kids",
       "kind": "channel",
-      "ages": ["5-7", "8-10"],
-      "topics": ["Nature & animals"],
+      "ages": [
+        "5-7",
+        "8-10"
+      ],
+      "topics": [
+        "Nature & animals"
+      ],
       "note": "National Geographic's kid channel — animals and weird-but-true facts.",
       "added": "2026-08-06"
     },
@@ -42,8 +62,14 @@
       "url": "https://www.youtube.com/@maddiemoate",
       "name": "Maddie Moate",
       "kind": "channel",
-      "ages": ["5-7", "8-10"],
-      "topics": ["Science", "Nature & animals"],
+      "ages": [
+        "5-7",
+        "8-10"
+      ],
+      "topics": [
+        "Science",
+        "Nature & animals"
+      ],
       "note": "Warm, curious \"but why?\" science and behind-the-scenes visits.",
       "added": "2026-08-06"
     },
@@ -51,8 +77,12 @@
       "url": "https://www.youtube.com/@StorytimewithRyanandCraig",
       "name": "Storytime with Ryan & Craig",
       "kind": "channel",
-      "ages": ["5-7"],
-      "topics": ["Stories"],
+      "ages": [
+        "5-7"
+      ],
+      "topics": [
+        "Stories"
+      ],
       "note": "Two goofy friends read picture books aloud, with all the voices.",
       "added": "2026-08-06"
     },
@@ -60,8 +90,14 @@
       "url": "https://www.youtube.com/channel/UCAOtE1V7Ots4DjM8JLlrYgg",
       "name": "Peppa Pig",
       "kind": "channel",
-      "ages": ["2-4", "5-7"],
-      "topics": ["Preschool", "Stories"],
+      "ages": [
+        "2-4",
+        "5-7"
+      ],
+      "topics": [
+        "Preschool",
+        "Stories"
+      ],
       "note": "Official Peppa episodes — reliable calm viewing for the youngest.",
       "added": "2026-08-06"
     },
@@ -69,8 +105,14 @@
       "url": "https://www.youtube.com/playlist?list=PLlYVsNakSKcflqZo8Fvmu3XlLqLz6prJt",
       "name": "Ask the StoryBots: Season 1",
       "kind": "playlist",
-      "ages": ["2-4", "5-7"],
-      "topics": ["Preschool", "Stories"],
+      "ages": [
+        "2-4",
+        "5-7"
+      ],
+      "topics": [
+        "Preschool",
+        "Stories"
+      ],
       "note": "A full season as a playlist — each episode answers one kid question.",
       "added": "2026-08-06"
     },
@@ -78,8 +120,14 @@
       "url": "https://www.youtube.com/playlist?list=PLlYVsNakSKccbPMCHiUb8ic3Gpl5vcXCa",
       "name": "Ask the StoryBots: Season 2",
       "kind": "playlist",
-      "ages": ["2-4", "5-7"],
-      "topics": ["Preschool", "Stories"],
+      "ages": [
+        "2-4",
+        "5-7"
+      ],
+      "topics": [
+        "Preschool",
+        "Stories"
+      ],
       "note": "A full season as a playlist — each episode answers one kid question.",
       "added": "2026-08-06"
     },
@@ -87,8 +135,14 @@
       "url": "https://www.youtube.com/playlist?list=PLlYVsNakSKcdGQs2ZB97XZwmSnKaCB3Ne",
       "name": "Ask the StoryBots: Season 3",
       "kind": "playlist",
-      "ages": ["2-4", "5-7"],
-      "topics": ["Preschool", "Stories"],
+      "ages": [
+        "2-4",
+        "5-7"
+      ],
+      "topics": [
+        "Preschool",
+        "Stories"
+      ],
       "note": "A full season as a playlist — each episode answers one kid question.",
       "added": "2026-08-06"
     },
@@ -96,8 +150,15 @@
       "url": "https://www.youtube.com/playlist?list=PLlYVsNakSKcesFfNRz7tG5yMUJCLmSsg-",
       "name": "A StoryBots Space Adventure",
       "kind": "playlist",
-      "ages": ["2-4", "5-7"],
-      "topics": ["Preschool", "Space", "Stories"],
+      "ages": [
+        "2-4",
+        "5-7"
+      ],
+      "topics": [
+        "Preschool",
+        "Space",
+        "Stories"
+      ],
       "note": "The StoryBots head to space, with real astronauts along for the ride.",
       "added": "2026-08-06"
     },
@@ -105,8 +166,14 @@
       "url": "https://www.youtube.com/playlist?list=PLlYVsNakSKce9V9JGQEhtU913NeXIRK_g",
       "name": "StoryBots Christmas",
       "kind": "playlist",
-      "ages": ["2-4", "5-7"],
-      "topics": ["Preschool", "Stories"],
+      "ages": [
+        "2-4",
+        "5-7"
+      ],
+      "topics": [
+        "Preschool",
+        "Stories"
+      ],
       "note": "The StoryBots holiday special, as a playlist.",
       "added": "2026-08-06"
     },
@@ -114,8 +181,14 @@
       "url": "https://www.youtube.com/playlist?list=PLlYVsNakSKccrlaeDaClYJRaa9MSMRMz0",
       "name": "StoryBots Answer Time: Season 1",
       "kind": "playlist",
-      "ages": ["2-4", "5-7"],
-      "topics": ["Preschool", "Stories"],
+      "ages": [
+        "2-4",
+        "5-7"
+      ],
+      "topics": [
+        "Preschool",
+        "Stories"
+      ],
       "note": "More kid questions answered, one snappy episode at a time.",
       "added": "2026-08-06"
     },
@@ -123,8 +196,14 @@
       "url": "https://www.youtube.com/playlist?list=PLlYVsNakSKcergeuy1sAOkRZQsyPJTgK7",
       "name": "StoryBots Answer Time: Season 2",
       "kind": "playlist",
-      "ages": ["2-4", "5-7"],
-      "topics": ["Preschool", "Stories"],
+      "ages": [
+        "2-4",
+        "5-7"
+      ],
+      "topics": [
+        "Preschool",
+        "Stories"
+      ],
       "note": "More kid questions answered, one snappy episode at a time.",
       "added": "2026-08-06"
     },
@@ -132,8 +211,12 @@
       "url": "https://www.youtube.com/@BrainsOnShow",
       "name": "Brains On!",
       "kind": "channel",
-      "ages": ["8-10"],
-      "topics": ["Science"],
+      "ages": [
+        "8-10"
+      ],
+      "topics": [
+        "Science"
+      ],
       "note": "The kids' science podcast — episodes answer real listeners' questions.",
       "added": "2026-08-06"
     },
@@ -141,8 +224,12 @@
       "url": "https://www.youtube.com/@BillNyeTheScienceGuyHD",
       "name": "Bill Nye the Science Guy",
       "kind": "channel",
-      "ages": ["8-10"],
-      "topics": ["Science"],
+      "ages": [
+        "8-10"
+      ],
+      "topics": [
+        "Science"
+      ],
       "note": "The classic 90s show, aged surprisingly well.",
       "added": "2026-08-06"
     },
@@ -150,8 +237,14 @@
       "url": "https://www.youtube.com/@TEDEd",
       "name": "TED-Ed",
       "kind": "channel",
-      "ages": ["8-10", "11+"],
-      "topics": ["Science", "History"],
+      "ages": [
+        "8-10",
+        "11+"
+      ],
+      "topics": [
+        "Science",
+        "History"
+      ],
       "note": "Five-minute animated answers to big questions, beautifully produced.",
       "added": "2026-08-06"
     },
@@ -159,8 +252,14 @@
       "url": "https://www.youtube.com/channel/UC4a-Gbdw7vOaccHmFo40b9g",
       "name": "Khan Academy",
       "kind": "channel",
-      "ages": ["8-10", "11+"],
-      "topics": ["Math", "Science"],
+      "ages": [
+        "8-10",
+        "11+"
+      ],
+      "topics": [
+        "Math",
+        "Science"
+      ],
       "note": "The classic free-learning library — great when homework needs backup.",
       "added": "2026-08-06"
     },
@@ -168,8 +267,13 @@
       "url": "https://www.youtube.com/user/mathantics",
       "name": "Math Antics",
       "kind": "channel",
-      "ages": ["8-10", "11+"],
-      "topics": ["Math"],
+      "ages": [
+        "8-10",
+        "11+"
+      ],
+      "topics": [
+        "Math"
+      ],
       "note": "Clear, friendly whiteboard math lessons that actually stick.",
       "added": "2026-08-06"
     },
@@ -177,8 +281,13 @@
       "url": "https://www.youtube.com/@MashUpMath",
       "name": "MashUp Math",
       "kind": "channel",
-      "ages": ["8-10", "11+"],
-      "topics": ["Math"],
+      "ages": [
+        "8-10",
+        "11+"
+      ],
+      "topics": [
+        "Math"
+      ],
       "note": "Visual math lessons for upper elementary and middle school.",
       "added": "2026-08-06"
     },
@@ -186,8 +295,13 @@
       "url": "https://www.youtube.com/@bbcearth",
       "name": "BBC Earth",
       "kind": "channel",
-      "ages": ["8-10", "11+"],
-      "topics": ["Nature & animals"],
+      "ages": [
+        "8-10",
+        "11+"
+      ],
+      "topics": [
+        "Nature & animals"
+      ],
       "note": "Planet-Earth-grade wildlife footage in kid-length clips.",
       "added": "2026-08-06"
     },
@@ -195,8 +309,13 @@
       "url": "https://www.youtube.com/@bbcearthscience",
       "name": "BBC Earth Science",
       "kind": "channel",
-      "ages": ["8-10", "11+"],
-      "topics": ["Science"],
+      "ages": [
+        "8-10",
+        "11+"
+      ],
+      "topics": [
+        "Science"
+      ],
       "note": "The BBC's science strand — experiments, engineering, how-it-works.",
       "added": "2026-08-06"
     },
@@ -204,8 +323,14 @@
       "url": "https://www.youtube.com/c/microcosmos",
       "name": "Journey to the Microcosmos",
       "kind": "channel",
-      "ages": ["8-10", "11+"],
-      "topics": ["Nature & animals", "Science"],
+      "ages": [
+        "8-10",
+        "11+"
+      ],
+      "topics": [
+        "Nature & animals",
+        "Science"
+      ],
       "note": "Calm, narrated microscope footage — the most soothing science on YouTube.",
       "added": "2026-08-06"
     },
@@ -213,8 +338,13 @@
       "url": "https://www.youtube.com/user/KQEDDeepLook",
       "name": "Deep Look",
       "kind": "channel",
-      "ages": ["8-10", "11+"],
-      "topics": ["Nature & animals"],
+      "ages": [
+        "8-10",
+        "11+"
+      ],
+      "topics": [
+        "Nature & animals"
+      ],
       "note": "Ultra-close-up mini-documentaries about very small creatures.",
       "added": "2026-08-06"
     },
@@ -222,8 +352,13 @@
       "url": "https://www.youtube.com/user/minutephysics",
       "name": "MinutePhysics",
       "kind": "channel",
-      "ages": ["8-10", "11+"],
-      "topics": ["Science"],
+      "ages": [
+        "8-10",
+        "11+"
+      ],
+      "topics": [
+        "Science"
+      ],
       "note": "Hand-drawn physics explainers, a few minutes each.",
       "added": "2026-08-06"
     },
@@ -231,8 +366,14 @@
       "url": "https://www.youtube.com/c/minuteearth",
       "name": "MinuteEarth",
       "kind": "channel",
-      "ages": ["8-10", "11+"],
-      "topics": ["Science", "Nature & animals"],
+      "ages": [
+        "8-10",
+        "11+"
+      ],
+      "topics": [
+        "Science",
+        "Nature & animals"
+      ],
       "note": "Short animated stories about how Earth works.",
       "added": "2026-08-06"
     },
@@ -240,8 +381,13 @@
       "url": "https://www.youtube.com/c/TheActionLab",
       "name": "The Action Lab",
       "kind": "channel",
-      "ages": ["8-10", "11+"],
-      "topics": ["Science"],
+      "ages": [
+        "8-10",
+        "11+"
+      ],
+      "topics": [
+        "Science"
+      ],
       "note": "Home-lab experiments you'd never be allowed to do at home.",
       "added": "2026-08-06"
     },
@@ -249,8 +395,13 @@
       "url": "https://www.youtube.com/user/GeographyNow",
       "name": "Geography Now",
       "kind": "channel",
-      "ages": ["8-10", "11+"],
-      "topics": ["Geography"],
+      "ages": [
+        "8-10",
+        "11+"
+      ],
+      "topics": [
+        "Geography"
+      ],
       "note": "Every country on Earth, one energetic profile at a time.",
       "added": "2026-08-06"
     },
@@ -258,8 +409,12 @@
       "url": "https://www.youtube.com/c/veritasium",
       "name": "Veritasium",
       "kind": "channel",
-      "ages": ["11+"],
-      "topics": ["Science"],
+      "ages": [
+        "11+"
+      ],
+      "topics": [
+        "Science"
+      ],
       "note": "Serious science storytelling — the channel older kids graduate into.",
       "added": "2026-08-06"
     },
@@ -267,8 +422,12 @@
       "url": "https://www.youtube.com/user/scishow",
       "name": "SciShow",
       "kind": "channel",
-      "ages": ["11+"],
-      "topics": ["Science"],
+      "ages": [
+        "11+"
+      ],
+      "topics": [
+        "Science"
+      ],
       "note": "Daily science news and explainers for teens and up.",
       "added": "2026-08-06"
     },
@@ -276,8 +435,13 @@
       "url": "https://www.youtube.com/c/realscience",
       "name": "Real Science",
       "kind": "channel",
-      "ages": ["11+"],
-      "topics": ["Science", "Nature & animals"],
+      "ages": [
+        "11+"
+      ],
+      "topics": [
+        "Science",
+        "Nature & animals"
+      ],
       "note": "Documentary-length dives into biology's strangest corners.",
       "added": "2026-08-06"
     },
@@ -285,8 +449,12 @@
       "url": "https://www.youtube.com/c/BranchEducation",
       "name": "Branch Education",
       "kind": "channel",
-      "ages": ["11+"],
-      "topics": ["Engineering & tech"],
+      "ages": [
+        "11+"
+      ],
+      "topics": [
+        "Engineering & tech"
+      ],
       "note": "Gorgeous 3D teardowns of how everyday tech works inside.",
       "added": "2026-08-06"
     },
@@ -294,8 +462,12 @@
       "url": "https://www.youtube.com/user/engineerguyvideo",
       "name": "Engineerguy",
       "kind": "channel",
-      "ages": ["11+"],
-      "topics": ["Engineering & tech"],
+      "ages": [
+        "11+"
+      ],
+      "topics": [
+        "Engineering & tech"
+      ],
       "note": "Bill Hammack unpacks the genius inside ordinary objects.",
       "added": "2026-08-06"
     },
@@ -303,8 +475,12 @@
       "url": "https://www.youtube.com/channel/UC5_Y-BKzq1uW_2rexWkUzlA",
       "name": "New Mind",
       "kind": "channel",
-      "ages": ["11+"],
-      "topics": ["Engineering & tech"],
+      "ages": [
+        "11+"
+      ],
+      "topics": [
+        "Engineering & tech"
+      ],
       "note": "How industrial technology actually works, from first principles.",
       "added": "2026-08-06"
     },
@@ -312,8 +488,12 @@
       "url": "https://www.youtube.com/user/scishowspace",
       "name": "SciShow Space",
       "kind": "channel",
-      "ages": ["11+"],
-      "topics": ["Space"],
+      "ages": [
+        "11+"
+      ],
+      "topics": [
+        "Space"
+      ],
       "note": "Space news and astronomy from the SciShow team.",
       "added": "2026-08-06"
     },
@@ -321,8 +501,12 @@
       "url": "https://www.youtube.com/user/astrumspace",
       "name": "Astrum",
       "kind": "channel",
-      "ages": ["11+"],
-      "topics": ["Space"],
+      "ages": [
+        "11+"
+      ],
+      "topics": [
+        "Space"
+      ],
       "note": "Patient, awe-first tours of the solar system and beyond.",
       "added": "2026-08-06"
     },
@@ -330,8 +514,13 @@
       "url": "https://www.youtube.com/c/HistoryoftheUniverse",
       "name": "History of the Universe",
       "kind": "channel",
-      "ages": ["11+"],
-      "topics": ["Space", "History"],
+      "ages": [
+        "11+"
+      ],
+      "topics": [
+        "Space",
+        "History"
+      ],
       "note": "Feature-length cosmology told like a bedtime story for teens.",
       "added": "2026-08-06"
     },
@@ -339,8 +528,13 @@
       "url": "https://www.youtube.com/c/HistoryoftheEarth",
       "name": "History of the Earth",
       "kind": "channel",
-      "ages": ["11+"],
-      "topics": ["History", "Science"],
+      "ages": [
+        "11+"
+      ],
+      "topics": [
+        "History",
+        "Science"
+      ],
       "note": "Deep-time storytelling — how the planet got to be this way.",
       "added": "2026-08-06"
     },
@@ -348,9 +542,28 @@
       "url": "https://www.youtube.com/c/AtlasPro1",
       "name": "Atlas Pro",
       "kind": "channel",
-      "ages": ["11+"],
-      "topics": ["Geography", "Nature & animals"],
+      "ages": [
+        "11+"
+      ],
+      "topics": [
+        "Geography",
+        "Nature & animals"
+      ],
       "note": "Maps, biomes and what-if geography for curious older kids.",
+      "added": "2026-08-06"
+    },
+    {
+      "url": "https://www.youtube.com/@StorylineOnline",
+      "name": "StorylineOnline",
+      "kind": "channel",
+      "ages": [
+        "5-7",
+        "8-10"
+      ],
+      "topics": [
+        "Stories"
+      ],
+      "note": "Picture books read by actors",
       "added": "2026-08-06"
     }
   ]
