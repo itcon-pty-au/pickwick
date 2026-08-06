@@ -41,9 +41,11 @@
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     min-height: 100vh;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: center;
-    padding: 24px;
+    /* Top-anchored: dead-center on tall screens reads as a big empty gap
+       above the card. */
+    padding: max(24px, 6vh) 24px 24px;
   }
   .card {
     background: var(--card);

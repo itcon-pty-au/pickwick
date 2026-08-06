@@ -65,7 +65,7 @@
   label.field { display: block; font-weight: 700; font-size: 15px; margin: 18px 0 6px; }
   label.field:first-child { margin-top: 0; }
   .hint { font-weight: 400; font-size: 13px; color: var(--muted); }
-  input[type=url], textarea {
+  input[type=text], textarea {
     width: 100%;
     font: inherit;
     color: var(--text);
@@ -74,7 +74,7 @@
     border-radius: 12px;
     padding: 10px 14px;
   }
-  input[type=url]:focus, textarea:focus { outline: none; border-color: var(--accent); }
+  input[type=text]:focus, textarea:focus { outline: none; border-color: var(--accent); }
   textarea { resize: vertical; min-height: 70px; }
   .chips { display: flex; flex-wrap: wrap; gap: 8px; }
   .chip {
@@ -147,7 +147,7 @@
   </div></a>
   <h1>Suggest a channel</h1>
   <p class="tagline">
-    Know a channel other families would trust? Every suggestion gets an AI screening
+    Know a channel or playlist other families would trust? Every suggestion gets an AI screening
     pass and a human review before it appears in the directory. No account needed —
     we don't collect your name or email.
   </p>
@@ -161,9 +161,9 @@
     </div>
 
     <form id="form" novalidate>
-      <label class="field" for="url">YouTube channel link
-        <span class="hint">— e.g. https://www.youtube.com/@SciShowKids</span></label>
-      <input type="url" id="url" name="url" required
+      <label class="field" for="url">YouTube channel or playlist link
+        <span class="hint">— paste it straight from YouTube's Share button, any format works</span></label>
+      <input type="text" id="url" name="url" required inputmode="url"
              placeholder="https://www.youtube.com/@…" autocomplete="off">
 
       <label class="field">Good for ages <span class="hint">— pick every band that fits</span></label>
@@ -250,6 +250,31 @@
     $('turnstileSlot').appendChild(slot);
   }
 
+  // Lenient on purpose — parents paste whatever the Share button gave them.
+  // Returns a canonical URL string, 'video' for a lone video link (so the
+  // error can say what to do instead), or null. Mirrors the Worker's parser;
+  // keep the two in sync.
+  function parseYouTubeLink(raw) {
+    raw = (raw || '').trim();
+    if (!raw) return null;
+    if (!/^https?:\/\//i.test(raw)) raw = 'https://' + raw;
+    var u;
+    try { u = new URL(raw); } catch (e) { return null; }
+    var host = u.hostname.toLowerCase().replace(/^(www|m)\./, '');
+    if (host !== 'youtube.com' && host !== 'youtu.be') return null;
+    // A playlist id anywhere wins — including watch?v=…&list=… share links.
+    var list = u.searchParams.get('list');
+    if (list && /^[A-Za-z0-9_-]{10,}$/.test(list)) {
+      return 'https://www.youtube.com/playlist?list=' + list;
+    }
+    if (host === 'youtu.be') return 'video';
+    // Channel forms, tolerating trailing tabs like /videos or /featured.
+    var m = u.pathname.match(/^\/(@[\w.-]{3,}|channel\/UC[\w-]{22}|(?:user|c)\/[\w.-]+)(?:\/[\w-]*)?\/?$/);
+    if (m) return 'https://www.youtube.com/' + m[1];
+    if (/^\/(watch|shorts|live|embed)([/?]|$)/.test(u.pathname)) return 'video';
+    return null;
+  }
+
   function fail(text) {
     var m = $('msg');
     m.className = 'msg err';
@@ -261,10 +286,12 @@
     if (!configured) return;
     $('msg').textContent = '';
 
-    var url = $('url').value.trim();
-    // Channel forms only — playlists are curated by hand for now.
-    var ok = /^https?:\/\/((www|m)\.)?youtube\.com\/(@[\w.-]{3,}|channel\/UC[\w-]{22}|(user|c)\/[\w.-]+)\/?([?#].*)?$/i.test(url);
-    if (!ok) return fail('That doesn’t look like a YouTube channel link — it should contain @handle, /channel/UC…, /user/… or /c/….');
+    var parsed = parseYouTubeLink($('url').value);
+    if (parsed === 'video') {
+      return fail('That link points to a single video — please paste the channel or playlist it belongs to instead. On the video page, tap the channel name (or the playlist title) and share that.');
+    }
+    if (!parsed) return fail('That doesn’t look like a YouTube channel or playlist link — try copying it from YouTube’s Share button.');
+    var url = parsed;
     if (!picked.ages.length) return fail('Pick at least one age band.');
     if (!$('note').value.trim()) return fail('Please add one sentence about why kids love it.');
 

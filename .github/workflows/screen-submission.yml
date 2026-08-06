@@ -77,20 +77,26 @@ jobs:
             url=$(jq -r '.url' <<< "$entry")
             name=$(jq -r '.name' <<< "$entry")
 
-            # Channel metadata via the public RSS feed (no API key). GitHub's
-            # datacenter IPs are often bot-walled by YouTube — degrade to a
-            # metadata-free screen rather than failing the run.
+            # Channel/playlist metadata via the public RSS feed (no API key).
+            # GitHub's datacenter IPs are often bot-walled by YouTube —
+            # degrade to a metadata-free screen rather than failing the run.
+            playlist_id=$(grep -oP 'list=\K[A-Za-z0-9_-]{10,}' <<< "$url" || true)
             channel_id=$(grep -oP 'channel/\KUC[\w-]{22}' <<< "$url" || true)
-            if [ -z "$channel_id" ]; then
+            if [ -z "$channel_id" ] && [ -z "$playlist_id" ]; then
               # Canonical link first — the first "channelId" in the page HTML
               # can belong to a featured/parent channel, not this one.
               page=$(curl -sL --max-time 20 -A "Mozilla/5.0" "$url" || true)
               channel_id=$(grep -oP 'rel="canonical" href="https://www\.youtube\.com/channel/\KUC[\w-]{22}' <<< "$page" | head -1 || true)
               [ -z "$channel_id" ] && channel_id=$(grep -oP '"channelId":"\KUC[\w-]{22}' <<< "$page" | head -1 || true)
             fi
-            titles="(unavailable — could not fetch channel data from this runner)"
-            if [ -n "$channel_id" ]; then
-              feed=$(curl -s --max-time 20 "https://www.youtube.com/feeds/videos.xml?channel_id=$channel_id" || true)
+            titles="(unavailable — could not fetch channel/playlist data from this runner)"
+            if [ -n "$playlist_id" ]; then
+              feed_query="playlist_id=$playlist_id"
+            else
+              feed_query="channel_id=$channel_id"
+            fi
+            if [ -n "$channel_id" ] || [ -n "$playlist_id" ]; then
+              feed=$(curl -s --max-time 20 "https://www.youtube.com/feeds/videos.xml?$feed_query" || true)
               if [ -n "$feed" ]; then
                 titles=$(grep -oP '(?<=<title>).*?(?=</title>)' <<< "$feed" | tail -n +2 | head -15 || true)
                 [ -z "$titles" ] && titles="(feed empty)"
@@ -98,7 +104,7 @@ jobs:
             fi
 
             prompt=$(jq -n --argjson entry "$entry" --arg titles "$titles" '
-              "You are the AI pre-screen for Pickwick, a parent-curated whitelist video app for kids. A parent suggested a YouTube channel for the shared directory; a human reviewer makes the final call — your job is an honest first pass. Flag uncertainty instead of guessing.\n\nProposed entry:\n" + ($entry | tostring) + "\n\nRecent upload titles from the channel feed:\n" + $titles + "\n\nJudge: (1) is the content plausibly appropriate for the proposed age bands; (2) red flags — mature themes, violence, clickbait or brainrot patterns, heavy sponsorship, not actually kid-oriented; (3) do the proposed topics match what the channel appears to be. If you recognize this channel, use what you know about it. If you have neither recognition nor feed data, say so via insufficient_data."
+              "You are the AI pre-screen for Pickwick, a parent-curated whitelist video app for kids. A parent suggested a YouTube channel or playlist (see the entry'\''s kind field) for the shared directory; a human reviewer makes the final call — your job is an honest first pass. Flag uncertainty instead of guessing.\n\nProposed entry:\n" + ($entry | tostring) + "\n\nRecent video titles from its feed:\n" + $titles + "\n\nJudge: (1) is the content plausibly appropriate for the proposed age bands; (2) red flags — mature themes, violence, clickbait or brainrot patterns, heavy sponsorship, not actually kid-oriented; (3) do the proposed topics match what it appears to be. If you recognize this channel or playlist, use what you know about it. If you have neither recognition nor feed data, say so via insufficient_data."
             ')
 
             body=$(jq -n --arg prompt "$prompt" '{

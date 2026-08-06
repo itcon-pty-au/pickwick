@@ -5,7 +5,7 @@
  * Gates, in cost order (everything before the PR is free):
  *   1. honeypot ("website" filled → pretend success, tell the bot nothing)
  *   2. Turnstile verification
- *   3. URL shape + channel existence on YouTube
+ *   3. URL shape + channel/playlist existence on YouTube
  *   4. dedup against the published directory and open submission PRs
  *   5. open-queue cap (bill protection for the AI screening Action)
  * Survivors become a PR against docs/directory/en.json; the AI screening
@@ -44,14 +44,16 @@ export default {
       return json({ status: 'error', message: 'Human check failed.' }, 403, cors);
     }
 
-    const channel = parseChannelUrl(String(body.url || ''));
+    const channel = parseSuggestionUrl(String(body.url || ''));
     if (!channel) {
-      return json({ status: 'invalid', message: 'Not a recognizable YouTube channel link.' }, 422, cors);
+      return json({ status: 'invalid', message: 'Not a recognizable YouTube channel or playlist link.' }, 422, cors);
     }
 
-    const probe = await probeChannel(channel);
+    const probe = channel.kind === 'playlist'
+      ? await probePlaylist(channel)
+      : await probeChannel(channel);
     if (probe.status === 'missing') {
-      return json({ status: 'invalid', message: 'YouTube says that channel doesn’t exist.' }, 422, cors);
+      return json({ status: 'invalid', message: `YouTube says that ${channel.kind} doesn’t exist.` }, 422, cors);
     }
 
     const gh = github(env);
@@ -66,7 +68,7 @@ export default {
     const entry = {
       url: channel.url,
       name: probe.title || channel.display,
-      kind: 'channel',
+      kind: channel.kind,
       ages,
       topics,
       note,
@@ -117,17 +119,43 @@ async function verifyTurnstile(token, request, env) {
 }
 
 /**
- * Channel URL forms the app's WhitelistParser also accepts: @handle,
- * /channel/UC…, /user/name, /c/name. Playlists stay hand-curated for now.
+ * Channel and playlist forms the app's WhitelistParser also accepts: @handle,
+ * /channel/UC…, /user/name, /c/name, playlist?list=…. Deliberately lenient —
+ * parents paste whatever YouTube's Share button gave them (missing scheme,
+ * m. host, trailing /videos tab, watch?v=…&list=… share links). Mirrors
+ * parseYouTubeLink in docs/suggest.html; keep the two in sync.
  */
-function parseChannelUrl(raw) {
-  const m = raw.trim().match(
-    /^https?:\/\/(?:(?:www|m)\.)?youtube\.com\/(@[\w.-]{3,}|channel\/(UC[\w-]{22})|(?:user|c)\/[\w.-]+)\/?(?:[?#].*)?$/i
-  );
+function parseSuggestionUrl(raw) {
+  raw = raw.trim();
+  if (raw && !/^https?:\/\//i.test(raw)) raw = 'https://' + raw;
+  let u;
+  try {
+    u = new URL(raw);
+  } catch {
+    return null;
+  }
+  const host = u.hostname.toLowerCase().replace(/^(www|m)\./, '');
+  if (host !== 'youtube.com' && host !== 'youtu.be') return null;
+  // A playlist id anywhere wins — including watch?v=…&list=… share links.
+  const list = u.searchParams.get('list');
+  if (list && /^[A-Za-z0-9_-]{10,}$/.test(list)) {
+    return {
+      kind: 'playlist',
+      url: `https://www.youtube.com/playlist?list=${list}`,
+      playlistId: list,
+      channelId: null,
+      display: list,
+      key: `list=${list.toLowerCase()}`,
+    };
+  }
+  if (host === 'youtu.be') return null;
+  const m = u.pathname.match(/^\/(@[\w.-]{3,}|channel\/(UC[\w-]{22})|(?:user|c)\/[\w.-]+)(?:\/[\w-]*)?\/?$/);
   if (!m) return null;
   const path = m[1];
   return {
+    kind: 'channel',
     url: `https://www.youtube.com/${path}`,
+    playlistId: null,
     channelId: m[2] || null,
     display: path.startsWith('@') ? path : path.split('/').pop(),
     key: path.toLowerCase(),
@@ -158,6 +186,27 @@ async function probeChannel(channel) {
       || html.match(/"channelId":"(UC[\w-]{22})"/)?.[1] || null;
     const title = html.match(/<meta property="og:title" content="([^"]{1,120})"/)?.[1] || null;
     return { status: id ? 'verified' : 'unverified', channelId: id, title: decodeEntities(title) };
+  } catch {
+    return { status: 'unverified' };
+  }
+}
+
+/**
+ * Playlist existence check via the public RSS feed — same no-cost, no-key
+ * constraint as probeChannel, and the feed endpoint is far less bot-walled
+ * than watch/playlist pages. First <title> in the feed is the playlist name.
+ */
+async function probePlaylist(channel) {
+  try {
+    const r = await fetch(
+      `https://www.youtube.com/feeds/videos.xml?playlist_id=${channel.playlistId}`,
+      { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; PickwickDirectory/1.0)' } }
+    );
+    if (r.status === 404) return { status: 'missing' };
+    if (!r.ok) return { status: 'unverified' };
+    const xml = await r.text();
+    const title = xml.match(/<title>([^<]{1,120})<\/title>/)?.[1] || null;
+    return { status: title ? 'verified' : 'unverified', channelId: null, title: decodeEntities(title) };
   } catch {
     return { status: 'unverified' };
   }
@@ -237,8 +286,8 @@ function github(env) {
       if (!r.ok) throw new Error(`content put ${r.status}`);
 
       const verification = probe.status === 'verified'
-        ? `✅ Channel verified on YouTube (\`${probe.channelId}\`).`
-        : '⚠️ Could not verify the channel from the worker (possibly bot-walled) — the screening action will retry.';
+        ? `✅ ${entry.kind === 'playlist' ? 'Playlist' : 'Channel'} verified on YouTube${probe.channelId ? ` (\`${probe.channelId}\`)` : ''}.`
+        : `⚠️ Could not verify the ${entry.kind} from the worker (possibly bot-walled) — the screening action will retry.`;
 
       r = await api(`/repos/${env.GITHUB_REPO}/pulls`, {
         method: 'POST',
@@ -247,7 +296,7 @@ function github(env) {
           head: branch,
           base: 'main',
           body: [
-            `A parent suggested **[${entry.name}](${entry.url})** for the directory.`,
+            `A parent suggested the ${entry.kind} **[${entry.name}](${entry.url})** for the directory.`,
             '',
             `- Ages: ${entry.ages.join(', ')}`,
             `- Topics: ${entry.topics.join(', ') || '(none picked)'}`,
