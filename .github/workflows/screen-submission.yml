@@ -82,8 +82,11 @@ jobs:
             # metadata-free screen rather than failing the run.
             channel_id=$(grep -oP 'channel/\KUC[\w-]{22}' <<< "$url" || true)
             if [ -z "$channel_id" ]; then
-              channel_id=$(curl -sL --max-time 20 -A "Mozilla/5.0" "$url" \
-                | grep -oP '"channelId":"\KUC[\w-]{22}' | head -1 || true)
+              # Canonical link first — the first "channelId" in the page HTML
+              # can belong to a featured/parent channel, not this one.
+              page=$(curl -sL --max-time 20 -A "Mozilla/5.0" "$url" || true)
+              channel_id=$(grep -oP 'rel="canonical" href="https://www\.youtube\.com/channel/\KUC[\w-]{22}' <<< "$page" | head -1 || true)
+              [ -z "$channel_id" ] && channel_id=$(grep -oP '"channelId":"\KUC[\w-]{22}' <<< "$page" | head -1 || true)
             fi
             titles="(unavailable — could not fetch channel data from this runner)"
             if [ -n "$channel_id" ]; then

@@ -150,8 +150,12 @@ async function probeChannel(channel) {
     if (r.status === 404) return { status: 'missing' };
     if (!r.ok) return { status: 'unverified' };
     const html = await r.text();
-    const id = html.match(/"channelId":"(UC[\w-]{22})"/)?.[1]
-      || html.match(/youtube\.com\/channel\/(UC[\w-]{22})/)?.[1] || null;
+    // Canonical link first — the page HTML mentions other channels' ids too
+    // (a parent org's, featured channels'), and the first "channelId" match
+    // can be one of those (seen live: @StorylineOnline's first match was the
+    // SAG-AFTRA Foundation).
+    const id = html.match(/rel="canonical" href="https:\/\/www\.youtube\.com\/channel\/(UC[\w-]{22})"/)?.[1]
+      || html.match(/"channelId":"(UC[\w-]{22})"/)?.[1] || null;
     const title = html.match(/<meta property="og:title" content="([^"]{1,120})"/)?.[1] || null;
     return { status: id ? 'verified' : 'unverified', channelId: id, title: decodeEntities(title) };
   } catch {
