@@ -732,17 +732,17 @@ private fun AdminScreen(
             onOpenStats = { statsDevice = it },
             onConfigReplaced = { configEpoch++ }
         )
-
-        // Search index: who's the master, and how far each channel's crawl has
-        // got. Read-only — the master device does the work; this just reports.
-        SectionTitle("Search index")
-        SearchIndexSection(entries, masterToken, pairingStore)
         // Per-device Stats answers "what's happening today"; this answers
         // "how did the week go" across every device from the phone's own cache.
         TextButton(
             modifier = Modifier.tvFocusHighlight(),
             onClick = { digestOpen = true }
         ) { Text("📅 Weekly digest") }
+
+        // Search index: who's the master, and how far each channel's crawl has
+        // got. Read-only — the master device does the work; this just reports.
+        SectionTitle("Search index")
+        SearchIndexSection(entries, masterToken, pairingStore)
 
         SectionTitle("AI content screening")
         AiScreeningSection(ai, profiles, onChanged = { ai = it })
@@ -874,6 +874,17 @@ private fun SearchIndexSection(
     // the screen opened. ChannelIndex(context) also seeds the flow from disk.
     remember { io.pickwick.app.data.ChannelIndex(context) }
     val states by io.pickwick.app.data.ChannelIndex.sharedStates.collectAsState()
+    // The index is keyed by the CANONICAL source id (a @handle resolves to its
+    // UC… id during the feed fetch), while entries keep their raw whitelist id.
+    // SourceCache maps url → resolved Source, bridging the two — without it a
+    // handle entry shows "not started" while its videos sit under the UC key.
+    val canonicalByUrl by produceState<Map<String, String>>(emptyMap()) {
+        value = withContext(kotlinx.coroutines.Dispatchers.IO) {
+            io.pickwick.app.data.SourceCache(context).load().associate { it.url to it.id }
+        }
+    }
+    fun stateFor(e: io.pickwick.app.data.WhitelistEntry) =
+        states[canonicalByUrl[e.url]] ?: states[e.id]
     val isMaster = masterToken != null && masterToken == myToken
     var expanded by remember { mutableStateOf(false) }
 
@@ -888,12 +899,15 @@ private fun SearchIndexSection(
     )
 
     // Summary first: the per-channel list is long and rarely what the parent
-    // came for. Totals answer "is search working" at a glance.
-    val totalVideos = states.values.sumOf { it.count }
-    val complete = states.values.count { it.complete }
+    // came for. Totals answer "is search working" at a glance. Sum only the
+    // sources that are still whitelisted — a dropped channel's index file can
+    // outlive it on a device that hasn't run the cleanup yet.
+    val whitelistedStates = entries.mapNotNull { stateFor(it) }
+    val totalVideos = whitelistedStates.sumOf { it.count }
+    val complete = whitelistedStates.count { it.complete }
     Spacer(Modifier.height(6.dp))
     Text(
-        "$totalVideos videos indexed across ${states.size} channel(s) — $complete fully indexed.",
+        "$totalVideos videos indexed across ${entries.size} channel(s) — $complete fully indexed.",
         style = MaterialTheme.typography.bodyMedium
     )
 
@@ -904,7 +918,7 @@ private fun SearchIndexSection(
     } else {
         Spacer(Modifier.height(6.dp))
         entries.forEach { e ->
-            val s = states[e.id]
+            val s = stateFor(e)
             val label = e.label ?: e.id
             val status = when {
                 s == null -> "not started"

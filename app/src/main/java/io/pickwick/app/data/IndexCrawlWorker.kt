@@ -63,6 +63,13 @@ class IndexCrawlWorker(
             }
             if (pages >= PAGES_PER_RUN) break
         }
+        // Visible in logcat: confirms the worker ran, how much it did, and how
+        // far along the catalog is — the "is it stuck?" answer without a debugger.
+        android.util.Log.i(
+            "Pickwick",
+            "index crawl: $pages pages this run, " +
+                "${sources.size - incomplete.size}/${sources.size} sources complete"
+        )
         return Result.success()
     }
 
