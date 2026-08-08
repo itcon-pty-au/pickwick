@@ -344,15 +344,11 @@ internal fun PhoneDevicesSection(
                         // The reverse direction: adopt the device's settings — the recovery
                         // path when this phone was reinstalled and the device still holds
                         // the family's blocks/safe-list.
-                        TextButton(modifier = Modifier.tvFocusHighlight(), onClick = {
-                            pendingPull = device
-                        }) { Text("Pull") }
+                        CompactButton(onClick = { pendingPull = device }) { Text("Pull") }
                         Spacer(Modifier.width(4.dp))
                     }
-                    TextButton(modifier = Modifier.tvFocusHighlight(), onClick = { onOpenStats(device) }) {
-                        Text("Stats")
-                    }
-                    TextButton(modifier = Modifier.tvFocusHighlight(), onClick = {
+                    CompactButton(onClick = { onOpenStats(device) }) { Text("Stats") }
+                    CompactButton(onClick = {
                         pairingStore.removePaired(device.token)
                         devices = pairingStore.paired()
                     }) { Text("Unpair") }
@@ -375,12 +371,10 @@ internal fun PhoneDevicesSection(
                                 else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             if (!isMaster) {
-                                TextButton(modifier = Modifier.tvFocusHighlight(), onClick = {
-                                    onMakeMaster(adminToken)
-                                }) { Text("Make master") }
+                                CompactButton(onClick = { onMakeMaster(adminToken) }) { Text("Make master") }
                             }
                             if (!isThisPhone) {
-                                TextButton(modifier = Modifier.tvFocusHighlight(), onClick = {
+                                CompactButton(onClick = {
                                     pendingRevoke = Triple(device, adminName, adminToken)
                                 }) { Text("Revoke") }
                             }
@@ -400,7 +394,7 @@ internal fun PhoneDevicesSection(
                             scope.launch { LanClient.approveRequest(device, reqToken); checkAll() }
                         }) { Text("Approve") }
                         Spacer(Modifier.width(4.dp))
-                        TextButton(modifier = Modifier.tvFocusHighlight(), onClick = {
+                        CompactButton(onClick = {
                             scope.launch { LanClient.denyRequest(device, reqToken); checkAll() }
                         }) { Text("Deny") }
                     }

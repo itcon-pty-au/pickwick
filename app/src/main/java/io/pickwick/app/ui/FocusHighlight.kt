@@ -47,6 +47,28 @@ internal fun Modifier.tvFocusHighlight(onFocusChange: ((Boolean) -> Unit)? = nul
  */
 internal const val HELD_DPAD_STEP_MS = 400L
 
+/**
+ * A low-emphasis action in the settings form. The default TextButton's min
+ * height + horizontal padding read as a bare hyperlink and crowd dense rows;
+ * this keeps it a real focusable button (TV D-pad, ripple, content desc) at a
+ * tighter footprint. Dialog confirm/cancel keeps the standard TextButton.
+ */
+@Composable
+internal fun CompactButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit
+) {
+    androidx.compose.material3.TextButton(
+        onClick = onClick,
+        modifier = modifier.tvFocusHighlight(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+            horizontal = 10.dp, vertical = 2.dp
+        ),
+        content = content
+    )
+}
+
 /** All four directions — for grids, where any held direction moves focus. */
 internal val DPAD_ALL_DIRECTIONS =
     setOf(Key.DirectionUp, Key.DirectionDown, Key.DirectionLeft, Key.DirectionRight)

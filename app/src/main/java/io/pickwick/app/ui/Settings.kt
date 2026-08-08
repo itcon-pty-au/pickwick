@@ -734,10 +734,7 @@ private fun AdminScreen(
         )
         // Per-device Stats answers "what's happening today"; this answers
         // "how did the week go" across every device from the phone's own cache.
-        TextButton(
-            modifier = Modifier.tvFocusHighlight(),
-            onClick = { digestOpen = true }
-        ) { Text("📅 Weekly digest") }
+        CompactButton(onClick = { digestOpen = true }) { Text("📅 Weekly digest") }
 
         // Search index: who's the master, and how far each channel's crawl has
         // got. Read-only — the master device does the work; this just reports.
@@ -912,9 +909,7 @@ private fun SearchIndexSection(
     )
 
     if (!expanded) {
-        TextButton(onClick = { expanded = true }, modifier = Modifier.tvFocusHighlight()) {
-            Text("Read more")
-        }
+        CompactButton(onClick = { expanded = true }) { Text("Read more") }
     } else {
         // Run diagnostics: when the master last crawled and when the next
         // background run fires, so "is it stuck?" is answerable on screen.
