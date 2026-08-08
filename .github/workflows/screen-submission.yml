@@ -114,7 +114,7 @@ jobs:
             fi
 
             prompt=$(jq -n --argjson entry "$entry" --arg titles "$titles" '
-              "You are the AI pre-screen for Pickwick, a parent-curated whitelist video app for kids. A parent suggested a YouTube channel or playlist (see the entry'\''s kind field) for the shared directory; a human reviewer makes the final call — your job is an honest first pass. Flag uncertainty instead of guessing. The entry'\''s lang field is the ISO code of the language the parent says the channel is in — screen the content in that language, and flag a mismatch if the titles look like a different language.\n\nProposed entry:\n" + ($entry | tostring) + "\n\nRecent video titles from its feed:\n" + $titles + "\n\nJudge: (1) is the content plausibly appropriate for the proposed age bands; (2) red flags — mature themes, violence, clickbait or brainrot patterns, heavy sponsorship, not actually kid-oriented; (3) do the proposed topics match what it appears to be. If you recognize this channel or playlist, use what you know about it. If you have neither recognition nor feed data, say so via insufficient_data.\n\nAlways fill suggested_ages and suggested_topics with your own best classification (mirroring the parent'\''s values is fine when they fit): age bands from 2-4, 5-7, 8-10, 11+; up to three topics from exactly this list: Science; Nature & animals; Math; Space; Engineering & tech; Geography; History; Stories; Reading & language; Preschool; Music; Crafts & making; Art & drawing; Cooking & baking; Sports & movement; Feelings & social skills; Cartoons & shows. When the parent left ages or topics blank, your suggestions are committed onto the review PR, so leave them empty only if you truly cannot tell."
+              "You are the AI pre-screen for Pickwick, a parent-curated whitelist video app for kids. A parent suggested a YouTube channel or playlist (see the entry'\''s kind field) for the shared directory; a human reviewer makes the final call — your job is an honest first pass. Flag uncertainty instead of guessing. The entry'\''s lang field is the ISO code of the language the parent says the channel is in — screen the content in that language, and flag a mismatch if the titles look like a different language.\n\nProposed entry:\n" + ($entry | tostring) + "\n\nRecent video titles from its feed:\n" + $titles + "\n\nJudge: (1) is the content plausibly appropriate for the proposed age bands; (2) red flags — mature themes, violence, clickbait or brainrot patterns, heavy sponsorship, not actually kid-oriented; (3) do the proposed topics match what it appears to be. If you recognize this channel or playlist, use what you know about it. If you have neither recognition nor feed data, say so via insufficient_data.\n\nAlways fill suggested_ages and suggested_topics with your own best classification: age bands from 2-4, 5-7, 8-10, 11+ — include every band the content genuinely serves; the parent'\''s choice is a floor, not a ceiling, and bands you'\''re confident about get added to the entry (bands are never removed). Up to three topics from exactly this list: Science; Nature & animals; Math; Space; Engineering & tech; Geography; History; Stories; Reading & language; Preschool; Music; Crafts & making; Art & drawing; Cooking & baking; Sports & movement; Feelings & social skills; Cartoons & shows. Also fill suggested_note: one friendly sentence, at most 140 characters, in the channel'\''s language, describing what kids get out of it — it is published verbatim when the parent left the note blank, so write a plain description, never a fake parent testimonial. Blank fields are committed onto the review PR from your suggestions, so leave one empty only if you truly cannot tell."
             ')
 
             body=$(jq -n --arg prompt "$prompt" '{
@@ -129,9 +129,10 @@ jobs:
                   summary: {type: "string"},
                   concerns: {type: "array", items: {type: "string"}},
                   suggested_ages: {type: "array", items: {type: "string", enum: ["2-4", "5-7", "8-10", "11+"]}},
-                  suggested_topics: {type: "array", items: {type: "string"}, maxItems: 3}
+                  suggested_topics: {type: "array", items: {type: "string"}, maxItems: 3},
+                  suggested_note: {type: "string", maxLength: 140}
                 },
-                required: ["rating", "age_fit", "summary", "concerns", "suggested_ages", "suggested_topics"],
+                required: ["rating", "age_fit", "summary", "concerns", "suggested_ages", "suggested_topics", "suggested_note"],
                 additionalProperties: false
               }}}
             }')
@@ -176,21 +177,26 @@ jobs:
                 echo "- **Concerns:** $concerns"
               } >> comment.md
 
-              # Fill blanks the parent left — never override what they picked.
+              # Fill blanks and widen ages — never remove or rewrite what the
+              # parent picked (their bands are a floor, their note is theirs).
               # Edits land on the submission branch itself, so the reviewer
               # merges the final values, not a promise.
               lang=$(jq -r '.lang' <<< "$entry")
               f="site/directory/$lang.json"
               needs=$(jq -n --argjson e "$entry" --argjson v "$verdict" '
-                [ (if ($e.ages | length) == 0 and ($v.suggested_ages | length) > 0 then "ages " + ($v.suggested_ages | join(", ")) else empty end),
-                  (if ($e.topics | length) == 0 and ($v.suggested_topics | length) > 0 then "topics " + ($v.suggested_topics | join(", ")) else empty end)
+                [ (($v.suggested_ages - $e.ages) as $add
+                    | if ($add | length) > 0 then (if ($e.ages | length) == 0 then "ages " else "ages +" end) + ($add | join(", ")) else empty end),
+                  (if ($e.topics | length) == 0 and ($v.suggested_topics | length) > 0 then "topics " + ($v.suggested_topics | join(", ")) else empty end),
+                  (if (($e.note // "") | length) == 0 and (($v.suggested_note // "") | length) > 0 then "note “" + $v.suggested_note + "”" else empty end)
                 ] | join("; ")')
               if [ -n "$needs" ] && [ -f "$f" ]; then
                 jq --arg url "$url" --argjson v "$verdict" '
-                  .entries |= map(if .url == $url then
-                    (if (.ages | length) == 0 then .ages = $v.suggested_ages else . end)
-                    | (if (.topics | length) == 0 then .topics = $v.suggested_topics else . end)
-                  else . end)' "$f" > f.tmp && mv f.tmp "$f"
+                  ["2-4", "5-7", "8-10", "11+"] as $ord
+                  | .entries |= map(if .url == $url then
+                      .ages = ((.ages + $v.suggested_ages) | unique | sort_by($ord | index(.)))
+                      | (if (.topics | length) == 0 then .topics = $v.suggested_topics else . end)
+                      | (if ((.note // "") | length) == 0 then .note = $v.suggested_note else . end)
+                    else . end)' "$f" > f.tmp && mv f.tmp "$f"
                 echo "- **Filled in on this PR:** $needs" >> comment.md
               fi
             fi
@@ -201,9 +207,9 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add site/directory/*.json
-            git commit -m "Fill blank ages/topics from AI screening"
+            git commit -m "Fill blanks and widen ages from AI screening"
             git push origin HEAD:"$HEAD_REF"
-            echo "_Blank ages/topics were filled with the AI's classification and committed to this PR — edit them before merging if they look off._" >> comment.md
+            echo "_Blank fields were filled (and age bands widened) from the AI's classification and committed to this PR — edit before merging if anything looks off._" >> comment.md
             echo "" >> comment.md
           fi
 

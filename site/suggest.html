@@ -177,8 +177,8 @@
       <div class="chips" id="topics"></div>
 
       <label class="field" for="note">Why do your kids love it?
-        <span class="hint">— one sentence, shown next to the channel</span></label>
-      <textarea id="note" name="note" maxlength="140" required
+        <span class="hint">— one sentence, shown next to the channel; leave it and the review writes one</span></label>
+      <textarea id="note" name="note" maxlength="140"
                 placeholder="e.g. Calm science experiments my 7-year-old asks for by name."></textarea>
 
       <div class="hp" aria-hidden="true">
@@ -319,7 +319,6 @@
     }
     if (!parsed) return fail('That doesn’t look like a YouTube channel or playlist link — try copying it from YouTube’s Share button.');
     var url = parsed;
-    if (!$('note').value.trim()) return fail('Please add one sentence about why kids love it.');
 
     var token = (window.turnstile && window.turnstile.getResponse()) || '';
     if (!token) return fail('Please tick the “verify you’re human” box.');

@@ -39,9 +39,8 @@ export default {
     const ages = (Array.isArray(body.ages) ? body.ages : []).filter((a) => KNOWN_AGES.includes(a));
     const topics = (Array.isArray(body.topics) ? body.topics : [])
       .map((t) => String(t).slice(0, 40)).slice(0, 3);
-    // Ages and topics may be empty — the screening workflow fills blanks with
-    // AI-suggested values on the PR, where the reviewer sees them pre-merge.
-    if (!note) return json({ status: 'invalid', message: 'Missing fields.' }, 422, cors);
+    // Ages, topics and note may all be empty — the screening workflow fills
+    // blanks with AI values on the PR, where the reviewer sees them pre-merge.
 
     const lang = normalizeLang(body.lang);
     if (!lang) return json({ status: 'invalid', message: 'Pick the channel’s language.' }, 422, cors);
@@ -359,7 +358,7 @@ function github(env) {
             `- Language: ${lang.name}${target.index ? ' — **first entry in this language**, adds its file and index.json listing' : ''}`,
             `- Ages: ${entry.ages.join(', ') || '(left blank — AI screening will propose)'}`,
             `- Topics: ${entry.topics.join(', ') || '(left blank — AI screening will propose)'}`,
-            `- Note: “${entry.note}”`,
+            `- Note: ${entry.note ? `“${entry.note}”` : '(left blank — AI screening will propose)'}`,
             `- ${verification}`,
             '',
             'The AI screening workflow will comment with a verdict. **Merging publishes the channel** to the website directory and the in-app browser.',
