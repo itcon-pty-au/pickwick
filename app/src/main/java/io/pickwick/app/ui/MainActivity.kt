@@ -57,6 +57,13 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         val initialConfigTask = java.util.concurrent.FutureTask { configStore.load() }
         Thread(initialConfigTask, "config-preload").start()
         val pairingStore = PairingStore(applicationContext)
+        val deviceIsTv = (getSystemService(android.content.Context.UI_MODE_SERVICE) as android.app.UiModeManager)
+            .currentModeType == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
+        // Role is explicit from the first launch: TVs are kid devices, and any
+        // device that already pairs others is a parent. Phone/tablet with no
+        // history stays unset until its first pairing act decides it.
+        if (deviceIsTv) pairingStore.setRole(PairingStore.Role.KID)
+        if (pairingStore.paired().isNotEmpty()) pairingStore.setRole(PairingStore.Role.PARENT)
         val downloadStore = DownloadStore(applicationContext)
         val localLibrary = LocalLibrary(applicationContext)
         // A queue interrupted by a reboot or crash resumes on next open.
@@ -73,11 +80,12 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             it.profiles = initialConfig.profiles
             it.allowedOverrides = initialConfig.aiAllowedVideoIds
         }
-        val deviceIsTv = (getSystemService(android.content.Context.UI_MODE_SERVICE) as android.app.UiModeManager)
-            .currentModeType == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
-        if (deviceIsTv && LanServerHolder.server == null) {
-            LanServerHolder.server = LanServer(
-                configStore,
+        // Every device runs the LAN server now, not just TVs: a kid's phone or
+        // tablet is pairable too (config pushes, grants, index sync). It binds
+        // localhost-facing nothing — still the same token-gated listener, just
+        // no longer gated on form factor.
+        if (LanServerHolder.server == null) {
+            LanServerHolder.server = LanServer(                configStore,
                 grantHandler = { minutes, profileId ->
                     // Route the grant to the named kid's guard; unnamed grants
                     // (older admin phones) land on whoever this device shows.
@@ -115,6 +123,15 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         .importJson(json, ConfigStore(appContext).load().ai.rulesVersion)
                     // Imported ALLOWs reveal videos this device hadn't screened yet.
                     if (imported > 0) ConfigEvents.onConfigChanged?.invoke()
+                },
+                indexStatusProvider = {
+                    io.pickwick.app.data.ChannelIndex(appContext).statusJson()
+                },
+                indexSourceProvider = { sourceId ->
+                    io.pickwick.app.data.ChannelIndex(appContext).exportSourceWithState(sourceId)
+                },
+                indexMerger = { sourceId, body ->
+                    io.pickwick.app.data.ChannelIndex(appContext).importSourceWithState(sourceId, body)
                 }
             ).also { it.start() }
         }
@@ -242,7 +259,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         },
                         prefetchThumbs = prefetchThumbs,
                         screener = screener,
-                        activeProfileId = activeProfileId
+                        activeProfileId = activeProfileId,
+                        channelIndex = io.pickwick.app.data.ChannelIndex(applicationContext)
                     )
                 }
                 // TV: a paired phone just pushed new config — apply it live.
@@ -302,6 +320,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                 // thread so the spinner keeps animating.
                                 val local = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                                     pairingStore.addPaired(device)
+                                    // Scanning a device to manage it makes this phone a parent.
+                                    pairingStore.setRole(PairingStore.Role.PARENT)
                                     configStore.load()
                                 }
                                 // Fresh install (or wiped phone): the TV still holds the
@@ -390,7 +410,12 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 // settings stack mid-edit.
                 var showSettings by rememberSaveable { mutableStateOf(false) }
                 if (showSettings) {
-                    SettingsFlow(settings, configStore, pairingStore, deviceIsTv) { changed ->
+                    // A device another parent phone manages (approved on it, but
+                    // this device has no kid devices of its own) gets the pairing
+                    // QR, not the admin editor — there's nothing to administer here.
+                    val isKidDevice = !deviceIsTv && pairingStore.paired().isEmpty() &&
+                        pairingStore.approvedPhones().isNotEmpty()
+                    SettingsFlow(settings, configStore, pairingStore, deviceIsTv, isKidDevice) { changed ->
                         showSettings = false
                         // Kids may have been added/edited — re-resolve everything.
                         lifecycleScope.launch {

@@ -111,6 +111,10 @@ internal fun PhoneDevicesSection(
     saveCurrent: () -> String,
     /** Assign a device (by its own token) to a kid; null = shared (picker). */
     onAssign: (String, String?) -> Unit = { _, _ -> },
+    /** The parent device that builds the search index; null = never chosen. */
+    masterToken: String? = null,
+    /** Promote an admin phone to master (it takes over indexing). */
+    onMakeMaster: (String) -> Unit = {},
     onOpenStats: (PairedDevice) -> Unit,
     onConfigReplaced: () -> Unit = {}
 ) {
@@ -359,13 +363,22 @@ internal fun PhoneDevicesSection(
                 if (admins.size > 1 || (admins.size == 1 && admins[0].second != myToken)) {
                     admins.forEach { (adminName, adminToken) ->
                         val isThisPhone = adminToken == myToken
+                        val isMaster = adminToken == masterToken
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                "admin: $adminName" + if (isThisPhone) "  (this phone)" else "",
+                                "admin: $adminName" +
+                                    (if (isMaster) "  ★ master" else "") +
+                                    (if (isThisPhone) "  (this phone)" else ""),
                                 modifier = Modifier.weight(1f),
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = if (isMaster) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                            if (!isMaster) {
+                                TextButton(modifier = Modifier.tvFocusHighlight(), onClick = {
+                                    onMakeMaster(adminToken)
+                                }) { Text("Make master") }
+                            }
                             if (!isThisPhone) {
                                 TextButton(modifier = Modifier.tvFocusHighlight(), onClick = {
                                     pendingRevoke = Triple(device, adminName, adminToken)

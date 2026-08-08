@@ -13,6 +13,8 @@ sealed interface Screen {
     data object Downloads : Screen
     /** The kid's lined-up videos for one sitting, in play order. */
     data object Queue : Screen
+    /** Results of a whitelist-scoped search. */
+    data class SearchResults(val query: String) : Screen
 }
 
 /** A video plus its local watch progress (0..1), null if never watched. */

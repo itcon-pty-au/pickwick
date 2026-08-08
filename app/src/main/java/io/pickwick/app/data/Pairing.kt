@@ -39,6 +39,23 @@ class PairingStore(context: Context) {
     private val prefs =
         context.applicationContext.getSharedPreferences("pairing", Context.MODE_PRIVATE)
 
+    /**
+     * What this device IS in the family: a parent administers kid devices, a
+     * kid device is administered. Explicit rather than inferred from the
+     * paired/approved lists — a freshly reinstalled parent phone has an empty
+     * paired list and must not start behaving like a kid device (its search
+     * index and master claim ride on this). Set by the first pairing act in
+     * either direction; TV hardware defaults to kid.
+     */
+    enum class Role { PARENT, KID }
+
+    fun role(): Role? =
+        prefs.getString("role", null)?.let { runCatching { Role.valueOf(it) }.getOrNull() }
+
+    fun setRole(role: Role) {
+        if (role() == null) prefs.edit().putString("role", role.name).apply()
+    }
+
     /** This device's stable identity token (a phone presents it when pairing). */
     fun deviceToken(): String =
         prefs.getString("device_token", null) ?: ByteArray(16)
@@ -178,7 +195,11 @@ class LanServer(
     private val watchStateMerger: (String) -> Unit = {},
     /** AI verdict-sharing: serve ours, merge a peer's — see ScreeningStore. */
     private val verdictsProvider: () -> String = { "{}" },
-    private val verdictsMerger: (String) -> Unit = {}
+    private val verdictsMerger: (String) -> Unit = {},
+    /** Search-index sync: per-source status, one source's payload, and a merger. */
+    private val indexStatusProvider: () -> String = { "{}" },
+    private val indexSourceProvider: (String) -> String? = { null },
+    private val indexMerger: (sourceId: String, body: String) -> Unit = { _, _ -> }
 ) {
     @Volatile
     var port: Int = 0
@@ -348,6 +369,8 @@ class LanServer(
                     // while the TV is showing its pairing QR — see [PairingWindow].
                     PairingWindow.isOpen() -> {
                         pairingStore.approvePhone(phoneToken, phoneName.take(40))
+                        // Accepting an admin makes this device a managed (kid) one.
+                        pairingStore.setRole(PairingStore.Role.KID)
                         "approved"
                     }
                     // Nothing to approve against and no open window: say so rather
@@ -407,6 +430,24 @@ class LanServer(
             method == "POST" && path == "/verdicts" -> {
                 verdictsMerger(readBody())
                 respond(200, "merged")
+            }
+            method == "GET" && path == "/index-status" -> respond(200, indexStatusProvider())
+            method == "GET" && path == "/index" -> {
+                val id = Regex("source=([A-Za-z0-9_-]+)").find(target)?.groupValues?.get(1)
+                val json = id?.let(indexSourceProvider)
+                if (json != null) respond(200, json) else respond(404, "unknown source")
+            }
+            method == "POST" && path == "/index" -> {
+                val id = Regex("source=([A-Za-z0-9_-]+)").find(target)?.groupValues?.get(1)
+                if (id == null) {
+                    respond(400, "bad source")
+                } else {
+                    // First line is the source state, rest is the video array —
+                    // one body, no second round trip.
+                    val body = readBody()
+                    indexMerger(id, body)
+                    respond(200, "merged")
+                }
             }
             method == "GET" && path == "/admins" -> {
                 val arr = org.json.JSONArray()
@@ -637,6 +678,23 @@ object LanClient {
         withContext(Dispatchers.IO) {
             runCatching {
                 request(device, "POST", "/verdicts", json).use { it.isSuccessful }
+            }.getOrDefault(false)
+        }
+
+    /** A device's per-source index status (hashes), or null when unreachable. */
+    suspend fun indexStatus(device: PairedDevice): String? = withContext(Dispatchers.IO) {
+        runCatching {
+            request(device, "GET", "/index-status", null).use { resp ->
+                if (resp.isSuccessful) resp.body?.string() else null
+            }
+        }.getOrNull()
+    }
+
+    /** Push one indexed source (state line + video array) to a device. */
+    suspend fun pushIndexSource(device: PairedDevice, sourceId: String, body: String): Boolean =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                request(device, "POST", "/index?source=$sourceId", body).use { it.isSuccessful }
             }.getOrDefault(false)
         }
 

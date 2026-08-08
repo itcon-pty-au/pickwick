@@ -5,6 +5,7 @@ import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -15,16 +16,24 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.lifecycleScope
@@ -934,7 +943,6 @@ private fun BoxScope.TvControlsOverlay(
     var positionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
     var bufferedMs by remember { mutableLongStateOf(0L) }
-    var playing by remember { mutableStateOf(true) }
 
     LaunchedEffect(until) {
         while (System.currentTimeMillis() < until) {
@@ -942,7 +950,6 @@ private fun BoxScope.TvControlsOverlay(
                 positionMs = it.currentPosition.coerceAtLeast(0)
                 durationMs = it.duration.coerceAtLeast(0)
                 bufferedMs = it.bufferedPosition.coerceAtLeast(0)
-                playing = it.isPlaying
             }
             visible = true
             delay(250)
@@ -951,78 +958,49 @@ private fun BoxScope.TvControlsOverlay(
     }
 
     if ((visible || panel != TvTrackPanel.Hidden) && durationMs > 0) {
+        if (panel == TvTrackPanel.Audio || panel == TvTrackPanel.Subtitles) {
+            TvTrackSheet(
+                panel = panel,
+                cursor = cursor,
+                playback = playback,
+                selectedAudio = selectedAudio,
+                selectedSubtitle = selectedSubtitle,
+                captionsOn = captionsOn
+            )
+        }
         Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .background(Color(0xB3000000))
-                .padding(horizontal = 32.dp, vertical = 20.dp)
+                .background(Color(0x80000000))
+                .padding(horizontal = 32.dp, vertical = 18.dp)
         ) {
-            if (panel == TvTrackPanel.Audio || panel == TvTrackPanel.Subtitles) {
-                val options = if (panel == TvTrackPanel.Audio) {
-                    playback?.audioTracks.orEmpty().mapIndexed { index, track ->
-                        val original = if (track.original) "  Original" else ""
-                        Triple(track.name + original, index == selectedAudio, index)
-                    }.ifEmpty { listOf(Triple("Original", true, 0)) }
-                } else {
-                    listOf(Triple("Off", !captionsOn, 0)) +
-                        playback?.subtitles.orEmpty().mapIndexed { index, track ->
-                            Triple(track.name, captionsOn && index == selectedSubtitle, index + 1)
-                        }
-                }
-                Column(
-                    modifier = Modifier
-                        .padding(bottom = 16.dp)
-                        .background(Color(0xE6161616), RoundedCornerShape(6.dp))
-                        .padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        if (panel == TvTrackPanel.Audio) "Audio" else "Subtitles",
-                        color = Color.White,
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    val windowStart = (cursor - 3)
-                        .coerceIn(0, (options.size - 7).coerceAtLeast(0))
-                    options.drop(windowStart).take(7).forEach { (label, checked, index) ->
-                        Text(
-                            (if (checked) "●  " else "○  ") + label,
-                            color = Color.White,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(
-                                    if (index == cursor) Color(0xFF3D7E76)
-                                    else Color.Transparent,
-                                    RoundedCornerShape(4.dp)
-                                )
-                                .padding(horizontal = 12.dp, vertical = 8.dp)
-                        )
-                    }
-                }
-            }
-            if (panel != TvTrackPanel.Hidden) {
-                Row(
-                    modifier = Modifier.padding(bottom = 14.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    TvTrackIcon("♫", "Audio", panel == TvTrackPanel.Toolbar && cursor == 0)
-                    TvTrackIcon("CC", "Subtitles", panel == TvTrackPanel.Toolbar && cursor == 1)
-                }
-            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    (if (playing) "▶  " else "⏸  ") + formatClock(positionMs / 1000),
+                    formatClock(positionMs / 1000) + " / " + formatClock(durationMs / 1000),
                     color = Color.White,
                     style = MaterialTheme.typography.titleMedium
                 )
-                Text(
-                    "${formatClock((durationMs - positionMs) / 1000)} remaining",
-                    color = Color(0xCCFFFFFF),
-                    style = MaterialTheme.typography.titleMedium
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (panel != TvTrackPanel.Hidden) {
+                        TvTrackIcon(
+                            TvTrackGlyph.Audio,
+                            "Audio",
+                            panel == TvTrackPanel.Toolbar && cursor == 0
+                        )
+                        Spacer(Modifier.width(16.dp))
+                        TvTrackIcon(
+                            TvTrackGlyph.Captions,
+                            "Subtitles",
+                            panel == TvTrackPanel.Toolbar && cursor == 1
+                        )
+                        Spacer(Modifier.width(24.dp))
+                    }
+                }
             }
             Spacer(Modifier.height(10.dp))
             // Three layers, YouTube's convention: dim track for the whole
@@ -1033,53 +1011,185 @@ private fun BoxScope.TvControlsOverlay(
             BoxWithConstraints(
                 Modifier
                     .fillMaxWidth()
-                    .height(6.dp)
-                    .background(Color(0x40FFFFFF))
+                    .height(18.dp)
             ) {
                 Box(
                     Modifier
-                        .fillMaxWidth((bufferedMs.toFloat() / durationMs).coerceIn(0f, 1f))
-                        .height(6.dp)
-                        .background(Color(0x8CFFFFFF))
+                        .align(Alignment.CenterStart)
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .background(Color(0x40FFFFFF))
                 )
                 Box(
                     Modifier
-                        .fillMaxWidth((positionMs.toFloat() / durationMs).coerceIn(0f, 1f))
-                        .height(6.dp)
-                        .background(WatchedProgressRed)
+                        .align(Alignment.CenterStart)
+                        .fillMaxWidth((bufferedMs.toFloat() / durationMs).coerceIn(0f, 1f))
+                        .height(4.dp)
+                        .background(Color(0x8CFFFFFF))
                 )
-                // Green over everything, played or not (SmartTube's convention):
-                // these stretches will be jumped, so red never "wins" them back.
+                // Green skip marks sit under playback state: an already-viewed
+                // stretch stays red, while upcoming sponsor stretches stay green.
                 sponsorSegments.forEach { s ->
                     val start = (s.startMs.toFloat() / durationMs).coerceIn(0f, 1f)
                     val end = (s.endMs.toFloat() / durationMs).coerceIn(0f, 1f)
                     if (end > start) Box(
                         Modifier
+                            .align(Alignment.CenterStart)
                             .padding(start = maxWidth * start)
                             .width(maxWidth * (end - start))
-                            .height(6.dp)
+                            .height(4.dp)
                             .background(SponsorSegmentGreen)
                     )
                 }
+                Box(
+                    Modifier
+                        .align(Alignment.CenterStart)
+                        .fillMaxWidth((positionMs.toFloat() / durationMs).coerceIn(0f, 1f))
+                        .height(4.dp)
+                        .background(WatchedProgressRed)
+                )
+                Box(
+                    Modifier
+                        .align(Alignment.CenterStart)
+                        .padding(
+                            start = (maxWidth - 12.dp) *
+                                (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
+                        )
+                        .size(12.dp)
+                        .clip(CircleShape)
+                        .background(WatchedProgressRed)
+                )
+            }
+        }
+    }
+}
+
+private enum class TvTrackGlyph { Audio, Captions }
+
+@Composable
+private fun TvTrackIcon(glyph: TvTrackGlyph, label: String, selected: Boolean) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .background(if (selected) Color.White else Color.Transparent)
+    ) {
+        val ink = if (selected) Color(0xFF0F0F0F) else Color.White
+        when (glyph) {
+            TvTrackGlyph.Audio -> Box(contentAlignment = Alignment.Center) {
+                Box(
+                    Modifier
+                        .offset(x = (-7).dp)
+                        .size(width = 7.dp, height = 12.dp)
+                        .background(ink, RoundedCornerShape(1.dp))
+                )
+                Box(
+                    Modifier
+                        .offset(x = 1.dp)
+                        .size(width = 10.dp, height = 18.dp)
+                        .clip(
+                            androidx.compose.foundation.shape.GenericShape { size, _ ->
+                                moveTo(0f, size.height * 0.28f)
+                                lineTo(size.width * 0.55f, 0f)
+                                lineTo(size.width, 0f)
+                                lineTo(size.width, size.height)
+                                lineTo(size.width * 0.55f, size.height)
+                                lineTo(0f, size.height * 0.72f)
+                                close()
+                            }
+                        )
+                        .background(ink)
+                )
+                Text(
+                    ")))",
+                    color = ink,
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                    modifier = Modifier.padding(start = 22.dp)
+                )
+            }
+            TvTrackGlyph.Captions -> Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(width = 30.dp, height = 22.dp)
+                    .border(2.dp, ink, RoundedCornerShape(3.dp))
+            ) {
+                Text(
+                    "CC",
+                    color = ink,
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold)
+                )
             }
         }
     }
 }
 
 @Composable
-private fun TvTrackIcon(symbol: String, label: String, selected: Boolean) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+private fun BoxScope.TvTrackSheet(
+    panel: TvTrackPanel,
+    cursor: Int,
+    playback: YouTubeRepository.Playback?,
+    selectedAudio: Int,
+    selectedSubtitle: Int,
+    captionsOn: Boolean
+) {
+    val options = if (panel == TvTrackPanel.Audio) {
+        playback?.audioTracks.orEmpty().mapIndexed { index, track ->
+            Triple(
+                track.name + if (track.original) "  ·  Original" else "",
+                index == selectedAudio,
+                index
+            )
+        }.ifEmpty { listOf(Triple("Original", true, 0)) }
+    } else {
+        listOf(Triple("Off", !captionsOn, 0)) +
+            playback?.subtitles.orEmpty().mapIndexed { index, track ->
+                Triple(track.name, captionsOn && index == selectedSubtitle, index + 1)
+            }
+    }
+    Column(
+        modifier = Modifier
+            .align(Alignment.BottomStart)
+            .padding(start = 48.dp, bottom = 118.dp)
+            .width(330.dp)
+            .background(Color(0xE6000000), RoundedCornerShape(8.dp))
+            .padding(vertical = 8.dp)
+    ) {
         Text(
-            symbol,
+            if (panel == TvTrackPanel.Audio) "Audio" else "Subtitles",
             color = Color.White,
-            style = MaterialTheme.typography.titleLarge,
-            modifier = Modifier
-                .background(
-                    if (selected) Color(0xFF3D7E76) else Color(0x66000000),
-                    RoundedCornerShape(4.dp)
-                )
-                .padding(horizontal = 14.dp, vertical = 8.dp)
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)
         )
-        Text(label, color = Color.White, style = MaterialTheme.typography.labelMedium)
+        val windowStart = (cursor - 3).coerceIn(0, (options.size - 7).coerceAtLeast(0))
+        options.drop(windowStart).take(7).forEach { (label, checked, index) ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        if (index == cursor) Color(0x33FFFFFF) else Color.Transparent
+                    )
+                    .padding(horizontal = 16.dp, vertical = 10.dp)
+            ) {
+                Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+                    if (checked) {
+                        Icon(
+                            Icons.Filled.Check,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+                Text(
+                    label,
+                    color = Color.White,
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 1,
+                    modifier = Modifier.padding(start = 12.dp)
+                )
+            }
+        }
     }
 }

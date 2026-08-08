@@ -1,49 +1,42 @@
 package io.pickwick.app.ui
 
+import androidx.compose.foundation.border
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.unit.dp
 
 /**
- * Focused tiles gently zoom — no ring, no shadow; the size change alone marks
- * focus. [onFocusChange] lets tiles react (e.g. marquee).
- *
- * Built for buttery D-pad scrolling: no elevation shadow (RenderNode shadows
- * are the single most expensive part of a focus sweep on TV GPUs), and the
- * zoom lives entirely in graphicsLayer, so focus moves never touch layout —
- * the tile's measured size (and thus the list's scroll geometry) is constant.
- *
- * The zoom is deliberately mild (4%) and eased symmetrically: during a focus
- * step the outgoing tile shrinks on the same curve the incoming tile grows,
- * so the pair reads as one smooth handoff instead of a jump.
+ * Focused tiles get a sharp high-contrast ring. [onFocusChange] lets tiles
+ * react (e.g. marquee). No scaling or elevation shadow: both make neighboring
+ * rows visibly move on TV, while this ring is a cheap fixed-geometry draw pass.
  */
 @Composable
 internal fun Modifier.tvFocusHighlight(onFocusChange: ((Boolean) -> Unit)? = null): Modifier {
     var focused by remember { mutableStateOf(false) }
-    val scale = androidx.compose.animation.core.animateFloatAsState(
-        targetValue = if (focused) 1.04f else 1f,
-        animationSpec = androidx.compose.animation.core.tween(
-            durationMillis = 160,
-            easing = androidx.compose.animation.core.FastOutSlowInEasing
-        ),
-        label = "focusScale"
-    )
     return this
         .onFocusChanged {
             val now = it.isFocused || it.hasFocus
             focused = now
             onFocusChange?.invoke(now)
         }
-        .graphicsLayer {
-            scaleX = scale.value
-            scaleY = scale.value
-        }
+        .border(
+            width = if (focused) 5.dp else 0.dp,
+            color = if (focused) Color.White else Color.Transparent,
+            shape = RectangleShape
+        )
+        .border(
+            width = if (focused) 2.dp else 0.dp,
+            color = if (focused) PickwickDarkColors.primary else Color.Transparent,
+            shape = RectangleShape
+        )
 }
 
 /**

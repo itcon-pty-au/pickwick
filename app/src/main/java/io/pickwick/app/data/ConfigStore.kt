@@ -204,6 +204,10 @@ class ConfigStore(context: Context) {
                     w.deviceProfiles.entries.sortedBy { it.key }
                         .forEach { (t, p) -> append("$t=$p;") }
                 }
+                // Append-only-when-set, same reasoning as pauses: the offline
+                // reconcile only re-pushes on a mismatch, so a master change
+                // that didn't move the hash would never reach a sleeping TV.
+                w.masterDeviceToken?.let { append(";MS:"); append(it) }
                 // Appended only when switched off, so every existing config
                 // keeps its hash across the build that introduced the flag.
                 if (!w.sponsorSkip) append(";SB:off")
@@ -289,6 +293,8 @@ class ConfigStore(context: Context) {
             if (w.deviceProfiles.isNotEmpty()) {
                 root.put("deviceProfiles", JSONObject(w.deviceProfiles as Map<String, String>))
             }
+            // Written only when chosen — absent means unclaimed (older builds).
+            w.masterDeviceToken?.let { root.put("master", it) }
             // Written only when off — absent means on, including in configs
             // saved by builds that predate the flag.
             if (!w.sponsorSkip) root.put("sponsorSkip", false)
@@ -504,6 +510,7 @@ class ConfigStore(context: Context) {
                 blockedFor = overlay("blockedFor"),
                 allowedFor = overlay("allowedFor"),
                 deviceProfiles = deviceProfiles,
+                masterDeviceToken = root.optString("master").ifEmpty { null },
                 sponsorSkip = root.optBoolean("sponsorSkip", true),
                 listenPercent = if (root.has("listen")) root.getInt("listen") else null
             )

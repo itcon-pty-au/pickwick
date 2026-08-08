@@ -157,6 +157,12 @@ data class Whitelist(
      */
     val deviceProfiles: Map<String, String> = emptyMap(),
     /**
+     * The one parent device that builds the search index (its YouTube crawl is
+     * rate-limit-expensive — doing it once per family, not once per admin
+     * phone). null = never chosen: the next admin phone to see that claims it.
+     */
+    val masterDeviceToken: String? = null,
+    /**
      * Auto-skip community-marked promotional stretches (SponsorBlock): sponsor
      * reads, merch plugs, intros/outros, "subscribe" pleas. On by default —
      * this is the ad-free promise of the app extended to baked-in ads — with

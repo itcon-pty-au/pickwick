@@ -136,7 +136,8 @@ fun PickwickScreen(
                             onOpenQueue = vm::openQueue,
                             onOpenSettings = onOpenSettings,
                             activeProfile = activeProfile,
-                            onSwitchProfile = onSwitchProfile
+                            onSwitchProfile = onSwitchProfile,
+                            onSearch = vm::search
                         )
                     } else {
                         PullToRefreshBox(
@@ -159,7 +160,8 @@ fun PickwickScreen(
                                 onOpenDownloads = vm::openDownloads,
                                 onOpenSettings = onOpenSettings,
                                 activeProfile = activeProfile,
-                                onSwitchProfile = onSwitchProfile
+                                onSwitchProfile = onSwitchProfile,
+                                onSearch = vm::search
                             )
                         }
                     }
@@ -171,6 +173,7 @@ fun PickwickScreen(
                         is Screen.Watchlist -> "❤️ My list"
                         is Screen.Downloads -> "⬇️ Downloads"
                         is Screen.Queue -> "📚 Up next"
+                        is Screen.SearchResults -> "🔍 “${s.query}”"
                         else -> ""
                     }
                     Row(

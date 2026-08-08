@@ -89,7 +89,8 @@ internal fun ChannelGrid(
     onOpenDownloads: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     activeProfile: io.pickwick.app.data.Profile? = null,
-    onSwitchProfile: (() -> Unit)? = null
+    onSwitchProfile: (() -> Unit)? = null,
+    onSearch: (String) -> Unit = {}
 ) {
     if (channels.isEmpty()) {
         EmptyHome(onOpenSettings)
@@ -104,7 +105,10 @@ internal fun ChannelGrid(
     ) {
         // Branding + settings scroll away like everything else — content is king.
         item(key = "app-header", span = { GridItemSpan(maxLineSpan) }) {
-            HomeHeader(onOpenSettings, activeProfile, onSwitchProfile)
+            Column {
+                HomeHeader(onOpenSettings, activeProfile, onSwitchProfile)
+                SearchBar(isTv = false, onSearch = onSearch)
+            }
         }
         // Keep-watching scrolls away with the rest — not sticky.
         if (keepWatching.isNotEmpty()) {
@@ -354,7 +358,8 @@ internal fun TvHomeRows(
     onOpenQueue: () -> Unit = {},
     onOpenSettings: () -> Unit,
     activeProfile: io.pickwick.app.data.Profile? = null,
-    onSwitchProfile: (() -> Unit)? = null
+    onSwitchProfile: (() -> Unit)? = null,
+    onSearch: (String) -> Unit = {}
 ) {
     if (channels.isEmpty()) {
         EmptyHome(onOpenSettings)
@@ -367,7 +372,12 @@ internal fun TvHomeRows(
         verticalArrangement = Arrangement.spacedBy(4.dp),
         contentPadding = PaddingValues(vertical = 8.dp)
     ) {
-        item(key = "header") { HomeHeader(onOpenSettings, activeProfile, onSwitchProfile) }
+        item(key = "header") {
+            Column {
+                HomeHeader(onOpenSettings, activeProfile, onSwitchProfile)
+                SearchBar(isTv = true, onSearch = onSearch)
+            }
+        }
 
         if (keepWatching.isNotEmpty()) {
             item(key = "kw") {

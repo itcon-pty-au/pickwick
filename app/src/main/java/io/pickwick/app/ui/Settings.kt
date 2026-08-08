@@ -53,6 +53,7 @@ fun SettingsFlow(
     configStore: ConfigStore,
     pairingStore: PairingStore,
     isTv: Boolean,
+    isKidDevice: Boolean = false,
     onDone: (changed: Boolean) -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -177,6 +178,7 @@ fun SettingsFlow(
             }
             Stage.Editor ->
                 if (isTv) TvSettingsScreen(configStore, pairingStore)
+                else if (isKidDevice) KidDeviceScreen(configStore)
                 else AdminScreen(configStore, pairingStore, onDone)
         }
     }
@@ -184,6 +186,23 @@ fun SettingsFlow(
 }
 
 private enum class Stage { Biometric, Enter, Create, Confirm, Editor }
+
+/**
+ * Settings on a kid's phone/tablet: nothing to edit here (the parent phone
+ * owns the config) — just the pairing QR, like the TV screen, phone-shaped.
+ */
+@Composable
+private fun KidDeviceScreen(configStore: ConfigStore) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        PairingPanel(configStore)
+        Spacer(Modifier.height(20.dp))
+        UpdateSection()
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Admin editor
@@ -193,6 +212,27 @@ private enum class Stage { Biometric, Enter, Create, Confirm, Editor }
  *  editing happens on the paired phone; pushes update this screen in place. */
 @Composable
 private fun TvSettingsScreen(configStore: ConfigStore, pairingStore: PairingStore) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        PairingPanel(configStore, tv = true)
+
+        // Same section the phone settings has: checks on open and offers the
+        // Install button right here, so the TV updates without a computer.
+        Spacer(Modifier.height(20.dp))
+        UpdateSection(tv = true)
+    }
+}
+
+/**
+ * The pairing QR + live version line, shared by the TV settings screen and the
+ * kid-phone/tablet settings section — any device running the LAN server can be
+ * paired to a parent phone the same way.
+ */
+@Composable
+internal fun PairingPanel(configStore: ConfigStore, tv: Boolean = false) {
     var hash by remember { mutableStateOf("") }
     var edited by remember { mutableStateOf(0L) }
     val server = LanServerHolder.server
@@ -215,55 +255,44 @@ private fun TvSettingsScreen(configStore: ConfigStore, pairingStore: PairingStor
     }
     DisposableEffect(Unit) { onDispose { PairingWindow.close() } }
 
-    Column(
-        modifier = Modifier.fillMaxSize().padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text(
-            "Manage this TV from your phone",
-            style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "Scan with the parent's phone camera — Pickwick on the phone controls " +
-                "channels and screen time here.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(Modifier.height(20.dp))
+    Text(
+        "Manage this ${if (tv) "TV" else "device"} from your phone",
+        style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)
+    )
+    Spacer(Modifier.height(8.dp))
+    Text(
+        "Scan with the parent's phone camera — Pickwick on the phone controls " +
+            "channels and screen time here.",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Spacer(Modifier.height(20.dp))
 
-        if (server == null || ip == null) {
-            Text("Pairing needs Wi-Fi — check the network connection.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-        } else {
-            // No secret in the QR: it only says where to *ask*. New phones need
-            // approval on the already-paired phone before they can administer.
-            val deviceName = java.net.URLEncoder.encode(android.os.Build.MODEL ?: "TV", "UTF-8")
-            QrImage("pickwick://pair?name=$deviceName&host=$ip&port=${server.port}")
-        }
-
-        Spacer(Modifier.height(20.dp))
-        val editedText = edited.takeIf { it > 0 }?.let {
-            "  ·  edited " + java.text.SimpleDateFormat("d MMM h:mm a", java.util.Locale.US)
-                .format(java.util.Date(it))
-        } ?: ""
-        Text(
-            "Settings #$hash$editedText",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.primary
-        )
-        Text(
-            "This code updates live — after a push from the phone, the two devices show the same number.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        // Same section the phone settings has: checks on open and offers the
-        // Install button right here, so the TV updates without a computer.
-        Spacer(Modifier.height(20.dp))
-        UpdateSection(tv = true)
+    if (server == null || ip == null) {
+        Text("Pairing needs Wi-Fi — check the network connection.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+    } else {
+        // No secret in the QR: it only says where to *ask*. New phones need
+        // approval on the already-paired phone before they can administer.
+        val deviceName = java.net.URLEncoder.encode(android.os.Build.MODEL ?: "TV", "UTF-8")
+        QrImage("pickwick://pair?name=$deviceName&host=$ip&port=${server.port}")
     }
+
+    Spacer(Modifier.height(20.dp))
+    val editedText = edited.takeIf { it > 0 }?.let {
+        "  ·  edited " + java.text.SimpleDateFormat("d MMM h:mm a", java.util.Locale.US)
+            .format(java.util.Date(it))
+    } ?: ""
+    Text(
+        "Settings #$hash$editedText",
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.primary
+    )
+    Text(
+        "This code updates live — after a push from the phone, the two devices show the same number.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
 }
 
 @Composable
@@ -298,6 +327,7 @@ private fun AdminScreen(
     var blockedFor by remember(initial) { mutableStateOf(initial.blockedFor) }
     var allowedFor by remember(initial) { mutableStateOf(initial.allowedFor) }
     var deviceProfiles by remember(initial) { mutableStateOf(initial.deviceProfiles) }
+    var masterToken by remember(initial) { mutableStateOf(initial.masterDeviceToken) }
     var sponsorSkip by remember(initial) { mutableStateOf(initial.sponsorSkip) }
     var listenPercent by remember(initial) { mutableStateOf(initial.listenPercent) }
     /** Entries added by this session's URL import — shown with a NEW tag for review. */
@@ -388,6 +418,7 @@ private fun AdminScreen(
             blocked, limits, finalAi, aiAllowed,
             profiles, scrub(blockedFor), scrub(allowedFor),
             deviceProfiles.filterValues { it in validIds },
+            masterDeviceToken = masterToken,
             sponsorSkip = sponsorSkip,
             listenPercent = listenPercent
         )
@@ -686,9 +717,21 @@ private fun AdminScreen(
                     )
                 }
             },
+            masterToken = masterToken,
+            onMakeMaster = { token ->
+                masterToken = token
+                // Applies immediately, same rule as device assignment: the new
+                // master starts crawling without waiting for a Save & close.
+                resolveFlagged { c -> c.copy(masterDeviceToken = token) }
+            },
             onOpenStats = { statsDevice = it },
             onConfigReplaced = { configEpoch++ }
         )
+
+        // Search index: who's the master, and how far each channel's crawl has
+        // got. Read-only — the master device does the work; this just reports.
+        SectionTitle("Search index")
+        SearchIndexSection(entries, masterToken, pairingStore)
         // Per-device Stats answers "what's happening today"; this answers
         // "how did the week go" across every device from the phone's own cache.
         TextButton(
@@ -782,6 +825,63 @@ private fun SectionTitle(text: String) {
         color = MaterialTheme.colorScheme.primary
     )
     Spacer(Modifier.height(8.dp))
+}
+
+/**
+ * Read-only crawl status for the search index: which device is the master and
+ * how complete each whitelisted source's catalog is on this device. The master
+ * crawls; every device (this one included, via LAN push) shows what it holds.
+ */
+@Composable
+private fun SearchIndexSection(
+    entries: List<io.pickwick.app.data.WhitelistEntry>,
+    masterToken: String?,
+    pairingStore: io.pickwick.app.data.PairingStore
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val myToken = remember { pairingStore.deviceToken() }
+    val states by produceState<Map<String, io.pickwick.app.data.ChannelIndex.SourceState>>(emptyMap(), entries) {
+        value = withContext(kotlinx.coroutines.Dispatchers.IO) {
+            io.pickwick.app.data.ChannelIndex(context).allStates()
+        }
+    }
+    val isMaster = masterToken != null && masterToken == myToken
+
+    Text(
+        when {
+            isMaster -> "This device is the ★ master — it builds the index and shares it."
+            masterToken != null -> "Another device is the master; the index arrives over your home network."
+            else -> "No master yet — the first parent device to open the app claims it."
+        },
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Spacer(Modifier.height(6.dp))
+    entries.forEach { e ->
+        val s = states[e.id]
+        val label = e.label ?: e.id
+        val status = when {
+            s == null -> "not started"
+            s.complete -> "${s.count} videos ✓"
+            else -> "${s.count} videos, still indexing…"
+        }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
+        ) {
+            Text(
+                label, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                status,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (s?.complete == true) androidx.compose.ui.graphics.Color(0xFF81C784)
+                else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

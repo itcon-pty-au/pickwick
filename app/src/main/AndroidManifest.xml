@@ -3,6 +3,9 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Media3's network wake mode on phones: playback must not crash while
+         holding CPU/Wi-Fi for screen-off listening. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Self-update: hand a downloaded APK to the system installer. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Offline downloads run as a foreground service with a progress notification. -->

@@ -53,8 +53,12 @@ class MainViewModel(
     private val screener: io.pickwick.app.data.Screener? = null,
     /** Whose home screen this is; null = pre-profile single-kid behavior. */
     private val activeProfileId: String? = null,
+    /** Search index; null in tests. The crawler runs only on the master device. */
+    private val channelIndex: ChannelIndex? = null,
     private val yt: YouTubeRepository = YouTubeRepository()
 ) : ViewModel() {
+
+    private val crawler = channelIndex?.let { IndexCrawler(yt, it) }
 
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state
@@ -122,8 +126,10 @@ class MainViewModel(
                 refreshIfIdle()
                 syncWatchState()
                 syncConfigState()
+                syncIndex()
             }
         }
+        startIndexCrawl()
     }
 
     /** Set by the hosting composition; false while another kid's home is up. */
@@ -150,6 +156,17 @@ class MainViewModel(
         configSyncInFlight = true
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
+                // Master election: the first parent device to run with the slot
+                // empty claims it; only the master builds the search index (its
+                // crawl is rate-limit-expensive, so the family pays it once).
+                // Kid devices never claim it, no matter how empty the field is.
+                val isParent = pairingStore?.role() != PairingStore.Role.KID
+                val loaded = store.load()
+                if (loaded.masterDeviceToken == null && isParent) {
+                    val me = pairingStore?.deviceToken() ?: return@launch
+                    store.save(loaded.copy(masterDeviceToken = me))
+                    android.util.Log.i("Pickwick", "claimed master role (indexing)")
+                }
                 val localHash = ConfigStore.fingerprint(store.load())
                 val localAt = store.updatedAt()
                 devices.forEach { device ->
@@ -230,9 +247,77 @@ class MainViewModel(
         }
     }
 
+    /**
+     * Master-only: push index sources whose content hash differs from what each
+     * paired device reports. Compared per source, so a one-channel delta ships
+     * one small file, not the family's whole index.
+     */
+    @Volatile
+    private var indexSyncInFlight = false
+
+    fun syncIndex() {
+        val index = channelIndex ?: return
+        val devices = pairingStore?.paired().orEmpty()
+        if (devices.isEmpty() || indexSyncInFlight) return
+        indexSyncInFlight = true
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val me = pairingStore?.deviceToken()
+                val master = configStore?.load()?.masterDeviceToken
+                if (me == null || master != me) return@launch
+                devices.forEach { device ->
+                    val remoteStatus = LanClient.indexStatus(device) ?: return@forEach
+                    val remote = runCatching { org.json.JSONObject(remoteStatus) }
+                        .getOrNull() ?: return@forEach
+                    index.allStates().forEach { (sourceId, state) ->
+                        val remoteHash = remote.optJSONObject(sourceId)?.optInt("hash")
+                        val localHash =
+                            (state.count.toString() + ":" + (state.newestVideoId ?: "")).hashCode()
+                        if (remoteHash != localHash) {
+                            val body = index.exportSourceWithState(sourceId) ?: return@forEach
+                            LanClient.pushIndexSource(device, sourceId, body)
+                        }
+                    }
+                }
+            } finally {
+                indexSyncInFlight = false
+            }
+        }
+    }
+
     /** Most-opened first; ties keep whitelist order (sortedByDescending is stable). */
     private fun sortByUsage(channels: List<Source>) =
         channels.sortedByDescending { usage.opens(it.id) }
+
+    /**
+     * Whitelist-scoped search over the local index. Visibility gates match the
+     * feeds exactly: the kid's own sources only, parent blocks and the AI
+     * screener applied on top — search can never surface what a feed wouldn't.
+     */
+    fun search(query: String) = viewModelScope.launch {
+        val index = channelIndex ?: return@launch
+        val q = query.trim()
+        if (q.isEmpty()) return@launch
+        _state.value = _state.value.copy(
+            screen = Screen.SearchResults(q), loading = true, videos = emptyList(),
+            held = 0, error = null
+        )
+        val visibleIds = withContext(Dispatchers.IO) {
+            visibleSources(sources).map { it.id }.toSet()
+        }
+        val hits = withContext(Dispatchers.IO) { index.search(q, visibleIds) }
+        val videos = hits
+            .map { it.toVideo() }
+            .distinctBy { it.url }
+            .filter { it.videoId !in blockedVideoIds }
+            .filter { screener?.isVisible(it) != false }
+        rawVideos = videos
+        _state.value = _state.value.copy(
+            loading = false,
+            videos = annotated(includeFinished = true),
+            held = hits.size - videos.size
+        )
+    }
 
     /** Partially-watched, unblocked videos across all sources, most recent first. */
     private fun keepWatchingRow(): List<VideoItem> =
@@ -426,6 +511,41 @@ class MainViewModel(
                 // Initial sweep: the background warm walks every source, so a fresh
                 // whitelist (or new rules) gets its whole catalog screened here.
                 kickScreening(videos)
+                // Page-1 delta into the search index — zero extra requests, and
+                // new uploads become searchable within a refresh or two.
+                crawler?.harvestPage1(source, videos)
+            }
+        }
+    }
+
+    /**
+     * The master's trickle crawl: one page of one incomplete source every
+     * [IndexCrawler.CRAWL_DELAY_MS], round-robin. Runs only while this device
+     * holds the master role; a co-parent's ViewModel exits immediately.
+     */
+    private fun startIndexCrawl() {
+        val index = channelIndex ?: return
+        val crawl = crawler ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            while (true) {
+                val master = configStore?.load()?.masterDeviceToken
+                val me = pairingStore?.deviceToken()
+                if (master == null || me == null || master != me || !uiActive) {
+                    // Not the master (or off screen): check again in a minute.
+                    kotlinx.coroutines.delay(60_000)
+                    continue
+                }
+                // Drop sources the whitelist no longer lists.
+                val wanted = sources.map { it.id }.toSet()
+                index.allStates().keys.filter { it !in wanted }.forEach { crawl.dropSource(it) }
+                val incomplete = sources.filter { index.state(it.id)?.complete != true }
+                if (incomplete.isEmpty()) {
+                    kotlinx.coroutines.delay(5 * 60_000L)
+                    continue
+                }
+                runCatching { crawl.crawlOnce(incomplete.first()) }
+                    .onFailure { android.util.Log.w("Pickwick", "index crawl failed", it) }
+                kotlinx.coroutines.delay(IndexCrawler.CRAWL_DELAY_MS)
             }
         }
     }
