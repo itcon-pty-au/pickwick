@@ -200,6 +200,7 @@
 <main class="wrap">
   <div class="filters">
     <input class="search" id="search" type="search" placeholder="Search channels…" aria-label="Search channels">
+    <div class="chip-row" id="langRow" hidden><span class="lbl">Language</span></div>
     <div class="chip-row" id="ageRow"><span class="lbl">Ages</span></div>
     <div class="chip-row" id="topicRow"><span class="lbl">Topics</span></div>
   </div>
@@ -222,7 +223,7 @@
 <script>
 (function () {
   var AGE_ORDER = ['2-4', '5-7', '8-10', '11+'];
-  var state = { q: '', ages: new Set(), topics: new Set(), entries: [] };
+  var state = { q: '', langs: new Set(), ages: new Set(), topics: new Set(), entries: [], multiLang: false };
 
   var $ = function (id) { return document.getElementById(id); };
   var pretty = function (age) { return age.replace('-', '–'); };
@@ -243,6 +244,7 @@
   function render() {
     var q = state.q.trim().toLowerCase();
     var shown = state.entries.filter(function (e) {
+      if (state.langs.size && !state.langs.has(e.lang)) return false;
       if (state.ages.size && !e.ages.some(function (a) { return state.ages.has(a); })) return false;
       if (state.topics.size && !e.topics.some(function (t) { return state.topics.has(t); })) return false;
       if (q) {
@@ -255,7 +257,7 @@
     $('count').textContent = shown.length === state.entries.length
       ? state.entries.length + ' channels & playlists'
       : shown.length + ' of ' + state.entries.length + ' shown';
-    $('clear').hidden = !(state.ages.size || state.topics.size || q);
+    $('clear').hidden = !(state.langs.size || state.ages.size || state.topics.size || q);
 
     var list = $('list');
     list.textContent = '';
@@ -291,6 +293,13 @@
 
       var pills = document.createElement('div');
       pills.className = 'pills';
+      // Language pill only once there's more than one language to tell apart.
+      if (state.multiLang && e.langName) {
+        var lp = document.createElement('span');
+        lp.className = 'pill age';
+        lp.textContent = e.langName;
+        pills.appendChild(lp);
+      }
       e.ages.forEach(function (ag) {
         var p = document.createElement('span');
         p.className = 'pill age';
@@ -325,6 +334,26 @@
   }
 
   function buildFilters() {
+    // Language row only appears once a second language is published; until
+    // then a lone "English" chip would just be noise. When it does appear,
+    // pre-select the visitor's own browser language if we publish it —
+    // one tap on the chip widens back to everything.
+    var langs = [], seenLang = {};
+    state.entries.forEach(function (e) {
+      if (e.lang && !seenLang[e.lang]) { seenLang[e.lang] = true; langs.push({ code: e.lang, name: e.langName || e.lang }); }
+    });
+    state.multiLang = langs.length > 1;
+    if (state.multiLang) {
+      langs.sort(function (a, b) { return a.name.localeCompare(b.name); });
+      var mine = (navigator.language || '').slice(0, 2).toLowerCase();
+      langs.forEach(function (l) {
+        var c = chip(l.name, state.langs, l.code, render);
+        if (l.code === mine) { state.langs.add(l.code); c.classList.add('on'); }
+        $('langRow').appendChild(c);
+      });
+      $('langRow').hidden = false;
+    }
+
     var ages = [], topics = [];
     state.entries.forEach(function (e) {
       e.ages.forEach(function (a) { if (ages.indexOf(a) === -1) ages.push(a); });
@@ -342,7 +371,7 @@
   $('search').addEventListener('input', function (e) { state.q = e.target.value; render(); });
   $('clear').addEventListener('click', function () {
     state.q = ''; $('search').value = '';
-    state.ages.clear(); state.topics.clear();
+    state.langs.clear(); state.ages.clear(); state.topics.clear();
     document.querySelectorAll('.chip.on').forEach(function (c) { c.classList.remove('on'); });
     render();
   });
@@ -350,13 +379,35 @@
   // Read the directory straight from the repo via GitHub's raw CDN rather than
   // this deployed copy, so a merged channel suggestion shows up within ~5 min
   // (raw's cache) with no Pages rebuild — deploy-pages.yml skips
-  // site/directory/** for exactly this reason. Falls back to the bundled copy.
-  var LIVE_DIR = 'https://raw.githubusercontent.com/itcon-pty-au/pickwick/main/site/directory/en.json';
-  fetch(LIVE_DIR)
-    .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
-    .catch(function () { return fetch('directory/en.json').then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); }); })
-    .then(function (data) {
-      state.entries = data.entries || [];
+  // site/directory/** for exactly this reason. Falls back to the bundled copy
+  // per file. index.json lists the language files, so shipping a new language
+  // needs no change here — same walk the app's Directory.fetch() does.
+  var LIVE_BASE = 'https://raw.githubusercontent.com/itcon-pty-au/pickwick/main/site/directory/';
+  function loadJson(file) {
+    return fetch(LIVE_BASE + file)
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .catch(function () { return fetch('directory/' + file).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); }); });
+  }
+  loadJson('index.json')
+    .then(function (index) {
+      var langs = (index.languages || []).filter(function (l) { return l && l.file; });
+      if (!langs.length) throw new Error('empty index');
+      // One unreachable language file shouldn't blank the whole page. Each
+      // entry is tagged with its language so the filter row can tell them apart.
+      return Promise.all(langs.map(function (l) {
+        return loadJson(l.file)
+          .then(function (d) {
+            return (d.entries || []).map(function (e) {
+              e.lang = l.code; e.langName = l.name;
+              return e;
+            });
+          })
+          .catch(function () { return []; });
+      }));
+    })
+    .then(function (lists) {
+      state.entries = Array.prototype.concat.apply([], lists);
+      if (!state.entries.length) throw new Error('no entries');
       buildFilters();
       render();
     })

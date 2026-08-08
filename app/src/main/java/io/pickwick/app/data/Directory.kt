@@ -19,13 +19,17 @@ data class DirectoryEntry(
     val kind: SourceKind,
     val ages: List<String>,
     val topics: List<String>,
-    val note: String
+    val note: String,
+    // From index.json's languages list, not the entry itself — entries live in
+    // per-language files, so language is a property of the file they came from.
+    val langCode: String = "",
+    val langName: String = ""
 )
 
 object Directory {
 
     /** Pure JSON→entries parsing, kept free of Android/network deps for unit tests. */
-    fun parseEntries(text: String): List<DirectoryEntry> {
+    fun parseEntries(text: String, langCode: String = "", langName: String = ""): List<DirectoryEntry> {
         val root = JSONObject(text)
         val arr = root.optJSONArray("entries") ?: return emptyList()
         return buildList {
@@ -47,7 +51,9 @@ object Directory {
                         } else SourceKind.CHANNEL,
                         ages = strings("ages"),
                         topics = strings("topics"),
-                        note = o.optString("note")
+                        note = o.optString("note"),
+                        langCode = langCode,
+                        langName = langName
                     )
                 )
             }
@@ -64,9 +70,18 @@ object Directory {
         val languages = index.optJSONArray("languages") ?: return@withContext emptyList()
         buildList {
             for (i in 0 until languages.length()) {
-                val file = languages.optJSONObject(i)?.optString("file").orEmpty()
+                val lang = languages.optJSONObject(i) ?: continue
+                val file = lang.optString("file")
                 if (file.isBlank()) continue
-                runCatching { addAll(parseEntries(get(BuildConfig.DIRECTORY_URL + file))) }
+                runCatching {
+                    addAll(
+                        parseEntries(
+                            get(BuildConfig.DIRECTORY_URL + file),
+                            langCode = lang.optString("code"),
+                            langName = lang.optString("name")
+                        )
+                    )
+                }
             }
         }
     }

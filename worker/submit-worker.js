@@ -1,16 +1,17 @@
 /**
  * Pickwick channel-suggestion receiver — a stateless mail-slot, not a backend.
  *
- * POST { url, ages[], topics[], note, website, turnstile } from site/suggest.html.
+ * POST { url, ages[], topics[], note, lang, website, turnstile } from site/suggest.html.
  * Gates, in cost order (everything before the PR is free):
  *   1. honeypot ("website" filled → pretend success, tell the bot nothing)
  *   2. Turnstile verification
  *   3. URL shape + channel/playlist existence on YouTube
  *   4. dedup against the published directory and open submission PRs
  *   5. open-queue cap (bill protection for the AI screening Action)
- * Survivors become a PR against site/directory/en.json; the AI screening
- * workflow comments a verdict and a human merges. This worker never writes
- * to main directly.
+ * Survivors become a PR against site/directory/<lang>.json — created along
+ * with its index.json listing when it's the first suggestion in that
+ * language. The AI screening workflow comments a verdict and a human merges.
+ * This worker never writes to main directly.
  *
  * Secrets:  TURNSTILE_SECRET, GITHUB_TOKEN (fine-grained: Contents RW + Pull requests RW)
  * Vars:     see wrangler.toml
@@ -40,6 +41,9 @@ export default {
       .map((t) => String(t).slice(0, 40)).slice(0, 3);
     if (!note || !ages.length) return json({ status: 'invalid', message: 'Missing fields.' }, 422, cors);
 
+    const lang = normalizeLang(body.lang);
+    if (!lang) return json({ status: 'invalid', message: 'Pick the channel’s language.' }, 422, cors);
+
     if (!(await verifyTurnstile(body.turnstile, request, env))) {
       return json({ status: 'error', message: 'Human check failed.' }, 403, cors);
     }
@@ -57,11 +61,25 @@ export default {
     }
 
     const gh = github(env);
-    const [directory, openPrs] = await Promise.all([gh.getDirectory(), gh.openSubmissionPrs()]);
+    const dir = env.DIRECTORY_DIR || 'site/directory';
+    let index, openPrs;
+    try {
+      [index, openPrs] = await Promise.all([gh.getFile(`${dir}/index.json`), gh.openSubmissionPrs()]);
+    } catch (e) {
+      console.error('directory fetch failed', e);
+      return json({ status: 'error' }, 500, cors);
+    }
+    if (!index) return json({ status: 'error' }, 500, cors);
     if (openPrs.length >= Number(env.MAX_OPEN_SUBMISSIONS || 25)) {
       return json({ status: 'busy' }, 429, cors);
     }
-    if (isDuplicate(channel, probe, directory.entries, openPrs)) {
+
+    // Dedup against every published language, not just the target — the same
+    // channel filed under two languages is still one channel.
+    const languages = (index.json.languages || []).filter((l) => l && l.file);
+    const files = await Promise.all(languages.map((l) => gh.getFile(`${dir}/${l.file}`)));
+    const allEntries = files.filter(Boolean).flatMap((f) => f.json.entries || []);
+    if (isDuplicate(channel, probe, allEntries, openPrs)) {
       return json({ status: 'duplicate' }, 200, cors);
     }
 
@@ -75,8 +93,15 @@ export default {
       added: new Date().toISOString().slice(0, 10),
     };
 
+    const existing = languages.findIndex((l) => l.code === lang.code);
+    const target = {
+      path: `${dir}/${existing !== -1 ? languages[existing].file : `${lang.code}.json`}`,
+      file: existing !== -1 ? files[existing] : null, // null → first entry in a new language
+      index: existing !== -1 ? null : index, // index.json only changes for a new language
+    };
+
     try {
-      const prUrl = await gh.openPr(directory, entry, probe);
+      const prUrl = await gh.openPr(target, entry, probe, lang);
       return json({ status: 'ok', pr: prUrl }, 200, cors);
     } catch (e) {
       console.error('PR creation failed', e);
@@ -84,6 +109,23 @@ export default {
     }
   },
 };
+
+/**
+ * ISO 639-1 shape plus a real name from Intl — no hand-kept language table.
+ * DisplayNames echoes the code back for made-up ones ("zz"), which is the
+ * rejection signal. The English name feeds index.json and the PR body.
+ */
+function normalizeLang(raw) {
+  const code = String(raw || '').trim().toLowerCase();
+  if (!/^[a-z]{2}$/.test(code)) return null;
+  try {
+    const name = new Intl.DisplayNames(['en'], { type: 'language' }).of(code);
+    if (!name || name.toLowerCase() === code) return null;
+    return { code, name };
+  } catch {
+    return null;
+  }
+}
 
 function corsHeaders(request, env) {
   const allowed = (env.ALLOWED_ORIGINS || '').split(',').map((s) => s.trim());
@@ -239,15 +281,27 @@ function github(env) {
       },
     });
 
+  const putFile = async (path, branch, message, json, sha) => {
+    const content = JSON.stringify(json, null, 2) + '\n';
+    const b64 = btoa(String.fromCharCode(...new TextEncoder().encode(content)));
+    const r = await api(`/repos/${env.GITHUB_REPO}/contents/${path}`, {
+      method: 'PUT',
+      body: JSON.stringify({ message, content: b64, branch, ...(sha ? { sha } : {}) }),
+    });
+    if (!r.ok) throw new Error(`content put ${path} ${r.status}`);
+  };
+
   return {
-    async getDirectory() {
-      const r = await api(`/repos/${env.GITHUB_REPO}/contents/${env.DIRECTORY_PATH}?ref=main`);
-      if (!r.ok) throw new Error(`directory fetch ${r.status}`);
+    /** {sha, json} from main, or null on 404 (a language with no file yet). */
+    async getFile(path) {
+      const r = await api(`/repos/${env.GITHUB_REPO}/contents/${path}?ref=main`);
+      if (r.status === 404) return null;
+      if (!r.ok) throw new Error(`${path} fetch ${r.status}`);
       const file = await r.json();
       const text = new TextDecoder().decode(
         Uint8Array.from(atob(file.content.replace(/\n/g, '')), (c) => c.charCodeAt(0))
       );
-      return { sha: file.sha, json: JSON.parse(text), entries: JSON.parse(text).entries };
+      return { sha: file.sha, json: JSON.parse(text) };
     },
 
     async openSubmissionPrs() {
@@ -257,7 +311,7 @@ function github(env) {
       return prs.filter((pr) => pr.head?.ref?.startsWith('submission/'));
     },
 
-    async openPr(directory, entry, probe) {
+    async openPr(target, entry, probe, lang) {
       const mainRef = await (await api(`/repos/${env.GITHUB_REPO}/git/ref/heads/main`)).json();
       const suffix = crypto.getRandomValues(new Uint32Array(1))[0].toString(36);
       const slug = entry.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
@@ -269,21 +323,23 @@ function github(env) {
       });
       if (!r.ok) throw new Error(`branch create ${r.status}`);
 
-      const updated = { ...directory.json, updated: entry.added };
-      updated.entries = [...directory.entries, entry];
-      const content = JSON.stringify(updated, null, 2) + '\n';
-      const b64 = btoa(String.fromCharCode(...new TextEncoder().encode(content)));
+      const base = target.file?.json || { language: lang.code, updated: entry.added, entries: [] };
+      const updated = { ...base, updated: entry.added, entries: [...(base.entries || []), entry] };
+      await putFile(target.path, branch, `Directory suggestion: ${entry.name}`, updated, target.file?.sha);
 
-      r = await api(`/repos/${env.GITHUB_REPO}/contents/${env.DIRECTORY_PATH}`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          message: `Directory suggestion: ${entry.name}`,
-          content: b64,
-          sha: directory.sha,
+      // First suggestion in a new language: list its file in index.json so the
+      // site and app pick it up the moment the PR merges.
+      if (target.index) {
+        const idx = target.index.json;
+        const languages = [...(idx.languages || []), { code: lang.code, name: lang.name, file: `${lang.code}.json` }];
+        await putFile(
+          `${(env.DIRECTORY_DIR || 'site/directory')}/index.json`,
           branch,
-        }),
-      });
-      if (!r.ok) throw new Error(`content put ${r.status}`);
+          `Directory: add ${lang.name}`,
+          { ...idx, languages },
+          target.index.sha
+        );
+      }
 
       const verification = probe.status === 'verified'
         ? `✅ ${entry.kind === 'playlist' ? 'Playlist' : 'Channel'} verified on YouTube${probe.channelId ? ` (\`${probe.channelId}\`)` : ''}.`
@@ -298,6 +354,7 @@ function github(env) {
           body: [
             `A parent suggested the ${entry.kind} **[${entry.name}](${entry.url})** for the directory.`,
             '',
+            `- Language: ${lang.name}${target.index ? ' — **first entry in this language**, adds its file and index.json listing' : ''}`,
             `- Ages: ${entry.ages.join(', ')}`,
             `- Topics: ${entry.topics.join(', ') || '(none picked)'}`,
             `- Note: “${entry.note}”`,

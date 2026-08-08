@@ -45,12 +45,15 @@ android {
         )
 
         // Community channel directory — same JSON the pickwick.tv browse page
-        // renders. Served via Pages (not raw.githubusercontent) so app and site
-        // share one canonical URL.
+        // renders. Read from the repo via raw CDN, like the site's LIVE_DIR:
+        // deploy-pages.yml skips site/directory/** on purpose, so the Pages
+        // copy at pickwick.tv/directory only refreshes when an unrelated site
+        // change happens to deploy — a merged suggestion could sit invisible
+        // for weeks there. Raw updates within ~5 minutes of a merge.
         buildConfigField(
             "String",
             "DIRECTORY_URL",
-            "\"https://pickwick.tv/directory/\""
+            "\"https://raw.githubusercontent.com/itcon-pty-au/pickwick/main/site/directory/\""
         )
     }
 

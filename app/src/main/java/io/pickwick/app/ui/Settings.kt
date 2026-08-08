@@ -1905,6 +1905,7 @@ private fun DirectorySection(
     var all by remember { mutableStateOf<List<io.pickwick.app.data.DirectoryEntry>>(emptyList()) }
     var selectedAges by remember { mutableStateOf(setOf<String>()) }
     var selectedTopics by remember { mutableStateOf(setOf<String>()) }
+    var selectedLangs by remember { mutableStateOf(setOf<String>()) }
 
     fun load() = scope.launch {
         busy = true
@@ -1912,6 +1913,13 @@ private fun DirectorySection(
         runCatching { io.pickwick.app.data.Directory.fetch() }
             .onSuccess { list ->
                 all = list
+                // Pre-select the device language once there's more than one to
+                // choose from — one tap on the chip widens back to everything.
+                val device = java.util.Locale.getDefault().language
+                selectedLangs = if (
+                    list.mapTo(mutableSetOf()) { it.langCode }.size > 1 &&
+                    list.any { it.langCode == device }
+                ) setOf(device) else emptySet()
                 message = if (list.isEmpty()) "The directory is empty right now" else null
             }
             .onFailure { message = "Couldn't load the directory: ${it.message?.take(120)}" }
@@ -1943,7 +1951,25 @@ private fun DirectorySection(
     val ages = all.flatMap { it.ages }.distinct()
         .sortedBy { DIRECTORY_AGE_ORDER.indexOf(it).let { i -> if (i == -1) 99 else i } }
     val topics = all.flatMap { it.topics }.distinct().sorted()
+    // Language filter only exists once a second language is published — a lone
+    // "English" chip would just be noise.
+    val langs = all.map { it.langCode to it.langName }.distinct().sortedBy { it.second }
+    val multiLang = langs.size > 1
 
+    if (multiLang) {
+        Row(Modifier.horizontalScroll(rememberScrollState())) {
+            langs.forEach { (code, name) ->
+                FilterChip(
+                    selected = code in selectedLangs,
+                    onClick = {
+                        selectedLangs = if (code in selectedLangs) selectedLangs - code else selectedLangs + code
+                    },
+                    label = { Text(name.ifBlank { code }) },
+                    modifier = Modifier.padding(end = 6.dp).tvFocusHighlight()
+                )
+            }
+        }
+    }
     Row(Modifier.horizontalScroll(rememberScrollState())) {
         ages.forEach { a ->
             FilterChip(
@@ -1970,7 +1996,8 @@ private fun DirectorySection(
     }
 
     val shown = all.filter { e ->
-        (selectedAges.isEmpty() || e.ages.any { it in selectedAges }) &&
+        (selectedLangs.isEmpty() || e.langCode in selectedLangs) &&
+            (selectedAges.isEmpty() || e.ages.any { it in selectedAges }) &&
             (selectedTopics.isEmpty() || e.topics.any { it in selectedTopics })
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2006,6 +2033,7 @@ private fun DirectorySection(
                 Text(d.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
                     (if (d.kind == SourceKind.PLAYLIST) listOf("Playlist") else emptyList())
+                        .plus(if (multiLang && d.langName.isNotBlank()) listOf(d.langName) else emptyList())
                         .plus(d.ages.map { "ages " + it.replace("-", "–") })
                         .plus(d.topics)
                         .joinToString(" · "),

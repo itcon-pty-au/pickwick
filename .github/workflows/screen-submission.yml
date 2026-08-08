@@ -32,9 +32,11 @@ jobs:
           for f in site/directory/*.json; do
             [ "$(basename "$f")" = "index.json" ] && continue
             base=$(git show "origin/$BASE_REF:$f" 2>/dev/null || echo '{"entries":[]}')
-            jq -n --argjson base "$base" --slurpfile head "$f" --slurpfile acc new_entries.json '
+            jq -n --argjson base "$base" --slurpfile head "$f" --slurpfile acc new_entries.json \
+              --arg lang "$(basename "$f" .json)" '
               $acc[0] + [$head[0].entries[]
-                | select(.url as $u | ($base.entries | map(.url) | index($u)) | not)]
+                | select(.url as $u | ($base.entries | map(.url) | index($u)) | not)
+                | . + {lang: $lang}]
             ' > tmp.json && mv tmp.json new_entries.json
           done
           echo "count=$(jq length new_entries.json)" >> "$GITHUB_OUTPUT"
@@ -104,7 +106,7 @@ jobs:
             fi
 
             prompt=$(jq -n --argjson entry "$entry" --arg titles "$titles" '
-              "You are the AI pre-screen for Pickwick, a parent-curated whitelist video app for kids. A parent suggested a YouTube channel or playlist (see the entry'\''s kind field) for the shared directory; a human reviewer makes the final call — your job is an honest first pass. Flag uncertainty instead of guessing.\n\nProposed entry:\n" + ($entry | tostring) + "\n\nRecent video titles from its feed:\n" + $titles + "\n\nJudge: (1) is the content plausibly appropriate for the proposed age bands; (2) red flags — mature themes, violence, clickbait or brainrot patterns, heavy sponsorship, not actually kid-oriented; (3) do the proposed topics match what it appears to be. If you recognize this channel or playlist, use what you know about it. If you have neither recognition nor feed data, say so via insufficient_data."
+              "You are the AI pre-screen for Pickwick, a parent-curated whitelist video app for kids. A parent suggested a YouTube channel or playlist (see the entry'\''s kind field) for the shared directory; a human reviewer makes the final call — your job is an honest first pass. Flag uncertainty instead of guessing. The entry'\''s lang field is the ISO code of the language the parent says the channel is in — screen the content in that language, and flag a mismatch if the titles look like a different language.\n\nProposed entry:\n" + ($entry | tostring) + "\n\nRecent video titles from its feed:\n" + $titles + "\n\nJudge: (1) is the content plausibly appropriate for the proposed age bands; (2) red flags — mature themes, violence, clickbait or brainrot patterns, heavy sponsorship, not actually kid-oriented; (3) do the proposed topics match what it appears to be. If you recognize this channel or playlist, use what you know about it. If you have neither recognition nor feed data, say so via insufficient_data."
             ')
 
             body=$(jq -n --arg prompt "$prompt" '{
