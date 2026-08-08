@@ -129,7 +129,8 @@ class MainViewModel(
                 syncIndex()
             }
         }
-        startIndexCrawl()
+        // The deep crawl lives in IndexCrawlWorker (WorkManager) — it runs even
+        // with the app closed, so no in-app loop here.
     }
 
     /** Set by the hosting composition; false while another kid's home is up. */
@@ -523,33 +524,6 @@ class MainViewModel(
      * [IndexCrawler.CRAWL_DELAY_MS], round-robin. Runs only while this device
      * holds the master role; a co-parent's ViewModel exits immediately.
      */
-    private fun startIndexCrawl() {
-        val index = channelIndex ?: return
-        val crawl = crawler ?: return
-        viewModelScope.launch(Dispatchers.IO) {
-            while (true) {
-                val master = configStore?.load()?.masterDeviceToken
-                val me = pairingStore?.deviceToken()
-                if (master == null || me == null || master != me || !uiActive) {
-                    // Not the master (or off screen): check again in a minute.
-                    kotlinx.coroutines.delay(60_000)
-                    continue
-                }
-                // Drop sources the whitelist no longer lists.
-                val wanted = sources.map { it.id }.toSet()
-                index.allStates().keys.filter { it !in wanted }.forEach { crawl.dropSource(it) }
-                val incomplete = sources.filter { index.state(it.id)?.complete != true }
-                if (incomplete.isEmpty()) {
-                    kotlinx.coroutines.delay(5 * 60_000L)
-                    continue
-                }
-                runCatching { crawl.crawlOnce(incomplete.first()) }
-                    .onFailure { android.util.Log.w("Pickwick", "index crawl failed", it) }
-                kotlinx.coroutines.delay(IndexCrawler.CRAWL_DELAY_MS)
-            }
-        }
-    }
-
     /**
      * Sends anything not yet screened to the AI in the background; each verdict
      * batch re-filters whatever screen the kid is on, so held videos pop in as

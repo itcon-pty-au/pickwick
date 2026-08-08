@@ -35,6 +35,16 @@ class ChannelIndex(context: Context) {
 
     /** In-memory copy of the manifest; disk is the source of truth. */
     private var states: Map<String, SourceState> = loadManifest()
+        set(value) {
+            field = value
+            sharedStates.value = value
+        }
+
+    init {
+        // Seed the shared flow from disk, so a fresh process's settings screen
+        // shows the persisted state before any crawl step runs.
+        sharedStates.value = states
+    }
 
     /** One indexed video — the fields search and the results screen need. */
     data class IndexedVideo(
@@ -176,6 +186,7 @@ class ChannelIndex(context: Context) {
             })
         }
         manifestFile.writeText(o.toString())
+        sharedStates.value = states
     }
 
     /** Compact per-source fingerprint for /index-status: what a peer needs to
@@ -252,4 +263,14 @@ class ChannelIndex(context: Context) {
 
     /** All file work off-main — called from the LAN worker and the crawler. */
     suspend fun <T> io(block: () -> T): T = withContext(Dispatchers.IO) { block() }
+
+    companion object {
+        /**
+         * Process-wide live view of every instance's states, so the settings
+         * screen (its own ChannelIndex instance) watches the ViewModel/worker
+         * instances' progress without sharing an object. Updated on every
+         * manifest write; seeded lazily by the first instance.
+         */
+        val sharedStates = kotlinx.coroutines.flow.MutableStateFlow(emptyMap<String, SourceState>())
+    }
 }

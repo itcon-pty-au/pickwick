@@ -30,8 +30,8 @@ android {
         applicationId = "io.pickwick.app"
         minSdk = 26 // adaptive icons; every realistic target device is far above this
         targetSdk = 34
-        versionCode = 10
-        versionName = "0.6.0"
+        versionCode = 11
+        versionName = "0.6.1"
 
         // Self-update manifest: JSON with versionCode/versionName/apkUrl.
         buildConfigField(
@@ -144,6 +144,7 @@ dependencies {
     implementation(libs.okhttp.dnsoverhttps)
     implementation(libs.androidx.biometric)
     implementation(libs.androidx.security.crypto)
+    implementation(libs.androidx.work.runtime)
     implementation(libs.zxing.core)
     implementation(libs.coil.compose)
     testImplementation("junit:junit:4.13.2")

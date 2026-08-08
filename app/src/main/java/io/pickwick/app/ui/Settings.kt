@@ -505,6 +505,11 @@ private fun AdminScreen(
     Column(
         Modifier
             .fillMaxSize()
+    ) {
+    Box(Modifier.fillMaxSize()) {
+    Column(
+        Modifier
+            .fillMaxSize()
             .verticalScroll(formScroll)
             .padding(24.dp)
     ) {
@@ -812,6 +817,30 @@ private fun AdminScreen(
 
         Spacer(Modifier.height(24.dp))
     }
+
+    // Dirty check: the form's fingerprint against the disk snapshot it opened
+    // from. Cheap (a few KB hashed on recomposition) and exact — any edit,
+    // including a reverted-then-redone one, shows the button only when the
+    // result would actually differ from what's saved.
+    val dirty = remember(
+        entries, limits, blocked, ai, aiAllowed, profiles, blockedFor,
+        allowedFor, deviceProfiles, masterToken, sponsorSkip, listenPercent
+    ) {
+        ConfigStore.fingerprint(buildCurrentConfig()) != ConfigStore.fingerprint(initial)
+    }
+    if (dirty) {
+        androidx.compose.material3.ExtendedFloatingActionButton(
+            onClick = ::saveAndSync,
+            modifier = Modifier
+                .align(androidx.compose.ui.Alignment.BottomEnd)
+                .padding(24.dp)
+                .tvFocusHighlight()
+        ) {
+            Text("Save changes")
+        }
+    }
+    }
+    }
 }
 
 @Composable
@@ -840,12 +869,13 @@ private fun SearchIndexSection(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val myToken = remember { pairingStore.deviceToken() }
-    val states by produceState<Map<String, io.pickwick.app.data.ChannelIndex.SourceState>>(emptyMap(), entries) {
-        value = withContext(kotlinx.coroutines.Dispatchers.IO) {
-            io.pickwick.app.data.ChannelIndex(context).allStates()
-        }
-    }
+    // Live: the shared flow ticks on every manifest write, so counts climb
+    // while the parent watches instead of freezing at whatever they were when
+    // the screen opened. ChannelIndex(context) also seeds the flow from disk.
+    remember { io.pickwick.app.data.ChannelIndex(context) }
+    val states by io.pickwick.app.data.ChannelIndex.sharedStates.collectAsState()
     val isMaster = masterToken != null && masterToken == myToken
+    var expanded by remember { mutableStateOf(false) }
 
     Text(
         when {
@@ -856,30 +886,47 @@ private fun SearchIndexSection(
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )
+
+    // Summary first: the per-channel list is long and rarely what the parent
+    // came for. Totals answer "is search working" at a glance.
+    val totalVideos = states.values.sumOf { it.count }
+    val complete = states.values.count { it.complete }
     Spacer(Modifier.height(6.dp))
-    entries.forEach { e ->
-        val s = states[e.id]
-        val label = e.label ?: e.id
-        val status = when {
-            s == null -> "not started"
-            s.complete -> "${s.count} videos ✓"
-            else -> "${s.count} videos, still indexing…"
+    Text(
+        "$totalVideos videos indexed across ${states.size} channel(s) — $complete fully indexed.",
+        style = MaterialTheme.typography.bodyMedium
+    )
+
+    if (!expanded) {
+        TextButton(onClick = { expanded = true }, modifier = Modifier.tvFocusHighlight()) {
+            Text("Read more")
         }
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
-        ) {
-            Text(
-                label, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.weight(1f)
-            )
-            Text(
-                status,
-                style = MaterialTheme.typography.bodySmall,
-                color = if (s?.complete == true) androidx.compose.ui.graphics.Color(0xFF81C784)
-                else MaterialTheme.colorScheme.onSurfaceVariant
-            )
+    } else {
+        Spacer(Modifier.height(6.dp))
+        entries.forEach { e ->
+            val s = states[e.id]
+            val label = e.label ?: e.id
+            val status = when {
+                s == null -> "not started"
+                s.complete -> "${s.count} videos ✓"
+                else -> "${s.count} videos, still indexing…"
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
+            ) {
+                Text(
+                    label, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    status,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (s?.complete == true) androidx.compose.ui.graphics.Color(0xFF81C784)
+                    else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }

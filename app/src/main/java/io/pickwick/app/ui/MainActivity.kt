@@ -148,6 +148,9 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         }
         // Once-a-day silent update check; drives the dot on the settings gear.
         lifecycleScope.launch { io.pickwick.app.data.Updater(applicationContext).autoCheck() }
+        // The channel-index crawl runs whether or not the app is open — the
+        // worker itself no-ops on any device that isn't the master.
+        io.pickwick.app.data.IndexCrawlWorker.schedule(applicationContext)
         setContent {
             MaterialTheme(colorScheme = PickwickDarkColors) {
                 // The family config drives who exists and whether this device is

@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -105,10 +106,7 @@ internal fun ChannelGrid(
     ) {
         // Branding + settings scroll away like everything else — content is king.
         item(key = "app-header", span = { GridItemSpan(maxLineSpan) }) {
-            Column {
-                HomeHeader(onOpenSettings, activeProfile, onSwitchProfile)
-                SearchBar(isTv = false, onSearch = onSearch)
-            }
+            HomeHeader(onOpenSettings, activeProfile, onSwitchProfile, onSearch)
         }
         // Keep-watching scrolls away with the rest — not sticky.
         if (keepWatching.isNotEmpty()) {
@@ -251,8 +249,14 @@ private fun EmptyHome(onOpenSettings: () -> Unit) {
 private fun HomeHeader(
     onOpenSettings: () -> Unit,
     activeProfile: io.pickwick.app.data.Profile? = null,
-    onSwitchProfile: (() -> Unit)? = null
+    onSwitchProfile: (() -> Unit)? = null,
+    onSearch: (String) -> Unit = {}
 ) {
+    // Collapsed by default: the field costs a full row of home space, so it
+    // appears only when the search icon is tapped. State lives here so both
+    // home layouts share the behavior.
+    var searchOpen by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth()) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth()
@@ -315,6 +319,16 @@ private fun HomeHeader(
         }
         IconButton(
             modifier = Modifier.size(48.dp),
+            onClick = { searchOpen = !searchOpen }
+        ) {
+            Icon(
+                Icons.Filled.Search,
+                contentDescription = if (searchOpen) "Close search" else "Search",
+                modifier = Modifier.size(28.dp)
+            )
+        }
+        IconButton(
+            modifier = Modifier.size(48.dp),
             onClick = onOpenSettings
         ) {
             val updatePending by UpdateEvents.pending.collectAsState()
@@ -334,6 +348,8 @@ private fun HomeHeader(
                 }
             }
         }
+    }
+    if (searchOpen) SearchField(onSearch)
     }
 }
 
@@ -373,10 +389,7 @@ internal fun TvHomeRows(
         contentPadding = PaddingValues(vertical = 8.dp)
     ) {
         item(key = "header") {
-            Column {
-                HomeHeader(onOpenSettings, activeProfile, onSwitchProfile)
-                SearchBar(isTv = true, onSearch = onSearch)
-            }
+            HomeHeader(onOpenSettings, activeProfile, onSwitchProfile, onSearch)
         }
 
         if (keepWatching.isNotEmpty()) {
