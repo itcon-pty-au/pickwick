@@ -8,6 +8,8 @@
     <!-- Offline downloads run as a foreground service with a progress notification. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Listen mode: audio keeps playing while the phone screen is off. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- Google TV / Android TV: no touchscreen required, leanback optional so the
@@ -31,10 +33,14 @@
              cloud/device-transfer backup where the platform offers it, and
              hasFragileUserData adds a "Keep app data" choice on uninstall. -->
 
+        <!-- configChanges like PlayerActivity: rotation must not tear down a
+             pairing flow mid-approval (its dialog + polling live in activity
+             state) — Compose relayouts on the new size by itself. -->
         <activity
             android:name=".ui.MainActivity"
             android:exported="true"
-            android:launchMode="singleTask">
+            android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -63,6 +69,14 @@
             android:name=".data.DownloadService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <!-- Listen mode: keeps playback alive while the phone screen is off
+             and puts a pause button on the lock screen. Phones only — started
+             solely by PlayerActivity when the display actually turns off. -->
+        <service
+            android:name=".ui.ListenService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
 
         <!-- Serves the downloaded update APK to the system installer. -->
         <provider

@@ -16,17 +16,18 @@ gradlew assembleRelease
 
 APK lands at `app/build/outputs/apk/release/pickwick.apk` (renamed in Gradle;
 keep the asset name constant so `releases/latest/download/pickwick.apk` — the
-Downloader-code URL — never goes stale). The release type
-is signed with the **debug key** on purpose (`app/build.gradle.kts`), so it
-side-loads and upgrades over previous installs with no keystore setup.
+Downloader-code URL — never goes stale). Release builds are signed with the
+**real release keystore** — `PICKWICK_KEYSTORE` (plus `_PASSWORD`,
+`PICKWICK_KEY_ALIAS`, `PICKWICK_KEY_PASSWORD`) in `local.properties` or the
+environment. There is deliberately no debug-key fallback: release packaging
+fails if the key is absent, because that key is the sole trust anchor for
+self-update and Android refuses in-place upgrades across a signature change.
 
-Set `PICKWICK_KEYSTORE` (plus `_PASSWORD`, `PICKWICK_KEY_ALIAS`,
-`PICKWICK_KEY_PASSWORD`) in `local.properties` or the environment to sign with a
-real key instead. Note what that costs before doing it: Android won't upgrade an
-install across a signature change, so every already-installed family would need
-an uninstall — which wipes their curation. Until that switch happens,
-`~/.android/debug.keystore` is a release credential, since it is the only thing
-vouching for a self-update.
+On this machine the keystore lives at
+`~/.pickwick/pickwick-release.keystore` (alias `pickwick`, password alongside
+in `pickwick-release.keystore.password.txt`). **Back both up off-machine** —
+losing them means every installed family must uninstall, which wipes their
+curation.
 
 A debug build is *debuggable*, which enables `-Xcheck:jni` and skips
 ahead-of-time compilation, leaving the Compose runtime interpreted on first
@@ -87,8 +88,9 @@ would hand them the 10-second cold start.
 - Transport ids from `adb devices -l` change between sessions. Re-read them; do
   not hardcode. The TV reports `model:Chromecast`, the phone `model:Pixel_7_Pro`.
 - `install -r` preserves app data, so pairing and curation survive an upgrade.
-  A signature mismatch means the installed build came from a different machine's
-  debug keystore; that needs an uninstall, which **wipes the family's config**.
+  A signature mismatch means the installed build was signed with a different
+  key (e.g. an old debug-keystore install from before the release key existed);
+  that needs an uninstall, which **wipes the family's config**.
 
 ## Verifying pairing without breaking it
 

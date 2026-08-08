@@ -48,7 +48,7 @@ jobs:
           --tests "io.pickwick.app.EndpointSafetyTest"
           --tests "io.pickwick.app.RetryPolicyTest"
           --tests "io.pickwick.app.WhitelistParserTest"
-          --tests "io.pickwick.app.WhitelistImporterUrlTest"
+          --tests "io.pickwick.app.DirectorySubmitterTest"
           --tests "io.pickwick.app.WhitelistExporterTest"
 
       - name: Upload test report

@@ -8,6 +8,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -35,6 +37,7 @@ import io.pickwick.app.data.RemotePlayerControl
 import io.pickwick.app.data.SessionGuard
 import io.pickwick.app.data.WatchHistoryStore
 import io.pickwick.app.data.YouTubeRepository
+import io.pickwick.app.data.listenDrainPercent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -48,6 +51,18 @@ class PlayerActivity : ComponentActivity() {
         /** Optional: ordered page-URLs to auto-advance through (playlist sources). */
         const val EXTRA_QUEUE = "queue"
         const val EXTRA_INDEX = "index"
+        /**
+         * Optional, parallel to EXTRA_QUEUE: channel name and drain percent per
+         * item. A hand-built queue crosses channels, so one launch-wide value
+         * would credit every minute to the first channel and bill it at the
+         * first channel's rate. Absent (playlist/single launches) → the single
+         * EXTRA_CHANNEL / EXTRA_TIME_PERCENT applies to every item, as before.
+         */
+        const val EXTRA_QUEUE_CHANNELS = "queue_channels"
+        const val EXTRA_QUEUE_PERCENTS = "queue_percents"
+        /** True when EXTRA_QUEUE came from the kid's QueueStore: items that
+         *  truly finish are removed there, so the queue self-clears. */
+        const val EXTRA_FROM_QUEUE = "from_queue"
         const val EXTRA_CHANNEL = "channel"
         /** Screen-time drain rate for this launch, percent (100 normal, 0 FREE). */
         const val EXTRA_TIME_PERCENT = "time_percent"
@@ -65,13 +80,19 @@ class PlayerActivity : ComponentActivity() {
     private lateinit var history: WatchHistoryStore
     private lateinit var sessionGuard: SessionGuard
     private lateinit var channelUsage: io.pickwick.app.data.ChannelUsage
+    private lateinit var repo: YouTubeRepository
+    private lateinit var downloads: io.pickwick.app.data.DownloadStore
+    private lateinit var localLibrary: io.pickwick.app.data.LocalLibrary
+    private var queue: List<String> = emptyList()
+    private var queueChannels: List<String> = emptyList()
+    private var queuePercents: IntArray? = null
+    /** Non-null only for EXTRA_FROM_QUEUE launches. */
+    private var queueStore: io.pickwick.app.data.QueueStore? = null
+    private var timePercent = 100
     private var currentPageUrl: String? = null
     private var currentTitle: String = ""
     private var currentChannel: String = ""
-    /** Set from composition; invoked by the player listener when a video ends. */
-    private var advance: (() -> Unit)? = null
-    /** Set from composition; invoked on a playback error (skip ahead or show it). */
-    private var playbackFailed: ((String) -> Unit)? = null
+    private var currentPlayback: YouTubeRepository.Playback? = null
     private var isTv = false
     /** Non-null once a screen-time rule fires mid-playback. */
     private val timeUpMessage = mutableStateOf<String?>(null)
@@ -86,6 +107,34 @@ class PlayerActivity : ComponentActivity() {
     /** Kid's sticky captions choice (survives across videos and app runs). */
     private var captionsOn = false
     private var currentSubtitles: List<YouTubeRepository.Subtitle> = emptyList()
+    /** Community-marked promo stretches for the current video (see SponsorBlock). */
+    private val sponsorSegments =
+        mutableStateOf<List<io.pickwick.app.data.SponsorBlock.Segment>>(emptyList())
+    /** Parent's SponsorBlock switch, read off-main on first use; null = not read yet. */
+    private var sponsorSkipOn: Boolean? = null
+
+    // Queue position, resolved streams, and terminal error, hoisted out of the
+    // composition. Deliberate: recomposition needs display frames, which stop
+    // dead when the screen is off — a LaunchedEffect-driven advance would
+    // stall a listen-mode playlist at the end of its first video until the
+    // screen came back. Activity-level functions + lifecycleScope (a plain
+    // main-looper dispatcher) keep working in the dark; composition just
+    // renders whatever these say when frames exist.
+    private val indexState = mutableIntStateOf(0)
+    private val playbackState = mutableStateOf<YouTubeRepository.Playback?>(null)
+    private val errorState = mutableStateOf<String?>(null)
+    /** Latches on the first resolved video (see the PlayerView comment below). */
+    private val everPlayed = mutableStateOf(false)
+    private var resolveJob: kotlinx.coroutines.Job? = null
+
+    /**
+     * Family screen-off listening rate; null = feature off (default), which
+     * keeps the old behavior: locking the phone pauses. Loaded off-main once,
+     * phones only.
+     */
+    private var listenPercent: Int? = null
+    /** True from "screen went dark while playing" until the player is back in front. */
+    private var listenActive = false
 
     private fun pokeControls() {
         controlsVisibleUntil.value = System.currentTimeMillis() + 3_000
@@ -111,20 +160,28 @@ class PlayerActivity : ComponentActivity() {
         }
         channelUsage = io.pickwick.app.data.ChannelUsage(this, profileSuffix)
         currentChannel = intent.getStringExtra(EXTRA_CHANNEL).orEmpty()
-        val queue: List<String> =
-            intent.getStringArrayListExtra(EXTRA_QUEUE)
-                ?: listOfNotNull(intent.getStringExtra(EXTRA_VIDEO_URL))
+        queue = intent.getStringArrayListExtra(EXTRA_QUEUE)
+            ?: listOfNotNull(intent.getStringExtra(EXTRA_VIDEO_URL))
         if (queue.isEmpty()) {
             finish(); return
         }
         val startIndex = intent.getIntExtra(EXTRA_INDEX, 0).coerceIn(0, queue.lastIndex)
+        queueChannels = intent.getStringArrayListExtra(EXTRA_QUEUE_CHANNELS).orEmpty()
+        queuePercents = intent.getIntArrayExtra(EXTRA_QUEUE_PERCENTS)
+        if (intent.getBooleanExtra(EXTRA_FROM_QUEUE, false)) {
+            queueStore = io.pickwick.app.data.QueueStore(this, profileSuffix)
+        }
 
         history = WatchHistoryStore(this, profileSuffix)
         sessionGuard = SessionGuard(this, profileSuffix)
-        val repo = YouTubeRepository()
-        val downloads = io.pickwick.app.data.DownloadStore(this)
-        val localLibrary = io.pickwick.app.data.LocalLibrary(this)
-        val timePercent = intent.getIntExtra(EXTRA_TIME_PERCENT, 100).coerceIn(0, 400)
+        repo = YouTubeRepository()
+        downloads = io.pickwick.app.data.DownloadStore(this)
+        localLibrary = io.pickwick.app.data.LocalLibrary(this)
+        // Per-item when the parallel array is present; the gate below judges
+        // the *starting* item's rate (matching single launches — later items
+        // are enforced by the 5-second tick, same as any mid-playback change).
+        timePercent = (queuePercents?.getOrNull(startIndex)
+            ?: intent.getIntExtra(EXTRA_TIME_PERCENT, 100)).coerceIn(0, 400)
 
         // Screen-time rules: blocked before we even build the player.
         sessionGuard.checkStart(timePercent)?.let { reason ->
@@ -133,6 +190,17 @@ class PlayerActivity : ComponentActivity() {
         }
 
         captionsOn = getSharedPreferences("player", MODE_PRIVATE).getBoolean("captions", false)
+
+        if (!isTv) {
+            // Listen mode is a phone feature; off-main because ConfigStore is a
+            // file read + JSON parse. Racing the first power-button press is
+            // theoretical (this finishes in ms), and losing the race just means
+            // that one lock pauses like the feature was off.
+            lifecycleScope.launch(Dispatchers.IO) {
+                listenPercent = io.pickwick.app.data.ConfigStore(this@PlayerActivity)
+                    .load().listenPercent
+            }
+        }
 
         // Read further ahead than the 50s default: with the chunked data source
         // the network can outrun playback, so minutes of buffer absorb Wi-Fi
@@ -154,27 +222,55 @@ class PlayerActivity : ComponentActivity() {
             // several minutes at the bitrates these streams actually run at.
             .setTargetBufferBytes(48 * 1024 * 1024)
             .build()
-        player = ExoPlayer.Builder(this).setLoadControl(loadControl).build().apply {
-            addListener(object : Player.Listener {
-                override fun onPlaybackStateChanged(playbackState: Int) {
-                    buffering.value = playbackState == Player.STATE_BUFFERING
-                    if (playbackState == Player.STATE_ENDED) {
-                        // Mark fully watched, then move on (playlist) or stay (single).
-                        // The store commits (fsync, deliberate) — off-main.
-                        currentPageUrl?.let { url ->
-                            val dur = duration
-                            lifecycleScope.launch(Dispatchers.IO) { history.save(url, dur, dur) }
+        player = ExoPlayer.Builder(this).setLoadControl(loadControl)
+            .apply {
+                if (!isTv) {
+                    // Phone niceties, and listen mode's life support: the wake
+                    // mode holds CPU + Wi-Fi while playing with the screen off
+                    // (without it, doze starves the stream mid-song). Focus
+                    // handling and becoming-noisy make it behave like a music
+                    // app around calls and unplugged headphones. TVs keep the
+                    // exact pre-listen behavior — nothing here helps a TV.
+                    setWakeMode(androidx.media3.common.C.WAKE_MODE_NETWORK)
+                    setAudioAttributes(
+                        androidx.media3.common.AudioAttributes.Builder()
+                            .setUsage(androidx.media3.common.C.USAGE_MEDIA)
+                            .setContentType(androidx.media3.common.C.AUDIO_CONTENT_TYPE_MOVIE)
+                            .build(),
+                        /* handleAudioFocus = */ true
+                    )
+                    setHandleAudioBecomingNoisy(true)
+                }
+            }
+            .build().apply {
+                addListener(object : Player.Listener {
+                    override fun onPlaybackStateChanged(playbackState: Int) {
+                        buffering.value = playbackState == Player.STATE_BUFFERING
+                        if (playbackState == Player.STATE_ENDED) {
+                            // Mark fully watched, then move on (playlist) or stay (single).
+                            // The store commits (fsync, deliberate) — off-main.
+                            currentPageUrl?.let { url ->
+                                val dur = duration
+                                lifecycleScope.launch(Dispatchers.IO) {
+                                    history.save(url, dur, dur)
+                                    // Queue launches self-clear: only a video that
+                                    // truly finished leaves the lineup. Written here
+                                    // (not by the home screen) because with the
+                                    // screen off in listen mode, this is the only
+                                    // code still running.
+                                    queueStore?.remove(url)
+                                }
+                            }
+                            advanceQueue()
                         }
-                        advance?.invoke()
                     }
-                }
 
-                override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-                    // Never leave a frozen screen: skip ahead (playlist) or say why.
-                    playbackFailed?.invoke(error.message ?: error.errorCodeName)
-                }
-            })
-        }
+                    override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                        // Never leave a frozen screen: skip ahead (playlist) or say why.
+                        onPlaybackFailed(error.message ?: error.errorCodeName)
+                    }
+                })
+            }
 
         // Parent's phone can pause/resume via the LAN server ("come to dinner").
         RemotePlayerControl.handler = handler@{ cmd ->
@@ -197,6 +293,24 @@ class PlayerActivity : ComponentActivity() {
             true
         }
 
+        // Auto-skip the promo stretches SponsorBlock knows about. Deliberately
+        // silent — the jump is the whole feature, no toast. Polled at 500ms:
+        // at most half a second of a sponsor read plays before the seek, and a
+        // position read this light is free next to the 5s stats tick below.
+        lifecycleScope.launch {
+            while (isActive) {
+                delay(500)
+                val exo = player ?: continue
+                if (!exo.isPlaying) continue
+                val pos = exo.currentPosition
+                // 300ms tail guard: landing exactly on endMs must not re-match
+                // on the next tick while the seek is still settling.
+                sponsorSegments.value
+                    .firstOrNull { pos >= it.startMs && pos < it.endMs - 300 }
+                    ?.let { exo.seekTo(it.endMs) }
+            }
+        }
+
         // Persist progress and enforce screen-time rules every 5s while playing.
         lifecycleScope.launch {
             while (isActive) {
@@ -212,9 +326,14 @@ class PlayerActivity : ComponentActivity() {
                 }
                 if (exo.isPlaying && timeUpMessage.value == null) {
                     // Stats record real watch time; the budget drains at the
-                    // source's multiplier (exact integer ms — 25% of 5s = 1250ms).
+                    // source's multiplier (exact integer ms — 25% of 5s = 1250ms),
+                    // further scaled by the family listening rate while the
+                    // screen is off.
+                    val drain =
+                        if (listenActive) listenDrainPercent(timePercent, listenPercent)
+                        else timePercent
                     channelUsage.addSeconds(currentChannel, 5)
-                    sessionGuard.tick(5_000L * timePercent / 100)?.let { reason ->
+                    sessionGuard.tick(5_000L * drain / 100)?.let { reason ->
                         exo.pause()
                         timeUpMessage.value = reason
                         delay(6_000)
@@ -225,7 +344,7 @@ class PlayerActivity : ComponentActivity() {
                     // sources only an approaching bedtime counts down). A parent
                     // grant that lifts the countdown re-arms the warnings.
                     if (timeUpMessage.value == null)
-                        sessionGuard.remainingMs(timePercent)?.let { left ->
+                        sessionGuard.remainingMs(drain)?.let { left ->
                         val threshold = when {
                             left <= 60_000L -> 1
                             left <= 5 * 60_000L -> 5
@@ -245,111 +364,9 @@ class PlayerActivity : ComponentActivity() {
 
         setContent {
             MaterialTheme(colorScheme = PickwickDarkColors) {
-                var index by remember { mutableIntStateOf(startIndex) }
-                var playback by remember {
-                    mutableStateOf<YouTubeRepository.Playback?>(null)
-                }
-                var error by remember { mutableStateOf<String?>(null) }
-                // Latches on the first resolved video. Before it there is no frame
-                // to hold, so a bare spinner is honest; after it the PlayerView
-                // stays composed for the rest of the session (see below).
-                var everPlayed by remember { mutableStateOf(false) }
-
-                advance = {
-                    if (index < queue.lastIndex) index += 1 else finish()
-                }
-                playbackFailed = { message ->
-                    if (index < queue.lastIndex) index += 1 else error = message
-                }
-
-                // Resolve streams whenever the queue position changes. A downloaded
-                // video plays from disk — instant start, and no network needed at
-                // all (car trips). Otherwise target height follows connection +
-                // device (1080p TV on fast Wi-Fi, down to muxed).
-                LaunchedEffect(index) {
-                    playback = null
-                    error = null
-                    currentPageUrl = queue[index]
-                    runCatching {
-                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                            // Sideloaded file (content:// via SAF) or a finished
-                            // download — both play from disk with no network.
-                            localLibrary.playback(queue[index])
-                                ?: downloads.localPlayback(queue[index])
-                        } ?: repo.resolvePlayback(
-                            queue[index],
-                            io.pickwick.app.data.QualityTargets.playbackMaxHeight
-                        )
-                    }
-                        .onSuccess { pb ->
-                            currentTitle = pb.title
-                            playback = pb
-                            everPlayed = true
-                        }
-                        .onFailure { e ->
-                            // Mid-playlist failure: skip to the next video instead of dying.
-                            if (index < queue.lastIndex) index += 1
-                            else error = e.message
-                        }
-                }
-
-                // Hand the resolved streams to the (single, reused) player.
-                LaunchedEffect(playback) {
-                    val pb = playback ?: return@LaunchedEffect
-                    val exo = player ?: return@LaunchedEffect
-                    currentSubtitles = pb.subtitles
-                    // DefaultDataSource: http for streams, file for offline
-                    // downloads, content for sideloaded SAF files. Wrapped so
-                    // googlevideo streams fetch in range-parameter chunks.
-                    // Measured on a Chromecast, same video: unwrapped, the
-                    // buffer starved (stalled at 0s ahead, then crept up at
-                    // ~1.5x playback); chunked, the whole video was resident
-                    // 19s in. See ChunkedStreamDataSource for why.
-                    val factory = io.pickwick.app.data.ChunkedStreamDataSource.Factory(
-                        androidx.media3.datasource.DefaultDataSource
-                            .Factory(this@PlayerActivity)
-                    )
-                    fun progressive(url: String) =
-                        androidx.media3.exoplayer.source.ProgressiveMediaSource
-                            .Factory(factory).createMediaSource(MediaItem.fromUri(url))
-                    // Subtitles ride along as side-loaded tracks on the video item;
-                    // DefaultMediaSourceFactory parses them during extraction (the
-                    // modern pipeline — SingleSampleMediaSource is the legacy path
-                    // that media3 1.4+ refuses at play time). Whether one is shown
-                    // is the kid's sticky captions choice.
-                    val subConfigs = pb.subtitles.map { sub ->
-                        MediaItem.SubtitleConfiguration
-                            .Builder(android.net.Uri.parse(sub.url))
-                            .setMimeType(sub.mimeType)
-                            .setLanguage(sub.languageTag.ifBlank { null })
-                            .setLabel(sub.name.ifBlank { null })
-                            .build()
-                    }
-                    val video = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(factory)
-                        .createMediaSource(
-                            MediaItem.Builder()
-                                .setUri(pb.videoUrl)
-                                .setSubtitleConfigurations(subConfigs)
-                                .build()
-                        )
-                    // HD: separate video+audio merged in the player (NewPipe-style).
-                    exo.setMediaSource(
-                        if (pb.audioUrl != null) {
-                            androidx.media3.exoplayer.source.MergingMediaSource(
-                                video, progressive(pb.audioUrl)
-                            )
-                        } else video
-                    )
-                    applyCaptionsPreference()
-                    exo.prepare()
-                    currentPageUrl?.let { page ->
-                        history.progress(page)?.takeIf { !it.isFinished }
-                            ?.let { exo.seekTo(it.positionMs) }
-                    }
-                    exo.playWhenReady = true
-                    if (isTv) pokeControls() // brief position peek at start
-                }
-
+                val playback by playbackState
+                val error by errorState
+                val played by everPlayed
                 val timeUp by timeUpMessage
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     when {
@@ -359,7 +376,9 @@ class PlayerActivity : ComponentActivity() {
                             style = MaterialTheme.typography.headlineMedium
                         )
                         error != null -> Text("Could not play video: $error", color = Color.White)
-                        !everPlayed -> CircularProgressIndicator()
+                        // Before the first resolved video there is no frame to
+                        // hold, so a bare spinner is honest.
+                        !played -> CircularProgressIndicator()
                         // Composed from the first video onwards and never swapped
                         // out again — resolving the *next* one used to replace this
                         // view with a spinner, which destroys the SurfaceView and
@@ -384,15 +403,224 @@ class PlayerActivity : ComponentActivity() {
                     }
                     // Spinner over the held frame: resolving the next video's
                     // streams, initial buffer, seek, or a mid-video stall.
-                    if (timeUp == null && error == null && everPlayed &&
+                    if (timeUp == null && error == null && played &&
                         (playback == null || buffering.value)
                     ) {
                         CircularProgressIndicator()
                     }
                     if (isTv && timeUp == null) {
-                        TvControlsOverlay(controlsVisibleUntil) { player }
+                        TvControlsOverlay(controlsVisibleUntil, sponsorSegments.value) { player }
                     }
                     if (timeUp == null) NoticeOverlay(notice)
+                }
+            }
+        }
+
+        playIndex(startIndex)
+    }
+
+    private fun advanceQueue() {
+        if (indexState.intValue < queue.lastIndex) playIndex(indexState.intValue + 1)
+        else finish()
+    }
+
+    private fun onPlaybackFailed(message: String) {
+        if (indexState.intValue < queue.lastIndex) playIndex(indexState.intValue + 1)
+        else errorState.value = message
+    }
+
+    /**
+     * Resolves streams for queue position [i] and hands them to the player.
+     * A downloaded video plays from disk — instant start, and no network
+     * needed at all (car trips). Otherwise target height follows connection +
+     * device (1080p TV on fast Wi-Fi, down to muxed).
+     */
+    private fun playIndex(i: Int) {
+        indexState.intValue = i
+        resolveJob?.cancel()
+        resolveJob = lifecycleScope.launch {
+            playbackState.value = null
+            errorState.value = null
+            currentPageUrl = queue[i]
+            // Per-item stats/drain: the 5-second tick reads these fields, so a
+            // cross-channel queue charges and credits each video correctly.
+            queueChannels.getOrNull(i)?.let { currentChannel = it }
+            queuePercents?.getOrNull(i)?.let { timePercent = it.coerceIn(0, 400) }
+            sponsorSegments.value = emptyList()
+            // Segment lookup rides alongside stream resolution, never on
+            // its critical path — a slow or down SponsorBlock server
+            // costs nothing but unskipped sponsors. Child of this
+            // job, so advancing the queue cancels a stale fetch.
+            io.pickwick.app.data.SponsorBlock.videoIdOf(queue[i])?.let { vid ->
+                launch(kotlinx.coroutines.Dispatchers.IO) {
+                    val on = sponsorSkipOn
+                        ?: io.pickwick.app.data.ConfigStore(this@PlayerActivity)
+                            .load().sponsorSkip.also { sponsorSkipOn = it }
+                    if (!on) return@launch
+                    val segments = io.pickwick.app.data.SponsorBlock.segmentsFor(vid)
+                    // The blocking fetch outlives cancellation — isActive
+                    // keeps a late answer from tagging the *next* video.
+                    if (segments.isNotEmpty() && isActive) sponsorSegments.value = segments
+                }
+            }
+            runCatching {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    // Sideloaded file (content:// via SAF) or a finished
+                    // download — both play from disk with no network.
+                    localLibrary.playback(queue[i])
+                        ?: downloads.localPlayback(queue[i])
+                } ?: repo.resolvePlayback(
+                    queue[i],
+                    io.pickwick.app.data.QualityTargets.playbackMaxHeight
+                )
+            }
+                .onSuccess { pb ->
+                    currentTitle = pb.title
+                    currentPlayback = pb
+                    ListenService.title = pb.title
+                    ListenService.channelName = currentChannel
+                    playbackState.value = pb
+                    everPlayed.value = true
+                    attachSources(
+                        pb,
+                        audioOnly = listenActive && pb.audioUrl != null,
+                        resumeMs = null
+                    )
+                }
+                .onFailure { e ->
+                    // A superseded resolve (queue advanced again) must not be
+                    // mistaken for a broken video and trigger its own advance.
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    // Mid-playlist failure: skip to the next video instead of dying.
+                    if (i < queue.lastIndex) playIndex(i + 1)
+                    else errorState.value = e.message
+                }
+        }
+    }
+
+    /**
+     * Hands the resolved streams to the (single, reused) player. [audioOnly]
+     * is the listen-mode swap: just the audio track — the video stream would
+     * only be downloaded to feed a decoder nobody is watching. [resumeMs]
+     * null means a fresh video (resume from saved history); a value is an
+     * in-place stream swap that must not lose the playhead or override the
+     * kid's pause.
+     */
+    private fun attachSources(
+        pb: YouTubeRepository.Playback,
+        audioOnly: Boolean,
+        resumeMs: Long?
+    ) {
+        val exo = player ?: return
+        currentSubtitles = pb.subtitles
+        // DefaultDataSource: http for streams, file for offline
+        // downloads, content for sideloaded SAF files. Wrapped so
+        // googlevideo streams fetch in range-parameter chunks.
+        // Measured on a Chromecast, same video: unwrapped, the
+        // buffer starved (stalled at 0s ahead, then crept up at
+        // ~1.5x playback); chunked, the whole video was resident
+        // 19s in. See ChunkedStreamDataSource for why.
+        val factory = io.pickwick.app.data.ChunkedStreamDataSource.Factory(
+            androidx.media3.datasource.DefaultDataSource.Factory(this)
+        )
+        fun progressive(url: String) =
+            androidx.media3.exoplayer.source.ProgressiveMediaSource
+                .Factory(factory).createMediaSource(MediaItem.fromUri(url))
+        val wasPlaying = if (resumeMs != null) exo.playWhenReady else true
+        if (audioOnly && pb.audioUrl != null) {
+            exo.setMediaSource(progressive(pb.audioUrl))
+        } else {
+            // Subtitles ride along as side-loaded tracks on the video item;
+            // DefaultMediaSourceFactory parses them during extraction (the
+            // modern pipeline — SingleSampleMediaSource is the legacy path
+            // that media3 1.4+ refuses at play time). Whether one is shown
+            // is the kid's sticky captions choice.
+            val subConfigs = pb.subtitles.map { sub ->
+                MediaItem.SubtitleConfiguration
+                    .Builder(android.net.Uri.parse(sub.url))
+                    .setMimeType(sub.mimeType)
+                    .setLanguage(sub.languageTag.ifBlank { null })
+                    .setLabel(sub.name.ifBlank { null })
+                    .build()
+            }
+            val video = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(factory)
+                .createMediaSource(
+                    MediaItem.Builder()
+                        .setUri(pb.videoUrl)
+                        .setSubtitleConfigurations(subConfigs)
+                        .build()
+                )
+            // HD: separate video+audio merged in the player (NewPipe-style).
+            exo.setMediaSource(
+                if (pb.audioUrl != null) {
+                    androidx.media3.exoplayer.source.MergingMediaSource(
+                        video, progressive(pb.audioUrl)
+                    )
+                } else video
+            )
+        }
+        applyCaptionsPreference()
+        exo.prepare()
+        if (resumeMs != null) {
+            exo.seekTo(resumeMs)
+        } else {
+            currentPageUrl?.let { page ->
+                history.progress(page)?.takeIf { !it.isFinished }
+                    ?.let { exo.seekTo(it.positionMs) }
+            }
+        }
+        exo.playWhenReady = wasPlaying
+        if (isTv) pokeControls() // brief position peek at start
+    }
+
+    /**
+     * Power button while playing (phones, listening rate set): keep the sound
+     * going instead of pausing. Entered from [onStop] with the display
+     * actually off — checked directly rather than via ACTION_SCREEN_OFF,
+     * whose delivery order against onStop isn't guaranteed.
+     */
+    private fun enterListenMode() {
+        if (isTv || listenActive) return
+        listenPercent ?: return // unset = feature off: onStop pauses as always
+        if (timeUpMessage.value != null) return
+        val exo = player ?: return
+        // Mid-advance (between videos) counts as playing: the resolve finishes
+        // in the dark and attachSources starts the next one audio-only.
+        if (!exo.isPlaying && resolveJob?.isActive != true) return
+        listenActive = true
+        // Drop to the bare audio stream where one exists (HD sources): the
+        // video track is most of the bandwidth and all of the decode work,
+        // and nobody is watching. Muxed and local files just keep playing.
+        // NOT mid-advance, though: currentPlayback is still the *previous*
+        // video there, and re-attaching it seeked to exo's end-of-old-video
+        // position fires an instant ENDED that marks the next queued video
+        // watched and drops it. The in-flight resolve honors listenActive on
+        // its own when it attaches.
+        if (resolveJob?.isActive != true) {
+            currentPlayback?.let { pb ->
+                if (pb.audioUrl != null) {
+                    attachSources(pb, audioOnly = true, resumeMs = exo.currentPosition)
+                }
+            }
+        }
+        ListenService.title = currentTitle
+        ListenService.channelName = currentChannel
+        ListenService.player = exo
+        ListenService.start(this)
+    }
+
+    /** Back in front (unlock, or lock screen never engaged): video + normal rate. */
+    private fun exitListenMode() {
+        if (!listenActive) return
+        listenActive = false
+        ListenService.stop(this)
+        val exo = player ?: return
+        // Same mid-advance guard as enterListenMode: a stale playback must not
+        // be re-attached over an in-flight resolve.
+        if (resolveJob?.isActive != true) {
+            currentPlayback?.let { pb ->
+                if (pb.audioUrl != null) {
+                    attachSources(pb, audioOnly = false, resumeMs = exo.currentPosition)
                 }
             }
         }
@@ -497,8 +725,24 @@ class PlayerActivity : ComponentActivity() {
         lifecycleScope.launch(Dispatchers.IO) { history.save(url, pos, dur) }
     }
 
+    override fun onResume() {
+        super.onResume()
+        // The single exit from listen mode: "resumed" is the one state that
+        // means the kid is actually looking at the player again, on every
+        // unlock path (keyguard, swipe, no lock at all).
+        exitListenMode()
+    }
+
     override fun onStop() {
         super.onStop()
+        // Power button vs navigating away: the display state tells them apart.
+        // Screen off while playing + listening enabled = keep the sound going.
+        val screenOff = !(getSystemService(POWER_SERVICE) as android.os.PowerManager)
+            .isInteractive
+        // The foreground-service start from onStop rides the "leaving a
+        // user-visible state" exemption; if an OEM's timing disagrees, losing
+        // the race must mean "this lock pauses", not a crash.
+        if (screenOff) runCatching { enterListenMode() }
         // Inline, not dispatched: lifecycleScope dies with the activity, and the
         // exit position is the one write that must not be dropped. Nothing is
         // animating by now, so the blocking commit is harmless.
@@ -510,15 +754,18 @@ class PlayerActivity : ComponentActivity() {
         // Watching counts as presence — the who's-watching screen must not
         // re-ask right after a long video just because home sat idle.
         io.pickwick.app.data.ActiveProfileStore(this).touch()
-        player?.pause()
+        // Listen mode is the whole point of not pausing here; every other way
+        // of leaving (home, back, task switch — all screen-on) still stops it.
+        if (!listenActive) player?.pause()
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        advance = null
-        playbackFailed = null
+        resolveJob = null
         RemotePlayerControl.handler = null
         io.pickwick.app.data.NowPlaying.clear()
+        ListenService.stop(this)
+        if (ListenService.player === player) ListenService.player = null
         player?.release()
         player = null
     }
@@ -551,6 +798,7 @@ private fun BoxScope.NoticeOverlay(state: MutableState<Notice?>) {
 @Composable
 private fun BoxScope.TvControlsOverlay(
     visibleUntil: State<Long>,
+    sponsorSegments: List<io.pickwick.app.data.SponsorBlock.Segment>,
     playerProvider: () -> ExoPlayer?
 ) {
     val until by visibleUntil
@@ -603,7 +851,7 @@ private fun BoxScope.TvControlsOverlay(
             // what has been played. The buffered band is the honest answer to
             // "why did it stop?" — a band that stays hard up against the red
             // is a starving connection, not a broken app.
-            Box(
+            BoxWithConstraints(
                 Modifier
                     .fillMaxWidth()
                     .height(6.dp)
@@ -621,6 +869,19 @@ private fun BoxScope.TvControlsOverlay(
                         .height(6.dp)
                         .background(WatchedProgressRed)
                 )
+                // Green over everything, played or not (SmartTube's convention):
+                // these stretches will be jumped, so red never "wins" them back.
+                sponsorSegments.forEach { s ->
+                    val start = (s.startMs.toFloat() / durationMs).coerceIn(0f, 1f)
+                    val end = (s.endMs.toFloat() / durationMs).coerceIn(0f, 1f)
+                    if (end > start) Box(
+                        Modifier
+                            .padding(start = maxWidth * start)
+                            .width(maxWidth * (end - start))
+                            .height(6.dp)
+                            .background(SponsorSegmentGreen)
+                    )
+                }
             }
         }
     }

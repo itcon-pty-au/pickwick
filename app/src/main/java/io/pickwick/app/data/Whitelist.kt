@@ -3,7 +3,6 @@ package io.pickwick.app.data
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.Request
 import java.io.File
 
 enum class SourceKind { CHANNEL, PLAYLIST }
@@ -36,15 +35,67 @@ data class WhitelistEntry(
 /** Chip cycle order in settings: tap steps through these, long-press resets to 100. */
 val TIME_MULTIPLIERS = listOf(100, 125, 150, 75, 50, 25, 0)
 
+/**
+ * Listening chip cycle: Off first — null disables screen-off listening
+ * entirely (locking the phone pauses playback, the pre-listen behavior).
+ * No penalty rates: listening is only ever as expensive as watching.
+ */
+val LISTEN_MULTIPLIERS = listOf<Int?>(null, 100, 75, 50, 25, 0)
+
+/**
+ * Screen-time drain while listening with the screen off: the source's own
+ * rate scaled by the family listening rate. Integer math on purpose — FREE
+ * (0) stays exactly 0, and 150% junk food at a 50% listen rate is exactly 75.
+ */
+fun listenDrainPercent(sourcePercent: Int, listenPercent: Int?): Int =
+    sourcePercent * (listenPercent ?: 100) / 100
+
+/** Every day of the week, in [java.util.Calendar]'s 1..7 (Sunday = 1). */
+val ALL_DAYS: Set<Int> = (1..7).toSet()
+val WEEKDAYS: Set<Int> = setOf(2, 3, 4, 5, 6)
+val WEEKEND_DAYS: Set<Int> = setOf(1, 7)
+
+/** Indexed by Calendar day-of-week minus one, so Sunday leads. */
+val DAY_LABELS = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
+
+/**
+ * A recurring stretch of clock time when watching is blocked outright —
+ * bedtime, school hours, homework. Start and end are minutes-of-day and the
+ * window may cross midnight (19:30–07:00); [days] are the days it *starts* on.
+ *
+ * A list rather than one bedtime because the everyday cases already need more
+ * than one: a later bedtime at the weekend, and school hours that only apply
+ * Monday to Friday. Windows may overlap freely — any window covering the
+ * moment blocks it — so a parent never has to reason about interactions.
+ */
+data class TimeWindow(
+    /** Stable across edits; keys the per-window pass. */
+    val id: String,
+    /** Shown to the kid when this window is what's blocking ("School hours"). */
+    val label: String,
+    val startMin: Int,
+    val endMin: Int,
+    val days: Set<Int> = ALL_DAYS,
+    /**
+     * Parent pass for one occurrence — the sick day, the school holiday, the
+     * film that runs past bedtime. Deliberately per-window: skipping bedtime
+     * tonight must not also unlock tomorrow morning's school hours. Set to the
+     * moment the occurrence would have ended, so it lapses on its own.
+     */
+    val passUntilMillis: Long? = null
+)
+
 /** Screen-time rules, set in the parent settings UI. All optional. */
 data class Limits(
     val sessionMinutes: Int? = null,
     val weekdaySessions: Int? = null,
     val weekendSessions: Int? = null,
     val breakMinutes: Int? = null,
-    /** Minutes-of-day; the window may cross midnight (e.g. 19:30–07:00). */
-    val bedtimeStartMin: Int? = null,
-    val bedtimeEndMin: Int? = null,
+    /**
+     * Blocked clock windows. Empty = no window at all; there is no default
+     * bedtime for a parent who never set one.
+     */
+    val windows: List<TimeWindow> = emptyList(),
     /**
      * Parent timeout: all watching is off until this wall-clock moment (normally
      * the next midnight). A transient override, kept apart from the recurring
@@ -96,7 +147,23 @@ data class Whitelist(
      * Device pairing-token → the kid that device is dedicated to. Devices not
      * listed are shared and show the who's-watching screen.
      */
-    val deviceProfiles: Map<String, String> = emptyMap()
+    val deviceProfiles: Map<String, String> = emptyMap(),
+    /**
+     * Auto-skip community-marked promotional stretches (SponsorBlock): sponsor
+     * reads, merch plugs, intros/outros, "subscribe" pleas. On by default —
+     * this is the ad-free promise of the app extended to baked-in ads — with
+     * a parent switch in settings.
+     */
+    val sponsorSkip: Boolean = true,
+    /**
+     * Family-wide screen-off listening rate, percent (one of
+     * [LISTEN_MULTIPLIERS]). Null = the feature is off: locking the phone
+     * pauses playback, exactly the pre-listen behavior — no hidden default
+     * rate. Set, audio keeps playing with the screen off and those minutes
+     * drain at [listenDrainPercent]. Phones only: a TV can't play with its
+     * panel off, so TVs ignore it.
+     */
+    val listenPercent: Int? = null
 ) {
     fun profile(id: String?): Profile? = profiles.firstOrNull { it.id == id }
 
@@ -230,7 +297,7 @@ object WhitelistParser {
 
 /**
  * Whitelist → text in the same file format WhitelistParser reads, so an export
- * can be shared with another parent (link import or per-line paste) or kept as
+ * can be shared with another parent (file import or per-line paste) or kept as
  * a backup. Screen-time rules are UI-managed, never file-driven — they are
  * written as comments only, for the human reading the file.
  */
@@ -240,7 +307,7 @@ object WhitelistExporter {
         append("# Pickwick whitelist")
         exportedOn?.let { append(" — exported ").append(it) }
         append('\n')
-        append("# Host this file online and use Settings → \"Import from a whitelist link\",\n")
+        append("# Open this file with Settings → \"Import, export & backup\" → \"Import from file\",\n")
         append("# or paste entries one by one under \"Channels & playlists\".\n\n")
 
         w.sources.forEach { e ->
@@ -263,6 +330,12 @@ object WhitelistExporter {
         }
 
         limitsComment(w.limits)?.let { append('\n').append(it) }
+
+        w.listenPercent?.let {
+            append("\n# Listening with the screen off (reference only — set in the settings UI): ")
+            append(if (it == 0) "FREE" else "$it%")
+            append('\n')
+        }
     }
 
     private fun limitsComment(l: Limits): String? {
@@ -271,8 +344,8 @@ object WhitelistExporter {
             l.weekdaySessions?.let { add("weekday sessions: $it") }
             l.weekendSessions?.let { add("weekend sessions: $it") }
             l.breakMinutes?.let { add("break between sessions: $it min") }
-            if (l.bedtimeStartMin != null && l.bedtimeEndMin != null) {
-                add("bedtime: ${clock(l.bedtimeStartMin)}–${clock(l.bedtimeEndMin)}")
+            l.windows.forEach { w ->
+                add("${w.label.lowercase()}: ${clock(w.startMin)}–${clock(w.endMin)} (${dayNames(w.days)})")
             }
         }
         if (lines.isEmpty()) return null
@@ -281,42 +354,16 @@ object WhitelistExporter {
     }
 
     private fun clock(minOfDay: Int) = "%d:%02d".format(minOfDay / 60, minOfDay % 60)
+
+    private fun dayNames(days: Set<Int>): String = when (days) {
+        ALL_DAYS -> "every day"
+        WEEKDAYS -> "Mon–Fri"
+        WEEKEND_DAYS -> "weekends"
+        else -> days.sorted().joinToString(", ") { DAY_LABELS[it - 1] }
+    }
 }
 
 /** The form-managed local config is the single source of truth. */
 class WhitelistRepository(private val configStore: ConfigStore) {
     suspend fun load(): Whitelist = withContext(Dispatchers.IO) { configStore.load() }
-}
-
-/**
- * One-time import of a hosted whitelist file: fetches, parses, and returns the
- * links (channels/playlists) so they can be added to the form. Nothing is
- * remembered about the URL afterwards.
- */
-object WhitelistImporter {
-    /**
-     * Turns a GitHub *page* URL into the raw-file URL. Copying the address bar
-     * while viewing the file on github.com is the obvious thing to do, but that
-     * URL serves an HTML page, which parses to zero channels with no visible
-     * error. Handles both /blob/ and /raw/ page forms; anything else is passed
-     * through untouched.
-     */
-    fun normalize(url: String): String {
-        val u = url.trim()
-        val match = Regex(
-            """^https?://(?:www\.)?github\.com/([^/]+)/([^/]+)/(?:blob|raw)/(.+)$"""
-        ).find(u) ?: return u
-        val (owner, repo, path) = match.destructured
-        return "https://raw.githubusercontent.com/$owner/$repo/$path"
-    }
-
-    suspend fun fetch(rawUrl: String): Whitelist = withContext(Dispatchers.IO) {
-        val url = normalize(rawUrl)
-        val busted = url + (if ('?' in url) "&" else "?") + "cb=" + System.currentTimeMillis()
-        val text = Http.client.newCall(Request.Builder().url(busted).build()).execute().use { resp ->
-            check(resp.isSuccessful) { "Fetch failed: HTTP ${resp.code}" }
-            resp.body?.string().orEmpty()
-        }
-        WhitelistParser.parse(text)
-    }
 }

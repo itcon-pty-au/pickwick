@@ -16,9 +16,10 @@ import java.util.Locale
  *  - The session length also caps one *sitting*: after that much
  *    continuous-ish watching, a break lock forces a rest — but only while a
  *    break length is set. Break "Off" = sittings merge freely; the daily
- *    budget and bedtime still apply.
+ *    budget and the blocked windows still apply.
  *  - A gap of the break length since last watching starts a fresh sitting.
- *  - Bedtime blocks a clock window outright.
+ *  - Each [TimeWindow] (bedtime, school hours) blocks its clock stretch
+ *    outright, whatever budget is left.
  *  - Rules left unset simply don't apply — no rule has a hidden default; the
  *    parent's settings screen is the whole truth.
  */
@@ -42,15 +43,14 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
             "Pickwick",
             "limits[$profileSuffix] <- session=${l.sessionMinutes} " +
                 "wd=${l.weekdaySessions} we=${l.weekendSessions} break=${l.breakMinutes} " +
-                "bedtime=${l.bedtimeStartMin}..${l.bedtimeEndMin} paused=${l.pausedUntilMillis}"
+                "windows=${l.windows.joinToString { it.label }} paused=${l.pausedUntilMillis}"
         )
         prefs.edit()
             .putInt("l_session", l.sessionMinutes ?: -1)
             .putInt("l_wd", l.weekdaySessions ?: -1)
             .putInt("l_we", l.weekendSessions ?: -1)
             .putInt("l_break", l.breakMinutes ?: -1)
-            .putInt("l_bt_start", l.bedtimeStartMin ?: -1)
-            .putInt("l_bt_end", l.bedtimeEndMin ?: -1)
+            .putString("l_windows", ConfigStore.windowsToJson(l.windows))
             .putLong("l_paused", l.pausedUntilMillis ?: -1L)
             .apply()
     }
@@ -62,8 +62,7 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
             weekdaySessions = get("l_wd"),
             weekendSessions = get("l_we"),
             breakMinutes = get("l_break"),
-            bedtimeStartMin = get("l_bt_start"),
-            bedtimeEndMin = get("l_bt_end"),
+            windows = ConfigStore.windowsFromJson(prefs.getString("l_windows", null)),
             pausedUntilMillis = prefs.getLong("l_paused", -1L).takeIf { it > 0 }
         )
     }
@@ -86,7 +85,8 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
 
     /**
      * Parent grant: adds minutes to today's budget, ends any break lock, starts a
-     * fresh sitting, and waives bedtime for the granted minutes. Resets at midnight.
+     * fresh sitting, and waives every blocked window for the granted minutes.
+     * Resets at midnight.
      */
     fun grantExtraMinutes(minutes: Int) {
         rolloverIfNewDay()
@@ -96,8 +96,8 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
             .putLong("lockUntil", 0)
             .putLong("sittingWatchedMs", 0)
             .putLong(
-                "bedtimePassUntil",
-                maxOf(prefs.getLong("bedtimePassUntil", 0), now + minutes * 60_000L)
+                "windowPassUntil",
+                maxOf(prefs.getLong("windowPassUntil", 0), now + minutes * 60_000L)
             )
             .apply()
     }
@@ -130,7 +130,7 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
         val now = System.currentTimeMillis()
 
         if (isPaused(l)) return PAUSED_MESSAGE
-        if (inBedtime(l)) return "It's bedtime! See you tomorrow 🌙"
+        activeWindow(l)?.let { return windowMessage(l, it) }
 
         val lockUntil = prefs.getLong("lockUntil", 0)
         if (l.breakMinutes == null) {
@@ -167,7 +167,7 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
 
         // Mid-playback too: the pushed config lands, the next tick stops the video.
         if (isPaused(l)) return PAUSED_MESSAGE
-        if (inBedtime(l)) return "It's bedtime! See you tomorrow 🌙"
+        activeWindow(l)?.let { return windowMessage(l, it) }
 
         val daily = prefs.getLong("dailyWatchedMs", 0) + deltaMs
         val sitting = prefs.getLong("sittingWatchedMs", 0) + deltaMs
@@ -213,25 +213,24 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
                     .coerceAtLeast(0) * 100 / multiplierPercent
             }
         }
-        msUntilBedtime(l)?.let { candidates += it }
+        msUntilWindow(l)?.let { candidates += it }
         return candidates.minOrNull()?.coerceAtLeast(0)
     }
 
-    /** Clock ms until the bedtime window closes playback, or null when unset. */
-    private fun msUntilBedtime(l: Limits): Long? {
-        val start = l.bedtimeStartMin ?: return null
-        val end = l.bedtimeEndMin ?: return null
+    /** Clock ms until the next window closes playback, or null when there are none. */
+    private fun msUntilWindow(l: Limits): Long? {
+        val windows = liveWindows(l)
+        if (windows.isEmpty()) return null
         val now = System.currentTimeMillis()
         val cal = Calendar.getInstance()
+        val day = cal.get(Calendar.DAY_OF_WEEK)
         val nowMin = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
-        val inWindow = if (start <= end) nowMin in start..end
-        else nowMin >= start || nowMin <= end
-        return if (inWindow) {
-            // Only a parent's bedtime pass keeps playback alive inside the window.
-            (prefs.getLong("bedtimePassUntil", 0) - now).coerceAtLeast(0)
+        return if (TimeWindows.activeAt(windows, day, nowMin) != null) {
+            // Inside a window only a grant keeps playback alive, and only for
+            // the minutes it bought.
+            (prefs.getLong("windowPassUntil", 0) - now).coerceAtLeast(0)
         } else {
-            val minutesUntil = (start - nowMin).let { if (it > 0) it else it + 24 * 60 }
-            minutesUntil * 60_000L
+            (TimeWindows.minutesUntilNextStart(windows, day, nowMin) ?: return null) * 60_000L
         }
     }
 
@@ -267,7 +266,7 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
                 .putLong("sittingWatchedMs", 0)
                 .putLong("lockUntil", 0)
                 .putLong("bonusMs", 0)
-                .putLong("bedtimePassUntil", 0)
+                .putLong("windowPassUntil", 0)
                 .apply()
         }
     }
@@ -317,9 +316,10 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
         val lockUntil = if (l.breakMinutes == null) 0 else prefs.getLong("lockUntil", 0)
         val budget = dailyBudgetMs(l)
         val watched = prefs.getLong("dailyWatchedMs", 0)
+        val blocking = activeWindow(l)
         val state = when {
             isPaused(l) -> "Paused by parent"
-            inBedtime(l) -> "Bedtime"
+            blocking != null -> blocking.label
             budget != null && watched >= budget -> "Daily limit reached"
             now < lockUntil -> "On a break"
             else -> "Can watch"
@@ -340,14 +340,45 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
         return day == Calendar.SATURDAY || day == Calendar.SUNDAY
     }
 
-    private fun inBedtime(l: Limits): Boolean {
-        if (System.currentTimeMillis() < prefs.getLong("bedtimePassUntil", 0)) return false
-        val start = l.bedtimeStartMin ?: return false
-        val end = l.bedtimeEndMin ?: return false
+    /** Windows still in force: a parent's pass takes one out for its occurrence. */
+    private fun liveWindows(l: Limits): List<TimeWindow> {
+        val now = System.currentTimeMillis()
+        return l.windows.filter { now >= (it.passUntilMillis ?: 0L) }
+    }
+
+    /** The window blocking playback right now, or null. */
+    private fun activeWindow(l: Limits): TimeWindow? {
+        // A grant waives every window for the minutes it bought — a parent
+        // handing out 20 more minutes at 19:40 means them, not "except bedtime".
+        if (System.currentTimeMillis() < prefs.getLong("windowPassUntil", 0)) return null
         val cal = Calendar.getInstance()
-        val nowMin = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
-        return if (start <= end) nowMin in start..end
-        else nowMin >= start || nowMin <= end // window crosses midnight
+        return TimeWindows.activeAt(
+            liveWindows(l),
+            cal.get(Calendar.DAY_OF_WEEK),
+            cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
+        )
+    }
+
+    /**
+     * Names the window and says when it lifts — "when can I watch again" is the
+     * question a blocked kid actually has, and the reopening time answers it
+     * even when the label ("School hours") wouldn't.
+     */
+    private fun windowMessage(l: Limits, w: TimeWindow): String {
+        val cal = Calendar.getInstance()
+        val mins = TimeWindows.blockedForMin(
+            liveWindows(l),
+            cal.get(Calendar.DAY_OF_WEEK),
+            cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
+        )
+        val label = w.label.trim().ifEmpty { "Quiet time" }
+        val emoji = if (label.equals("bedtime", ignoreCase = true)) "🌙" else "⏰"
+        // Overlapping windows chain, so the time comes from the chain, not from
+        // this window's own end — otherwise we'd promise a reopening that the
+        // very next window immediately takes back.
+        return if (mins == null) "It's ${label.lowercase(Locale.getDefault())} right now $emoji"
+        else "It's ${label.lowercase(Locale.getDefault())} — " +
+            "you can watch again at ${timeOf(System.currentTimeMillis() + mins * 60_000L)} $emoji"
     }
 
     private fun timeOf(epochMs: Long): String =

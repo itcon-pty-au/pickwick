@@ -51,7 +51,7 @@ class DownloadStore(context: Context) {
 
     fun entries(): List<Entry> = synchronized(LOCK) { loadEntries() }
 
-    /** Kid taps the ⬇ icon: joins the parent's approval queue. No-op if known. */
+    /** Hold-menu "Save offline": joins the parent's approval queue. No-op if known. */
     fun request(video: Video) {
         if (video.videoId == null) return
         synchronized(LOCK) {

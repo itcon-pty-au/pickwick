@@ -99,8 +99,10 @@ Do these in order; each pushes to the TV automatically when you press
 **Save & close**.
 
 1. **Add channels** — under *Channels & playlists*, search a channel your
-   kid loves and tap **Add**. Repeat. (Or import a ready-made list from the
-   [whitelists folder](../whitelists/).)
+   kid loves and tap **Add**. Repeat. (Or browse the in-app **Suggested
+   channels** directory for ready-vetted picks, or import an exported
+   `whitelist.txt` file — see the [whitelists folder](../whitelists/) for
+   themed lists in that format.)
 2. **Add your kids** — under *Kids*, tap **Add your first kid**: name, age,
    a color and an avatar. The age matters if you use AI screening later.
    With **one** kid the app looks unchanged; adding a **second** kid brings
@@ -114,6 +116,31 @@ Do these in order; each pushes to the TV automatically when you press
    provider, paste an API key, write your house rules in plain words. New
    videos are checked per kid's age before kids can see them; anything the
    AI is unsure about waits for your OK under *Waiting for your OK*.
+
+   Don't have a key yet? Pick one provider and get a key from it — you only
+   need one:
+
+   - **OpenRouter** (recommended — one key, works with lots of models,
+     usually cheapest to start): go to
+     [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys),
+     sign up, click **Create Key**, add a few dollars of credit, copy the
+     key (starts with `sk-or-`).
+   - **OpenAI**: go to
+     [platform.openai.com/api-keys](https://platform.openai.com/api-keys),
+     sign up, click **Create new secret key**, copy it (starts with `sk-`).
+     You'll need billing set up under *Settings → Billing*.
+   - **Anthropic**: go to
+     [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys),
+     sign up, click **Create Key**, copy it (starts with `sk-ant-`). Add
+     credit under *Plans & Billing*.
+   - **Gemini**: go to
+     [aistudio.google.com/apikey](https://aistudio.google.com/apikey), sign
+     in with a Google account, click **Create API key**, copy it. Gemini has
+     a free tier, so this is the only option that may cost nothing.
+
+   Whichever you pick, paste the key into the **API key** field in Pickwick
+   right after tapping that provider's button — the key never leaves your
+   phone and TV except to talk directly to that provider.
 6. Press **Save & close** — the phone pushes everything to the TV and shows
    "Synced ✓".
 

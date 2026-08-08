@@ -87,7 +87,7 @@ object Directory {
     }
 
     private fun get(url: String): String {
-        // GitHub Pages caches aggressively; bust it like WhitelistImporter does
+        // GitHub Pages caches aggressively; a throwaway query param defeats it
         // so a just-merged suggestion shows up on the next browse.
         val busted = url + (if ('?' in url) "&" else "?") + "cb=" + System.currentTimeMillis()
         return Http.client.newCall(Request.Builder().url(busted).build()).execute().use { resp ->

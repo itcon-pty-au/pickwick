@@ -56,8 +56,22 @@ fun formatClock(totalSeconds: Long): String {
     else "%d:%02d".format(s / 60, s % 60)
 }
 
+/**
+ * SponsorBlock-marked stretches on the player scrubber. Green by the same
+ * borrowed-convention logic as [WatchedProgressRed]: SmartTube et al. taught
+ * viewers that green-on-the-bar means "this part will be skipped".
+ */
+val SponsorSegmentGreen = Color(0xFF00C853)
+
 /** The "newer build available" dot on the settings gear. */
 val UpdateDot = Color(0xFFFF5252)
+
+/** The home screen's non-channel tiles — the phone grid and the TV row draw
+ *  the same tiles, so their identity colors get one spelling here. */
+val SurpriseTileCyan = Color(0xFF00ACC1)
+val QueueTilePurple = Color(0xFF6A4FA3)
+val WatchlistTileTeal = Color(0xFF00897B)
+val DownloadsTileTeal = Color(0xFF00636E)
 
 /** "1.5x" / "0.5x" / "FREE" — one shared spelling of a screen-time multiplier. */
 fun timeMultiplierLabel(percent: Int): String = when (percent) {

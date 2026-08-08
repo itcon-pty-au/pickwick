@@ -299,8 +299,11 @@ fun StatsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                val max = (data.topChannels.maxOfOrNull { it.second } ?: 1).coerceAtLeast(1)
-                data.topChannels.forEach { (name, mins) ->
+                // The payload lists every channel (the weekly digest needs full
+                // totals for its deltas); this screen keeps the old top-8 view.
+                val shown = data.topChannels.take(8)
+                val max = (shown.maxOfOrNull { it.second } ?: 1).coerceAtLeast(1)
+                shown.forEach { (name, mins) ->
                     Row(verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.padding(vertical = 2.dp)) {
                         Text(name, style = MaterialTheme.typography.bodyMedium,

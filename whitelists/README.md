@@ -1,15 +1,17 @@
 # Community whitelists
 
-Curated, themed channel lists shared by Pickwick families. Import one into the
-app, then prune and extend it — your kid, your call.
+Curated, themed channel lists shared by Pickwick families. These predate the
+app's in-app **Suggested channels** directory (also at
+[pickwick.tv/directory.html](https://pickwick.tv/directory.html)), which is
+now the maintained, actively-curated place to discover channels — start
+there. The `.txt` files below are legacy but still usable: download one and
+import it via the app's **import from file** feature, then prune and extend
+it — your kid, your call.
 
 ## Importing a list
 
-1. Open the list file here on GitHub and copy the page URL
-   (e.g. `https://github.com/itcon-pty-au/pickwick/blob/main/whitelists/science-explorers.txt`).
-2. Parent settings → **Channels & playlists** → import from link → paste it.
-   The app accepts the GitHub page URL directly (it converts it to the raw file
-   itself).
+1. Download the raw `.txt` file (or save it to your device).
+2. Parent settings → **Import, export & backup** → **Import from file…** → pick it.
 
 Importing **adds** the list's entries to your whitelist; it never removes
 anything you already curated.

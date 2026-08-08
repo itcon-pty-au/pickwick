@@ -6,16 +6,12 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-// Release signing. Point PICKWICK_KEYSTORE (local.properties or the
-// environment) at a real keystore and release builds use it; leave it unset and
-// they fall back to the debug key, exactly as before.
-//
-// The fallback is not laziness — the debug key is what every installed family's
-// copy is signed with, and Android refuses an in-place upgrade across a
-// signature change. Switching keys therefore means an uninstall (which wipes
-// their curation) and has to stay a deliberate, announced act. Until then,
-// treat ~/.android/debug.keystore as a release credential: it is the sole trust
-// anchor for self-update.
+// Release signing. PICKWICK_KEYSTORE (local.properties or the environment)
+// must point at the real release keystore; release builds fail without it.
+// There is deliberately no debug-key fallback: the release key is the sole
+// trust anchor for self-update, and Android refuses an in-place upgrade across
+// a signature change, so a debug-signed release quietly published would strand
+// every install. Fail the build instead of shipping the wrong signature.
 val signingProps = Properties().apply {
     val f = rootProject.file("local.properties")
     if (f.exists()) f.inputStream().use { load(it) }
@@ -34,8 +30,8 @@ android {
         applicationId = "io.pickwick.app"
         minSdk = 26 // adaptive icons; every realistic target device is far above this
         targetSdk = 34
-        versionCode = 6
-        versionName = "0.4.2"
+        versionCode = 7
+        versionName = "0.4.3"
 
         // Self-update manifest: JSON with versionCode/versionName/apkUrl.
         buildConfigField(
@@ -55,6 +51,14 @@ android {
             "DIRECTORY_URL",
             "\"https://raw.githubusercontent.com/itcon-pty-au/pickwick/main/site/directory/\""
         )
+
+        // Mail-slot worker the website's suggestion form posts to. The app uses
+        // its bulk route to offer a whole curated list for review at once.
+        buildConfigField(
+            "String",
+            "SUGGEST_WORKER_URL",
+            "\"https://pickwick-suggest.pickwick.workers.dev/\""
+        )
     }
 
     signingConfigs {
@@ -71,8 +75,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig =
-                signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release")
         }
     }
     compileOptions {
@@ -103,6 +106,25 @@ android {
     }
 }
 
+// Fail release *packaging* — not configuration, so CI's assembleDebug on a
+// keyless runner still works — when the real key is absent. Without this the
+// APK would come out unsigned and uninstallable, discovered only on-device.
+gradle.taskGraph.whenReady {
+    // Exact names only (no flavors): a trailing wildcard would also match
+    // library-style tasks like bundleReleaseClassesToRuntimeJar, which sit in
+    // the plain `gradlew test` graph and would break tests on keyless machines.
+    val wantsRelease = allTasks.any {
+        it.project == project && it.name.matches(Regex("(assemble|package|bundle|install)Release"))
+    }
+    if (wantsRelease && releaseKeystore == null) {
+        error(
+            "Release builds need the real signing key: set PICKWICK_KEYSTORE " +
+                "(plus _PASSWORD, PICKWICK_KEY_ALIAS, PICKWICK_KEY_PASSWORD) in " +
+                "local.properties or the environment."
+        )
+    }
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -113,6 +135,10 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.ui)
+    // Listen mode: MediaSession for lock-screen/headset controls while the
+    // phone plays with its screen off.
+    implementation(libs.media3.session)
+    implementation(libs.androidx.media)
     implementation(libs.newpipeextractor)
     implementation(libs.okhttp)
     implementation(libs.okhttp.dnsoverhttps)

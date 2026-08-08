@@ -2,6 +2,7 @@ package io.pickwick.app
 
 import io.pickwick.app.data.Limits
 import io.pickwick.app.data.SourceKind
+import io.pickwick.app.data.TimeWindow
 import io.pickwick.app.data.Whitelist
 import io.pickwick.app.data.WhitelistEntry
 import io.pickwick.app.data.WhitelistExporter
@@ -37,7 +38,12 @@ class WhitelistExporterTest {
             )
         ),
         blockedVideoIds = setOf("dQw4w9WgXcQ", "oHg5SJYRHA0"),
-        limits = Limits(sessionMinutes = 30, bedtimeStartMin = 19 * 60 + 30, bedtimeEndMin = 7 * 60)
+        limits = Limits(
+            sessionMinutes = 30,
+            windows = listOf(
+                TimeWindow(id = "bedtime", label = "Bedtime", startMin = 19 * 60 + 30, endMin = 7 * 60)
+            )
+        )
     )
 
     @Test
@@ -70,9 +76,17 @@ class WhitelistExporterTest {
     }
 
     @Test
+    fun headerPointsAtTheImportFlowThatExists() {
+        val text = WhitelistExporter.toText(original, "3 Aug 2026")
+        assertTrue(text.contains("Import, export & backup"))
+        assertTrue(text.contains("Import from file"))
+        assertTrue(text.contains("Channels & playlists"))
+    }
+
+    @Test
     fun limitsAppearAsCommentsForHumans() {
         val text = WhitelistExporter.toText(original)
         assertTrue(text.contains("#   time per session: 30 min"))
-        assertTrue(text.contains("#   bedtime: 19:30–7:00"))
+        assertTrue(text.contains("#   bedtime: 19:30–7:00 (every day)"))
     }
 }

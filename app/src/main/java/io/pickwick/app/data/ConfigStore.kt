@@ -33,10 +33,33 @@ class ConfigStore(context: Context) {
     }
 
     fun load(): Whitelist = registered(
-        runCatching {
-            if (file.exists()) withSecrets(fromJson(file.readText())) else null
-        }.getOrNull() ?: Whitelist(emptyList(), emptySet())
+        scrubLapsedPasses(
+            runCatching {
+                if (file.exists()) withSecrets(fromJson(file.readText())) else null
+            }.getOrNull() ?: Whitelist(emptyList(), emptySet())
+        )
     )
+
+    /**
+     * A lapsed pass is spent and must fall out of the config, not linger.
+     * Enforcement already ignores it, but the fingerprint and the legacy
+     * bedtime keys (omitted while a pass is active — see [limitsToJson])
+     * don't. Dropping it here changes the fingerprint exactly once, at the
+     * first load after the lapse, and that mismatch is what re-pushes the
+     * restored bedtime keys to a device still on a pre-windows build.
+     */
+    private fun scrubLapsedPasses(w: Whitelist): Whitelist {
+        val now = System.currentTimeMillis()
+        fun scrub(l: Limits): Limits =
+            if (l.windows.none { (it.passUntilMillis ?: Long.MAX_VALUE) < now }) l
+            else l.copy(windows = l.windows.map {
+                if ((it.passUntilMillis ?: Long.MAX_VALUE) < now) it.copy(passUntilMillis = null) else it
+            })
+        val limits = scrub(w.limits)
+        val profiles = w.profiles.map { p -> p.copy(limits = scrub(p.limits)) }
+        return if (limits === w.limits && profiles == w.profiles) w
+        else w.copy(limits = limits, profiles = profiles)
+    }
 
     /** Whether this config has AI screening set up at all. */
     private fun aiInUse(w: Whitelist) = w.ai.enabled || w.ai.model.isNotBlank()
@@ -132,13 +155,7 @@ class ConfigStore(context: Context) {
                 }
                 append("B:"); append(w.blockedVideoIds.sorted().joinToString(","))
                 append(";L:")
-                append(
-                    listOf(
-                        w.limits.sessionMinutes, w.limits.weekdaySessions,
-                        w.limits.weekendSessions, w.limits.breakMinutes,
-                        w.limits.bedtimeStartMin, w.limits.bedtimeEndMin
-                    ).joinToString(",")
-                )
+                append(limitsCanon(w.limits))
                 // Appended only when set, so untouched configs keep their hash
                 // across builds. Must be in the hash: the offline reconcile
                 // (syncConfigState) only re-pushes on a fingerprint mismatch —
@@ -162,11 +179,7 @@ class ConfigStore(context: Context) {
                             listOf(
                                 p.id, p.name, p.colorArgb, p.avatar, p.age ?: -1,
                                 p.pin ?: "",
-                                listOf(
-                                    p.limits.sessionMinutes, p.limits.weekdaySessions,
-                                    p.limits.weekendSessions, p.limits.breakMinutes,
-                                    p.limits.bedtimeStartMin, p.limits.bedtimeEndMin
-                                ).joinToString(",")
+                                limitsCanon(p.limits)
                             ).joinToString("|")
                         )
                         append('\n')
@@ -186,6 +199,12 @@ class ConfigStore(context: Context) {
                     w.deviceProfiles.entries.sortedBy { it.key }
                         .forEach { (t, p) -> append("$t=$p;") }
                 }
+                // Appended only when switched off, so every existing config
+                // keeps its hash across the build that introduced the flag.
+                if (!w.sponsorSkip) append(";SB:off")
+                // Append-only-when-set, same reasoning — and it must be in the
+                // hash so the offline reconcile re-pushes a rate change.
+                w.listenPercent?.let { append(";LN:"); append(it) }
             }
             return java.security.MessageDigest.getInstance("SHA-256")
                 .digest(canonical.toByteArray())
@@ -265,7 +284,40 @@ class ConfigStore(context: Context) {
             if (w.deviceProfiles.isNotEmpty()) {
                 root.put("deviceProfiles", JSONObject(w.deviceProfiles as Map<String, String>))
             }
+            // Written only when off — absent means on, including in configs
+            // saved by builds that predate the flag.
+            if (!w.sponsorSkip) root.put("sponsorSkip", false)
+            // Written only when set — absent means listening off (see Whitelist).
+            w.listenPercent?.let { root.put("listen", it) }
             return root.toString(2)
+        }
+
+        /**
+         * Limits in the fingerprint's canonical form. The legacy trailing
+         * `start,end` pair is kept for the one shape older builds could
+         * express — a single every-day window — so a family whose bedtime was
+         * migrated into the list keeps its existing hash and doesn't trigger a
+         * pointless re-push. Richer schedules append instead, which is what
+         * changes the hash for them exactly once, at the upgrade.
+         *
+         * Passes belong in here for the same reason pauses do: the offline
+         * reconcile only re-pushes on a mismatch, so a pass that didn't move
+         * the hash would never reach a device that slept through the push.
+         */
+        private fun limitsCanon(l: Limits): String {
+            val legacy = l.windows.singleOrNull()
+                ?.takeIf { it.days == ALL_DAYS && it.passUntilMillis == null }
+            val base = listOf(
+                l.sessionMinutes, l.weekdaySessions, l.weekendSessions, l.breakMinutes,
+                legacy?.startMin, legacy?.endMin
+            ).joinToString(",")
+            if (legacy != null || l.windows.isEmpty()) return base
+            return base + l.windows.joinToString(";", prefix = ";W:") { w ->
+                // Parent-typed text is scrubbed of this format's separators so
+                // two different window lists can't canonicalize identically.
+                "${w.id},${w.label.replace(Regex("[,;]"), " ")},${w.startMin},${w.endMin}," +
+                    "${w.days.sorted().joinToString(".")},${w.passUntilMillis ?: 0}"
+            }
         }
 
         private fun limitsToJson(l: Limits) = JSONObject().apply {
@@ -273,20 +325,92 @@ class ConfigStore(context: Context) {
             l.weekdaySessions?.let { put("weekdaySessions", it) }
             l.weekendSessions?.let { put("weekendSessions", it) }
             l.breakMinutes?.let { put("breakMinutes", it) }
-            l.bedtimeStartMin?.let { put("bedtimeStart", it) }
-            l.bedtimeEndMin?.let { put("bedtimeEnd", it) }
+            if (l.windows.isNotEmpty()) put("windows", JSONArray(windowsToJson(l.windows)))
+            // A single every-day window is exactly what pre-windows builds called
+            // bedtime, so keep writing their keys for it: a family whose phone
+            // updates before its TV keeps an enforced bedtime in the meantime.
+            // Anything richer has no legacy equivalent and is left out rather
+            // than flattened into a wrong one. While a pass is active the keys
+            // are omitted too — absent bedtime IS the pass, as far as an old
+            // build can express it; they come back via the fingerprint change
+            // when the lapsed pass is scrubbed on load.
+            l.windows.singleOrNull()?.takeIf { it.days == ALL_DAYS && it.passUntilMillis == null }?.let {
+                put("bedtimeStart", it.startMin)
+                put("bedtimeEnd", it.endMin)
+            }
             l.pausedUntilMillis?.let { put("pausedUntil", it) }
         }
 
+        /** Windows as a JSON array string — also the SharedPreferences form. */
+        fun windowsToJson(windows: List<TimeWindow>): String =
+            JSONArray().apply {
+                windows.forEach { w ->
+                    put(JSONObject().apply {
+                        put("id", w.id)
+                        put("label", w.label)
+                        put("start", w.startMin)
+                        put("end", w.endMin)
+                        // Omitted when it applies every day, the common case.
+                        if (w.days != ALL_DAYS) put("days", JSONArray(w.days.sorted()))
+                        w.passUntilMillis?.let { put("passUntil", it) }
+                    })
+                }
+            }.toString()
+
+        fun windowsFromJson(text: String?): List<TimeWindow> = runCatching {
+            val arr = JSONArray(text ?: return emptyList())
+            (0 until arr.length()).mapNotNull { i ->
+                // Per-window, so one malformed window (a newer build's shape, a
+                // hand edit) drops alone instead of disabling every window this
+                // list guards — bedtime included. Out-of-range minutes or days
+                // would misfire in the week-minute math (negative modulo reads
+                // as "always blocking"), so they drop too rather than enforce
+                // something nobody configured.
+                runCatching {
+                    val w = arr.getJSONObject(i)
+                    val start = w.getInt("start")
+                    val end = w.getInt("end")
+                    if (start !in 0..1439 || end !in 0..1439) return@runCatching null
+                    val days = w.optJSONArray("days")?.let { d ->
+                        (0 until d.length()).map { d.getInt(it) }
+                            .filter { it in 1..7 } // Calendar.SUNDAY..SATURDAY
+                            .toSet()
+                    } ?: ALL_DAYS
+                    // Present-but-empty days: block nothing, never inflate an
+                    // ambiguous rule to every day.
+                    if (days.isEmpty()) return@runCatching null
+                    TimeWindow(
+                        id = w.optString("id").ifEmpty { "w$i" },
+                        label = w.optString("label", "Quiet time"),
+                        startMin = start,
+                        endMin = end,
+                        days = days,
+                        passUntilMillis = if (w.has("passUntil")) w.getLong("passUntil") else null
+                    )
+                }.getOrNull()
+            }
+        }.getOrDefault(emptyList())
+
         private fun limitsFromJson(lo: JSONObject): Limits {
             fun opt(name: String): Int? = if (lo.has(name)) lo.getInt(name) else null
+            // A config written before windows existed carries only the bedtime
+            // pair; migrate it in place so an upgrade never silently drops a
+            // family's bedtime.
+            val windows = if (lo.has("windows")) {
+                windowsFromJson(lo.optJSONArray("windows")?.toString())
+            } else {
+                val start = opt("bedtimeStart")
+                val end = opt("bedtimeEnd")
+                if (start != null && end != null) {
+                    listOf(TimeWindow(id = "bedtime", label = "Bedtime", startMin = start, endMin = end))
+                } else emptyList()
+            }
             return Limits(
                 sessionMinutes = opt("session"),
                 weekdaySessions = opt("weekdaySessions"),
                 weekendSessions = opt("weekendSessions"),
                 breakMinutes = opt("breakMinutes"),
-                bedtimeStartMin = opt("bedtimeStart"),
-                bedtimeEndMin = opt("bedtimeEnd"),
+                windows = windows,
                 pausedUntilMillis = if (lo.has("pausedUntil")) lo.getLong("pausedUntil") else null
             )
         }
@@ -366,7 +490,9 @@ class ConfigStore(context: Context) {
                 profiles = profiles,
                 blockedFor = overlay("blockedFor"),
                 allowedFor = overlay("allowedFor"),
-                deviceProfiles = deviceProfiles
+                deviceProfiles = deviceProfiles,
+                sponsorSkip = root.optBoolean("sponsorSkip", true),
+                listenPercent = if (root.has("listen")) root.getInt("listen") else null
             )
         }
     }

@@ -85,6 +85,84 @@ class ConfigStoreJsonTest {
     }
 
     @Test
+    fun `sponsor skip is on by default and only serialized when off`() {
+        val plain = Whitelist(listOf(entry("UCa")), emptySet())
+        // Absent from JSON when on, so pre-flag builds parse unchanged…
+        assertFalse(ConfigStore.toJson(plain).contains("sponsorSkip"))
+        assertTrue(ConfigStore.fromJson(ConfigStore.toJson(plain)).sponsorSkip)
+        // …and an off switch survives the round trip.
+        val off = ConfigStore.fromJson(ConfigStore.toJson(plain.copy(sponsorSkip = false)))
+        assertFalse(off.sponsorSkip)
+    }
+
+    @Test
+    fun `turning sponsor skip off changes the fingerprint, leaving it on does not`() {
+        val plain = Whitelist(listOf(entry("UCa")), emptySet())
+        // Untouched configs keep their pre-flag hash shape…
+        assertEquals(
+            ConfigStore.fingerprint(plain),
+            ConfigStore.fingerprint(plain.copy(sponsorSkip = true))
+        )
+        // …but the off switch must reach devices via the offline reconcile.
+        assertNotEquals(
+            ConfigStore.fingerprint(plain),
+            ConfigStore.fingerprint(plain.copy(sponsorSkip = false))
+        )
+    }
+
+    @Test
+    fun `listening rate is off by default and only serialized when set`() {
+        val plain = Whitelist(listOf(entry("UCa")), emptySet())
+        // Absent from JSON when off, so pre-listen builds parse unchanged…
+        assertFalse(ConfigStore.toJson(plain).contains("\"listen\""))
+        assertEquals(null, ConfigStore.fromJson(ConfigStore.toJson(plain)).listenPercent)
+        // …a set rate survives the round trip, FREE (0) included…
+        assertEquals(
+            50,
+            ConfigStore.fromJson(ConfigStore.toJson(plain.copy(listenPercent = 50))).listenPercent
+        )
+        assertEquals(
+            0,
+            ConfigStore.fromJson(ConfigStore.toJson(plain.copy(listenPercent = 0))).listenPercent
+        )
+        // …and switching back to Off vanishes from JSON rather than lingering.
+        val cleared = plain.copy(listenPercent = 50).copy(listenPercent = null)
+        assertEquals(null, ConfigStore.fromJson(ConfigStore.toJson(cleared)).listenPercent)
+    }
+
+    @Test
+    fun `setting a listening rate changes the fingerprint, leaving it off does not`() {
+        val plain = Whitelist(listOf(entry("UCa")), emptySet())
+        // Untouched configs keep their pre-listen hash shape…
+        assertEquals(
+            ConfigStore.fingerprint(plain),
+            ConfigStore.fingerprint(plain.copy(listenPercent = null))
+        )
+        // …but a rate change must reach devices via the offline reconcile.
+        assertNotEquals(
+            ConfigStore.fingerprint(plain),
+            ConfigStore.fingerprint(plain.copy(listenPercent = 50))
+        )
+        // FREE is a real setting, not "unset" — it must hash differently too.
+        assertNotEquals(
+            ConfigStore.fingerprint(plain),
+            ConfigStore.fingerprint(plain.copy(listenPercent = 0))
+        )
+    }
+
+    @Test
+    fun `exported listening comment does not corrupt re-import`() {
+        val exported = WhitelistExporter.toText(
+            Whitelist(listOf(entry("UC4a-Gbdw7vOaccHmFo40b9g")), emptySet(), listenPercent = 25)
+        )
+        assertTrue(exported.contains("Listening"))
+        val reparsed = WhitelistParser.parse(exported)
+        assertEquals(1, reparsed.sources.size)
+        // Files carry links only — the listening rate is UI/sync-managed.
+        assertEquals(null, reparsed.listenPercent)
+    }
+
+    @Test
     fun `exported multiplier comment does not corrupt re-import`() {
         val exported = WhitelistExporter.toText(
             Whitelist(listOf(entry("UC4a-Gbdw7vOaccHmFo40b9g", 25)), emptySet())

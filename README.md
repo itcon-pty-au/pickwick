@@ -170,9 +170,12 @@ come from inside the app (parent settings → Check for updates).
 ## Contributing
 
 The most valuable contributions aren't code: early breakage reports, bug reports
-from TV models we've never seen, translations — and **channel lists**. Curated,
-themed whitelists live in [`whitelists/`](whitelists/) and can be imported
-straight into the app; sharing yours is the easiest way to help other families.
+from TV models we've never seen, translations — and **channel suggestions**.
+The in-app "Suggested channels" directory (also browsable at
+[pickwick.tv/directory.html](https://pickwick.tv/directory.html)) is the
+maintained place to add a channel your kid loves; sharing yours there is the
+easiest way to help other families. The themed lists in
+[`whitelists/`](whitelists/) still work too, importable as a `.txt` file.
 See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Support Pickwick ❤️
@@ -208,8 +211,11 @@ gradlew assembleRelease
 ```
 
 The APK lands at `app/build/outputs/apk/release/pickwick.apk` — sideload as
-above. The release type is signed with the debug key precisely so it can be
-side-loaded like this.
+above. Release builds require a signing key: point `PICKWICK_KEYSTORE` (plus
+`PICKWICK_KEYSTORE_PASSWORD`, `PICKWICK_KEY_ALIAS`, `PICKWICK_KEY_PASSWORD`) in
+`local.properties` or the environment at your own keystore. Your build will
+carry your signature, so it won't upgrade over an official install (and vice
+versa) — Android requires an uninstall across a signature change.
 
 **Always install the release build on real devices.** A debug build is
 *debuggable*, which enables `-Xcheck:jni` and skips ahead-of-time compilation,

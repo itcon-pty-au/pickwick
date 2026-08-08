@@ -5,6 +5,7 @@ import io.pickwick.app.data.ConfigStore
 import io.pickwick.app.data.Limits
 import io.pickwick.app.data.Profile
 import io.pickwick.app.data.SourceKind
+import io.pickwick.app.data.TimeWindow
 import io.pickwick.app.data.Whitelist
 import io.pickwick.app.data.WhitelistEntry
 import io.pickwick.app.data.isValidDirectionPin
@@ -29,8 +30,12 @@ class ProfileConfigTest {
     )
     private val katy = Profile(
         id = "bbbb2222", name = "Katy", colorArgb = 0xFF1E88E5L, avatar = "🦊",
-        age = 12, limits = Limits(sessionMinutes = 45, weekdaySessions = 2,
-            bedtimeStartMin = 21 * 60, bedtimeEndMin = 7 * 60),
+        age = 12, limits = Limits(
+            sessionMinutes = 45, weekdaySessions = 2,
+            windows = listOf(
+                TimeWindow(id = "bedtime", label = "Bedtime", startMin = 21 * 60, endMin = 7 * 60)
+            )
+        ),
         pin = "UDLR"
     )
 

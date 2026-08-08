@@ -15,6 +15,7 @@ import java.io.File
 class StatsCache(context: Context) {
 
     private val dir = File(context.filesDir, "stats_cache").apply { mkdirs() }
+    private val digest = DigestStore(File(context.filesDir, "digest"))
 
     fun save(deviceToken: String, statsJson: String) {
         runCatching {
@@ -24,6 +25,26 @@ class StatsCache(context: Context) {
                     .put("stats", statsJson)
                     .toString()
             )
+        }
+        // Channel totals in the payload are lifetime numbers; the weekly digest
+        // needs a per-day baseline to diff against, so every cached snapshot
+        // also stamps today's totals. Same-day saves overwrite, so the row ends
+        // up being "totals as of the last sync that day". Keyed per kid, not
+        // just per device: a shared TV reports whichever profile is active, and
+        // diffing kid A's totals against a row written under kid B would invent
+        // viewing. Callers already run this off-main.
+        runCatching {
+            val root = JSONObject(statsJson)
+            root.optJSONArray("topChannels")?.let { top ->
+                val channels = (0 until top.length()).associate { i ->
+                    val o = top.getJSONObject(i)
+                    o.getString("name") to o.getInt("min")
+                }
+                val today = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US)
+                    .format(java.util.Date())
+                val key = DigestStore.key(deviceToken, root.optString("profileName").ifEmpty { null })
+                digest.record(key, today, channels)
+            }
         }
     }
 
@@ -101,7 +122,11 @@ object Stats {
         val guard = SessionGuard(app, suffix)
         val snap = guard.snapshot()
         val history = guard.history()
-        val usage = ChannelUsage(app, suffix).topChannels()
+        // Effectively unbounded: the digest diffs these lifetime totals against a
+        // daily baseline, and a truncated list makes a channel that climbs into
+        // it look like a week of binge (its whole lifetime counts as new). A
+        // family whitelist holds dozens of channels, so "all of them" is cheap.
+        val usage = ChannelUsage(app, suffix).topChannels(limit = 500)
         val watchHistory = WatchHistoryStore(app, suffix)
         val videoCache = VideoCache(app)
         val sources = SourceCache(app).load()

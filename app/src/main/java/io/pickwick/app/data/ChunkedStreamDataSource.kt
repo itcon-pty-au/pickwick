@@ -111,6 +111,14 @@ class ChunkedStreamDataSource(
             passthrough = source
             return source.open(dataSpec)
         }
+        if (dataSpec.position >= clen) {
+            // A seek past the stream (or a lying clen). The plain HTTP source
+            // would surface a 416 here; do the same rather than return a
+            // negative length, which violates the DataSource contract.
+            throw androidx.media3.datasource.DataSourceException(
+                androidx.media3.datasource.DataSourceException.POSITION_OUT_OF_RANGE
+            )
+        }
         originalUri = dataSpec.uri
         originalUrl = url
         position = dataSpec.position
@@ -126,19 +134,28 @@ class ChunkedStreamDataSource(
 
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
         passthrough?.let { return it.read(buffer, offset, length) }
-        if (position >= endExclusive) return C.RESULT_END_OF_INPUT
-        if (chunkRemaining <= 0) openNextChunk()
-        val want = minOf(length.toLong(), chunkRemaining).toInt()
-        val read = chunked!!.read(buffer, offset, want)
-        if (read == C.RESULT_END_OF_INPUT) {
-            // Server closed the chunk early. Resume from wherever we actually
-            // are; openNextChunk throws if that makes no forward progress.
-            chunkRemaining = 0
-            return read(buffer, offset, length)
+        // A loop, not recursion: reopening must make forward progress between
+        // rounds. A server answering ranges with empty 200s would otherwise
+        // be re-requested forever (each recursion also stacked a frame).
+        var reopenedAt = -1L
+        while (true) {
+            if (position >= endExclusive) return C.RESULT_END_OF_INPUT
+            if (chunkRemaining <= 0) openNextChunk()
+            val want = minOf(length.toLong(), chunkRemaining).toInt()
+            val read = chunked!!.read(buffer, offset, want)
+            if (read == C.RESULT_END_OF_INPUT) {
+                // Server closed the chunk early. Resume from wherever we
+                // actually are — unless the reopen itself yielded nothing,
+                // which means the URL is dead, not throttled.
+                if (position == reopenedAt) throw java.io.EOFException()
+                reopenedAt = position
+                chunkRemaining = 0
+                continue
+            }
+            position += read
+            chunkRemaining -= read
+            return read
         }
-        position += read
-        chunkRemaining -= read
-        return read
     }
 
     private fun openNextChunk() {
