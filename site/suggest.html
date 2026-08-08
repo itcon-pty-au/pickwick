@@ -170,7 +170,7 @@
         <span class="hint">— the language the videos are in</span></label>
       <select id="lang" name="lang"></select>
 
-      <label class="field">Good for ages <span class="hint">— pick every band that fits</span></label>
+      <label class="field">Good for ages <span class="hint">— pick every band that fits, or leave it and the review fills it in</span></label>
       <div class="chips" id="ages"></div>
 
       <label class="field">Topics <span class="hint">— pick up to three</span></label>
@@ -319,7 +319,6 @@
     }
     if (!parsed) return fail('That doesn’t look like a YouTube channel or playlist link — try copying it from YouTube’s Share button.');
     var url = parsed;
-    if (!picked.ages.length) return fail('Pick at least one age band.');
     if (!$('note').value.trim()) return fail('Please add one sentence about why kids love it.');
 
     var token = (window.turnstile && window.turnstile.getResponse()) || '';
