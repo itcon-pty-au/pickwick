@@ -45,6 +45,19 @@ class IndexCrawlWorker(
         val wanted = sources.map { it.id }.toSet()
         index.allStates().keys.filter { it !in wanted }.forEach { crawler.dropSource(it) }
 
+        // Repair: builds before the exhaustion fix marked channels complete
+        // after a single full page (the NewPipe no-continuation quirk). A
+        // "complete" source sitting at roughly one page is suspect — unstick it
+        // so the crawl resumes. Deliberately conservative: only channels, and
+        // only when the count is at/below a couple of pages.
+        sources.forEach { s ->
+            val st = index.state(s.id)
+            if (st != null && st.complete && st.count in 1..(2 * IndexCrawler.FULL_PAGE)) {
+                android.util.Log.i("Pickwick", "un-sticking suspect source ${s.id} (${st.count} videos)")
+                index.unmarkComplete(s.id)
+            }
+        }
+
         val incomplete = sources.filter { index.state(it.id)?.complete != true }
         if (incomplete.isEmpty()) return Result.success()
 

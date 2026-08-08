@@ -131,6 +131,18 @@ class ChannelIndex(context: Context) {
     }
 
     /**
+     * Revive a source that was prematurely marked complete (an old build
+     * trusted a full first page with no continuation as "exhausted"). The
+     * videos already indexed stay; the crawler just gets to keep going.
+     */
+    fun unmarkComplete(sourceId: String) {
+        val s = states[sourceId] ?: return
+        if (!s.complete) return
+        states = states + (sourceId to s.copy(complete = false))
+        saveManifest()
+    }
+
+    /**
      * Merge videos into a source's index, deduped on videoId. [append] = the
      * batch is older history from the back-catalog crawl (goes after what's
      * known); false = fresh page-1/delta videos (go before). Callers always

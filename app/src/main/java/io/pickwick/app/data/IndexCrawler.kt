@@ -37,20 +37,34 @@ class IndexCrawler(
             yt.moreUploads(handle, next)
         }
 
+        // NewPipe sometimes returns a FULL first page with no continuation
+        // token (the videos tab's initial render lacks one; it only appears on
+        // getMoreItems). Trusting nextPage==null there marks a 500-video
+        // channel complete after ~30. Only treat exhaustion as real when the
+        // page was short/empty, or when a CONTINUATION fetch ran dry — a full
+        // page always means "keep trying".
+        val exhausted = page.nextPage == null &&
+            (page.videos.size < FULL_PAGE || !isFirstPage)
+
         if (page.videos.isNotEmpty()) {
             index.addVideos(
                 source.id,
                 page.videos.map { it.toIndexed(source.id) },
-                complete = page.nextPage == null,
+                complete = exhausted,
                 append = !isFirstPage
             )
         }
 
         val handle = page.handle
         val next = page.nextPage
-        return if (handle != null && next != null) {
+        return if (!exhausted && handle != null && next != null) {
             cursors[source.id] = handle to next
             true
+        } else if (!exhausted && isFirstPage && handle != null) {
+            // Full page but no usable continuation: park it for another run
+            // rather than declaring completion — the next run re-fetches page 1
+            // (dedup absorbs it) and often gets a real continuation.
+            false.also { cursors.remove(source.id) }
         } else {
             cursors.remove(source.id)
             index.addVideos(source.id, emptyList(), complete = true)
@@ -87,5 +101,12 @@ class IndexCrawler(
          *  throttling threshold; a 3,000-video channel fills in over a day or
          *  so of idle app time, without touching interactive responsiveness. */
         const val CRAWL_DELAY_MS = 30_000L
+
+        /**
+         * What a "full" uploads page looks like. A first page at this size with
+         *  no continuation is the NewPipe no-initial-continuation quirk, NOT an
+         *  exhausted channel — see crawlOnce. NewPipe's channel tab pages ~30.
+         */
+        const val FULL_PAGE = 20
     }
 }
