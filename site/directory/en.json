@@ -1,6 +1,6 @@
 {
   "language": "en",
-  "updated": "2026-08-06",
+  "updated": "2026-08-08",
   "entries": [
     {
       "url": "https://www.youtube.com/user/scishowkids",
@@ -593,6 +593,20 @@
       ],
       "note": "The Alphablocks are 26 living letters who discover that whenever they hold hands and make a word, something magical happens. With adventures",
       "added": "2026-08-06"
+    },
+    {
+      "url": "https://www.youtube.com/@thomasandfriends",
+      "name": "Thomas & Friends",
+      "kind": "channel",
+      "ages": [
+        "2-4",
+        "5-7"
+      ],
+      "topics": [
+        "Cartoons & shows"
+      ],
+      "note": "Stories with life lessons",
+      "added": "2026-08-08"
     }
   ]
 }
