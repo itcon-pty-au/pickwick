@@ -123,7 +123,7 @@ internal fun ExportSection(current: () -> Whitelist, onImport: (Whitelist) -> In
     )
     // Four buttons never fit one phone row.
     androidx.compose.foundation.layout.FlowRow {
-        TextButton(modifier = Modifier.tvFocusHighlight(), onClick = {
+        CompactButton( onClick = {
             val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                 type = "text/plain"
                 putExtra(android.content.Intent.EXTRA_SUBJECT, "Pickwick whitelist")
@@ -136,12 +136,12 @@ internal fun ExportSection(current: () -> Whitelist, onImport: (Whitelist) -> In
             }.onFailure { message = "No app available to share with" }
         }) { Text("Share…") }
         Spacer(Modifier.width(8.dp))
-        TextButton(modifier = Modifier.tvFocusHighlight(), onClick = {
+        CompactButton( onClick = {
             runCatching { saveLauncher.launch("pickwick-whitelist.txt") }
                 .onFailure { message = "No file picker on this device" }
         }) { Text("Save to file…") }
         Spacer(Modifier.width(8.dp))
-        TextButton(modifier = Modifier.tvFocusHighlight(), onClick = {
+        CompactButton( onClick = {
             // Exports are text/plain, but pickers on some devices type a .txt
             // from a share or a download as octet-stream and would hide it.
             runCatching {
@@ -151,8 +151,7 @@ internal fun ExportSection(current: () -> Whitelist, onImport: (Whitelist) -> In
             }.onFailure { message = "No file picker on this device" }
         }) { Text("Import from file…") }
         Spacer(Modifier.width(8.dp))
-        TextButton(
-            modifier = Modifier.tvFocusHighlight(),
+        CompactButton(
             enabled = !submitting && current().sources.isNotEmpty(),
             onClick = { askingLang = true }
         ) { Text(if (submitting) "Submitting…" else "Submit list to directory…") }

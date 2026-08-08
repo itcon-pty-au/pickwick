@@ -213,8 +213,7 @@ internal fun AiScreeningSection(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.weight(1f)
         )
-        TextButton(
-            modifier = Modifier.tvFocusHighlight(),
+        CompactButton(
             enabled = !testing && ai.model.isNotBlank(),
             onClick = {
                 scope.launch {
@@ -446,7 +445,7 @@ internal fun AiReviewSection(
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     // Watch it yourself before ruling on the AI's call.
-                    TextButton(modifier = Modifier.tvFocusHighlight(), onClick = {
+                    CompactButton( onClick = {
                         runCatching {
                             context.startActivity(
                                 android.content.Intent(

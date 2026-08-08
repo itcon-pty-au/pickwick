@@ -132,8 +132,7 @@ private fun TimeWindowsSection(
         // Two named starting points rather than one blank "Add": a window has
         // to start with *some* times, and naming them is more honest than
         // inventing a schedule behind a generic button.
-        TextButton(
-            modifier = Modifier.tvFocusHighlight(),
+        CompactButton(
             onClick = {
                 onChanged(
                     windows + TimeWindow(
@@ -143,8 +142,7 @@ private fun TimeWindowsSection(
                 )
             }
         ) { Text("+ Bedtime") }
-        TextButton(
-            modifier = Modifier.tvFocusHighlight(),
+        CompactButton(
             onClick = {
                 onChanged(
                     windows + TimeWindow(
@@ -154,8 +152,7 @@ private fun TimeWindowsSection(
                 )
             }
         ) { Text("+ School hours") }
-        TextButton(
-            modifier = Modifier.tvFocusHighlight(),
+        CompactButton(
             onClick = {
                 onChanged(
                     // A deliberate placeholder — blank name, neutral midday
@@ -196,7 +193,7 @@ private fun TimeWindowCard(
                 label = { Text("Name") },
                 modifier = Modifier.weight(1f)
             )
-            TextButton(modifier = Modifier.tvFocusHighlight(), onClick = onRemove) { Text("Remove") }
+            CompactButton( onClick = onRemove) { Text("Remove") }
         }
         StepperRow(
             label = "  Starts", value = window.startMin, step = 30, min = 0, max = 24 * 60 - 30,
@@ -228,8 +225,7 @@ private fun SkipBreakRow(passUntil: Long?, onChanged: (Long?) -> Unit) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.weight(1f)
         )
-        TextButton(
-            modifier = Modifier.tvFocusHighlight(),
+        CompactButton(
             onClick = { onChanged(if (skipped) null else endOfToday()) }
         ) { Text(if (skipped) "Undo" else "Skip") }
     }
@@ -256,8 +252,7 @@ private fun SkipOnceRow(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.weight(1f)
         )
-        TextButton(
-            modifier = Modifier.tvFocusHighlight(),
+        CompactButton(
             onClick = {
                 val passUntil = if (skipped) null else {
                     val cal = java.util.Calendar.getInstance()
@@ -369,8 +364,7 @@ internal fun StepperRow(
 ) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 2.dp)) {
         Text(label, modifier = Modifier.weight(1f))
-        TextButton(
-            modifier = Modifier.tvFocusHighlight(),
+        CompactButton(
             onClick = {
                 when {
                     value == null -> {}
@@ -384,8 +378,7 @@ internal fun StepperRow(
             modifier = Modifier.widthIn(min = 64.dp),
             textAlign = androidx.compose.ui.text.style.TextAlign.Center
         )
-        TextButton(
-            modifier = Modifier.tvFocusHighlight(),
+        CompactButton(
             onClick = {
                 onChanged(if (value == null) min else (value + step).coerceAtMost(max))
             }
@@ -418,8 +411,7 @@ internal fun GrantTimeSection(
     // Same stepper styling as the screen-time rows; Grant applies the amount.
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 2.dp)) {
         Text("Bonus watch time", modifier = Modifier.weight(1f))
-        TextButton(
-            modifier = Modifier.tvFocusHighlight(),
+        CompactButton(
             onClick = { minutes = (minutes - 5).coerceAtLeast(5) }
         ) { Text("−") }
         Text(
@@ -427,8 +419,7 @@ internal fun GrantTimeSection(
             modifier = Modifier.widthIn(min = 64.dp),
             textAlign = androidx.compose.ui.text.style.TextAlign.Center
         )
-        TextButton(
-            modifier = Modifier.tvFocusHighlight(),
+        CompactButton(
             onClick = { minutes = (minutes + 5).coerceAtMost(180) }
         ) { Text("+") }
         Spacer(Modifier.width(8.dp))
@@ -507,8 +498,7 @@ internal fun PauseTodayRow(pausedUntil: Long?, onChanged: (Long?) -> Unit) {
             ) { Text("Resume") }
         } else {
             Text("Turn off all watching until midnight", modifier = Modifier.weight(1f))
-            TextButton(
-                modifier = Modifier.tvFocusHighlight(),
+            CompactButton(
                 onClick = { confirming = true }
             ) { Text("Pause for today") }
         }

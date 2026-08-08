@@ -153,7 +153,7 @@ internal fun AiDiscoverySection(
                     )
                 }
             }
-            TextButton(modifier = Modifier.tvFocusHighlight(), onClick = {
+            CompactButton( onClick = {
                 runCatching {
                     context.startActivity(
                         android.content.Intent(
@@ -163,8 +163,7 @@ internal fun AiDiscoverySection(
                     )
                 }
             }) { Text("YouTube") }
-            TextButton(
-                modifier = Modifier.tvFocusHighlight(),
+            CompactButton(
                 enabled = !alreadyAdded,
                 onClick = { onAdd(card.entry) }
             ) { Text(if (alreadyAdded) "Added ✓" else "Add") }
@@ -263,8 +262,7 @@ internal fun DirectorySection(
     )
 
     if (all.isEmpty()) {
-        TextButton(
-            modifier = Modifier.tvFocusHighlight(),
+        CompactButton(
             enabled = !busy,
             onClick = { load() }
         ) { Text(if (busy) "…" else "Browse the directory") }
@@ -343,16 +341,14 @@ internal fun DirectorySection(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.weight(1f)
         )
-        TextButton(
-            modifier = Modifier.tvFocusHighlight(),
+        CompactButton(
             enabled = addable.isNotEmpty(),
             onClick = {
                 addable.forEach(onAdd)
                 message = "Added ${addable.size} — tagged NEW in the channel list below"
             }
         ) { Text(if (addable.isEmpty()) "All added ✓" else "Add all (${addable.size})") }
-        TextButton(
-            modifier = Modifier.tvFocusHighlight(),
+        CompactButton(
             enabled = !busy,
             onClick = { load() }
         ) { Text("Refresh") }
@@ -392,7 +388,7 @@ internal fun DirectorySection(
                     )
                 }
             }
-            TextButton(modifier = Modifier.tvFocusHighlight(), onClick = {
+            CompactButton( onClick = {
                 runCatching {
                     context.startActivity(
                         android.content.Intent(
@@ -402,8 +398,7 @@ internal fun DirectorySection(
                     )
                 }
             }) { Text("YouTube") }
-            TextButton(
-                modifier = Modifier.tvFocusHighlight(),
+            CompactButton(
                 enabled = parsed != null && !alreadyAdded,
                 onClick = { parsed?.let { onAdd(it.copy(label = d.name)) } }
             ) { Text(if (alreadyAdded) "Added ✓" else "Add") }

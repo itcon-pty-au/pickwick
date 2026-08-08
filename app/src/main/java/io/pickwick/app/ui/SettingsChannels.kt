@@ -239,8 +239,7 @@ internal fun ChannelsSection(
                     )
                 }
             }
-            TextButton(
-                modifier = Modifier.tvFocusHighlight(),
+            CompactButton(
                 enabled = !alreadyAdded,
                 onClick = {
                     val id = r.url.substringAfterLast('/')
@@ -261,8 +260,7 @@ internal fun ChannelsSection(
             modifier = Modifier.weight(1f)
         )
         Spacer(Modifier.width(8.dp))
-        TextButton(
-            modifier = Modifier.tvFocusHighlight(),
+        CompactButton(
             onClick = {
                 val parsed = WhitelistParser.parse(pasteText.trim()).sources.firstOrNull()
                 if (parsed == null) {

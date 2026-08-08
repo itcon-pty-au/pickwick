@@ -57,10 +57,12 @@ internal const val HELD_DPAD_STEP_MS = 400L
 internal fun CompactButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
     content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit
 ) {
     androidx.compose.material3.TextButton(
         onClick = onClick,
+        enabled = enabled,
         modifier = modifier.tvFocusHighlight(),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(
             horizontal = 10.dp, vertical = 2.dp

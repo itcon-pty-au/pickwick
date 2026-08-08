@@ -84,12 +84,10 @@ internal fun DownloadsSection() {
         Text("Waiting for your OK", style = MaterialTheme.typography.titleSmall)
         requested.forEach { e ->
             DownloadRow(e, subtitle = e.video.channelName) {
-                TextButton(
-                    modifier = Modifier.tvFocusHighlight(),
+                CompactButton(
                     onClick = { approve(e.video.url) }
                 ) { Text("Approve") }
-                TextButton(
-                    modifier = Modifier.tvFocusHighlight(),
+                CompactButton(
                     onClick = { store.remove(e.video.url) }
                 ) { Text("No") }
             }
@@ -118,8 +116,7 @@ internal fun DownloadsSection() {
         Text("Didn't finish", style = MaterialTheme.typography.titleSmall)
         failed.forEach { e ->
             DownloadRow(e, subtitle = e.error ?: "Download failed") {
-                TextButton(
-                    modifier = Modifier.tvFocusHighlight(),
+                CompactButton(
                     onClick = { approve(e.video.url) }
                 ) { Text("Retry") }
                 IconButton(onClick = { store.remove(e.video.url) }) {
@@ -282,8 +279,7 @@ internal fun LocalVideosSection(profiles: List<io.pickwick.app.data.Profile> = e
         ) { Text("Add videos") }
         if (trees.isNotEmpty()) {
             Spacer(Modifier.width(8.dp))
-            TextButton(
-                modifier = Modifier.tvFocusHighlight(),
+            CompactButton(
                 onClick = { rescan() }
             ) { Text("Rescan") }
         }
@@ -320,8 +316,7 @@ internal fun LocalVideosSection(profiles: List<io.pickwick.app.data.Profile> = e
                 )
                 Spacer(Modifier.width(4.dp))
             }
-            TextButton(
-                modifier = Modifier.tvFocusHighlight(),
+            CompactButton(
                 onClick = { scope.launch(kotlinx.coroutines.Dispatchers.IO) { library.forgetTree(tree.uri) } }
             ) { Text("Forget") }
         }
