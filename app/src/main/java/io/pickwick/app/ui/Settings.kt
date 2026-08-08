@@ -916,6 +916,56 @@ private fun SearchIndexSection(
             Text("Read more")
         }
     } else {
+        // Run diagnostics: when the master last crawled and when the next
+        // background run fires, so "is it stuck?" is answerable on screen.
+        if (isMaster) {
+            val lastRun by io.pickwick.app.data.ChannelIndex.lastRun.collectAsState()
+            // Seed from disk — the flow only ticks on runs within this process.
+            LaunchedEffect(Unit) {
+                if (lastRun == null) {
+                    io.pickwick.app.data.ChannelIndex.lastRun.value =
+                        withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            io.pickwick.app.data.ChannelIndex(context).lastRunInfo()
+                        }
+                }
+            }
+            val nextRun by produceState<Long?>(null) {
+                value = io.pickwick.app.data.IndexCrawlWorker.nextRunAt(context)
+            }
+            val fmt = remember {
+                java.text.SimpleDateFormat("d MMM h:mm a", java.util.Locale.US)
+            }
+            Spacer(Modifier.height(8.dp))
+            lastRun?.let { run ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier.size(10.dp)
+                            .background(
+                                if (run.failed) androidx.compose.ui.graphics.Color(0xFFE57373)
+                                else androidx.compose.ui.graphics.Color(0xFF81C784),
+                                androidx.compose.foundation.shape.CircleShape
+                            )
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "Last run ${fmt.format(java.util.Date(run.atMillis))} — " +
+                            "${run.pages} page(s) indexed",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } ?: Text(
+                "No background run yet",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                nextRun?.let { "Next run ${fmt.format(java.util.Date(it))} — pending" }
+                    ?: "Next run — not scheduled",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
         Spacer(Modifier.height(6.dp))
         entries.forEach { e ->
             val s = stateFor(e)

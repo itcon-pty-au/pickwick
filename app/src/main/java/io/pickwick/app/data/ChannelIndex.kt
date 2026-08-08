@@ -189,6 +189,32 @@ class ChannelIndex(context: Context) {
         sharedStates.value = states
     }
 
+    // ---- run telemetry (diagnostics in the settings status section) --------
+
+    private val runFile = File(dir, "last-run.json")
+
+    /** One crawl worker run's outcome, for the "Previous run" diagnostics line. */
+    data class RunInfo(val atMillis: Long, val pages: Int, val failed: Boolean)
+
+    fun recordRun(pages: Int, failed: Boolean) {
+        runCatching {
+            runFile.writeText(
+                JSONObject()
+                    .put("at", System.currentTimeMillis())
+                    .put("pages", pages)
+                    .put("failed", failed)
+                    .toString()
+            )
+        }
+        lastRun.value = RunInfo(System.currentTimeMillis(), pages, failed)
+    }
+
+    fun lastRunInfo(): RunInfo? = runCatching {
+        if (!runFile.exists()) return null
+        val o = JSONObject(runFile.readText())
+        RunInfo(o.getLong("at"), o.optInt("pages", 0), o.optBoolean("failed", false))
+    }.getOrNull()
+
     /** Compact per-source fingerprint for /index-status: what a peer needs to
      *  decide whether a push is worthwhile. */
     fun statusJson(): String {
@@ -272,5 +298,8 @@ class ChannelIndex(context: Context) {
          * manifest write; seeded lazily by the first instance.
          */
         val sharedStates = kotlinx.coroutines.flow.MutableStateFlow(emptyMap<String, SourceState>())
+
+        /** Live last-run info, so the settings line updates the moment a run lands. */
+        val lastRun = kotlinx.coroutines.flow.MutableStateFlow<RunInfo?>(null)
     }
 }

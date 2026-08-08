@@ -52,13 +52,16 @@ class IndexCrawlWorker(
         // first incomplete source. ~17 pages per 500-video channel, so one
         // 15-minute run finishes a channel and starts the next.
         var pages = 0
+        var failures = 0
         for (source in incomplete) {
-            while (pages < PAGES_PER_RUN && runCatching { crawler.crawlOnce(source) }
+            while (pages < PAGES_PER_RUN) {
+                val more = runCatching { crawler.crawlOnce(source) }
                     .getOrElse {
                         android.util.Log.w("Pickwick", "index crawl failed", it)
+                        failures++
                         false
                     }
-            ) {
+                if (!more) break
                 pages++
             }
             if (pages >= PAGES_PER_RUN) break
@@ -70,11 +73,22 @@ class IndexCrawlWorker(
             "index crawl: $pages pages this run, " +
                 "${sources.size - incomplete.size}/${sources.size} sources complete"
         )
+        // Failed = we attempted a source and it threw without yielding a page —
+        // the red dot in settings. A run that simply had nothing to do is green.
+        index.recordRun(pages, failed = failures > 0 && pages == 0)
         return Result.success()
     }
 
     companion object {
         private const val WORK_NAME = "channel-index-crawl"
+
+        /** Next scheduled run in epoch millis, or null if not scheduled. */
+        suspend fun nextRunAt(context: Context): Long? {
+            val infos = WorkManager.getInstance(context)
+                .getWorkInfosForUniqueWork(WORK_NAME).get()
+            return infos.firstOrNull()?.nextScheduleTimeMillis
+                ?.takeIf { it > 0 && it != Long.MAX_VALUE }
+        }
 
         /**
          * Pages per 15-minute run. At ~30/page, one run indexes ~600 videos.
