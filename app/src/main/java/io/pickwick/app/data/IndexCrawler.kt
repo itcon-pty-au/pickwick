@@ -81,6 +81,15 @@ class IndexCrawler(
         index.addVideos(source.id, videos.map { it.toIndexed(source.id) })
     }
 
+    /**
+     * History harvest: a kid scrolling a channel's older pages has already paid
+     * the network cost — append them so browsed depth becomes searchable depth.
+     */
+    fun harvestHistory(source: Source, videos: List<Video>) {
+        if (videos.isEmpty()) return
+        index.addVideos(source.id, videos.map { it.toIndexed(source.id) }, append = true)
+    }
+
     /** Whitelist edit dropped a source: forget its cursor too. */
     fun dropSource(sourceId: String) {
         cursors.remove(sourceId)

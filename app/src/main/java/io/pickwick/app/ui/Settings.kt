@@ -869,8 +869,9 @@ private fun SearchIndexSection(
     // Live: the shared flow ticks on every manifest write, so counts climb
     // while the parent watches instead of freezing at whatever they were when
     // the screen opened. ChannelIndex(context) also seeds the flow from disk.
-    remember { io.pickwick.app.data.ChannelIndex(context) }
+    val index = remember { io.pickwick.app.data.ChannelIndex(context) }
     val states by io.pickwick.app.data.ChannelIndex.sharedStates.collectAsState()
+    val scope = rememberCoroutineScope()
     // The index is keyed by the CANONICAL source id (a @handle resolves to its
     // UC… id during the feed fetch), while entries keep their raw whitelist id.
     // SourceCache maps url → resolved Source, bridging the two — without it a
@@ -903,10 +904,23 @@ private fun SearchIndexSection(
     val totalVideos = whitelistedStates.sumOf { it.count }
     val complete = whitelistedStates.count { it.complete }
     Spacer(Modifier.height(6.dp))
-    Text(
-        "$totalVideos videos indexed across ${entries.size} channel(s) — $complete fully indexed.",
-        style = MaterialTheme.typography.bodyMedium
-    )
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        Text(
+            "$totalVideos videos indexed across ${entries.size} channel(s) — $complete fully indexed.",
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(1f)
+        )
+        // The shared flow is process-local; a crawl that ran in the WorkManager
+        // process (or before this screen opened) only appears after a disk
+        // re-read. This forces one.
+        IconButton(
+            onClick = { scope.launch(kotlinx.coroutines.Dispatchers.IO) { index.refresh() } },
+            modifier = Modifier.size(32.dp).tvFocusHighlight()
+        ) {
+            // material-icons-core shipped here has no Refresh; a glyph does the job.
+            Text("↻", style = MaterialTheme.typography.titleMedium)
+        }
+    }
 
     if (!expanded) {
         CompactButton(onClick = { expanded = true }) { Text("Read more") }

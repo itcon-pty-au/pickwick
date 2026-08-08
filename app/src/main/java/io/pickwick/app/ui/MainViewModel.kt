@@ -680,6 +680,8 @@ class MainViewModel(
                 }
                 _state.value = _state.value.copy(loading = false, videos = annotated(includeFinished = true), held = heldByScreening())
                 kickScreening(rawVideos)
+                // Opening a channel fetches its fresh page 1 — harvest it.
+                crawler?.harvestPage1(source, page.videos)
                 topUpIfSparse()
             }
             .onFailure {
@@ -746,6 +748,9 @@ class MainViewModel(
                     // this deep instantly (capped to keep the cache file sane).
                     (_state.value.screen as? Screen.ChannelVideos)?.let { s ->
                         withContext(Dispatchers.IO) { videoCache.save(s.source.id, rawVideos.take(500)) }
+                        // Browsed depth becomes searchable depth — the network
+                        // cost is already paid, so harvest it into the index.
+                        crawler?.harvestHistory(s.source, page.videos)
                     }
                     launch { prefetchThumbs(page.videos.mapNotNull { it.thumbnailUrl }) }
                     _state.value = _state.value.copy(videos = annotated(includeFinished = true), held = heldByScreening())

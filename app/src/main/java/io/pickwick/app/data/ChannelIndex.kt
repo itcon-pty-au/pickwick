@@ -201,6 +201,18 @@ class ChannelIndex(context: Context) {
         sharedStates.value = states
     }
 
+    /**
+     * Re-read the manifest from disk and republish the shared flow. The flow
+     * is process-local, so a crawl that ran in the WorkManager process (or
+     * before this screen opened) only shows up after a refresh — the settings
+     * refresh icon calls this.
+     */
+    fun refresh() {
+        states = loadManifest()
+        sharedStates.value = states
+        lastRun.value = lastRunInfo()
+    }
+
     // ---- run telemetry (diagnostics in the settings status section) --------
 
     private val runFile = File(dir, "last-run.json")
