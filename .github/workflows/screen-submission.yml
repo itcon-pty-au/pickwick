@@ -56,8 +56,10 @@ jobs:
         if: steps.diff.outputs.count != '0'
         run: |
           today=$(date -u +%Y-%m-%d)
-          runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/screen-submission.yml/runs?created=%3E%3D$today&per_page=1" --jq '.total_count' || echo 0)
-          if [ "$runs" -gt 20 ]; then
+          # A failed count must read as "capped", not "unused" — this is the
+          # bill-protection valve, so it fails closed.
+          runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/screen-submission.yml/runs?created=%3E%3D$today&per_page=1" --jq '.total_count' || echo 999)
+          if [ "$runs" -ge 20 ]; then
             gh pr comment "$PR" --body "🛑 **AI screening deferred** — daily screening cap reached. This suggestion will keep its place in the queue; re-run the workflow tomorrow or review manually."
             echo "capped=true" >> "$GITHUB_OUTPUT"
           else
@@ -129,7 +131,7 @@ jobs:
                   summary: {type: "string"},
                   concerns: {type: "array", items: {type: "string"}},
                   suggested_ages: {type: "array", items: {type: "string", enum: ["2-4", "5-7", "8-10", "11+"]}},
-                  suggested_topics: {type: "array", items: {type: "string"}, maxItems: 3},
+                  suggested_topics: {type: "array", items: {type: "string", enum: ["Science", "Nature & animals", "Math", "Space", "Engineering & tech", "Geography", "History", "Stories", "Reading & language", "Preschool", "Music", "Crafts & making", "Art & drawing", "Cooking & baking", "Sports & movement", "Feelings & social skills", "Cartoons & shows"]}, maxItems: 3},
                   suggested_note: {type: "string", maxLength: 140}
                 },
                 required: ["rating", "age_fit", "summary", "concerns", "suggested_ages", "suggested_topics", "suggested_note"],
@@ -162,6 +164,13 @@ jobs:
               echo '```' >> comment.md; echo '</details>' >> comment.md
             else
               verdict=$(jq -r '[.content[] | select(.type == "text") | .text] | first' <<< "$resp")
+              # The step runs under bash -e: an unparseable verdict must not
+              # kill the loop and swallow the other entries' comments.
+              if ! jq -e . >/dev/null 2>&1 <<< "$verdict"; then
+                echo "⚠️ Screening returned unparseable output — review manually." >> comment.md
+                echo "" >> comment.md
+                continue
+              fi
               rating=$(jq -r '.rating' <<< "$verdict")
               case "$rating" in
                 looks_good) icon="✅" ;;
@@ -190,12 +199,17 @@ jobs:
                   (if (($e.note // "") | length) == 0 and (($v.suggested_note // "") | length) > 0 then "note “" + $v.suggested_note + "”" else empty end)
                 ] | join("; ")')
               if [ -n "$needs" ] && [ -f "$f" ]; then
+                # The schema constrains ages/topics to the fixed vocabularies
+                # and the note to 140 chars, but what lands in a published
+                # file is re-clamped here rather than trusted — maxLength in
+                # particular is not reliably enforced by structured output.
                 jq --arg url "$url" --argjson v "$verdict" '
                   ["2-4", "5-7", "8-10", "11+"] as $ord
+                  | ["Science", "Nature & animals", "Math", "Space", "Engineering & tech", "Geography", "History", "Stories", "Reading & language", "Preschool", "Music", "Crafts & making", "Art & drawing", "Cooking & baking", "Sports & movement", "Feelings & social skills", "Cartoons & shows"] as $vocab
                   | .entries |= map(if .url == $url then
-                      .ages = ((.ages + $v.suggested_ages) | unique | sort_by($ord | index(.)))
-                      | (if (.topics | length) == 0 then .topics = $v.suggested_topics else . end)
-                      | (if ((.note // "") | length) == 0 then .note = $v.suggested_note else . end)
+                      .ages = ((.ages + ($v.suggested_ages | map(select($ord | index(.))))) | unique | sort_by($ord | index(.)))
+                      | (if (.topics | length) == 0 then .topics = ($v.suggested_topics | map(select($vocab | index(.))) | .[0:3]) else . end)
+                      | (if ((.note // "") | length) == 0 then .note = ($v.suggested_note | .[0:140]) else . end)
                     else . end)' "$f" > f.tmp && mv f.tmp "$f"
                 echo "- **Filled in on this PR:** $needs" >> comment.md
               fi

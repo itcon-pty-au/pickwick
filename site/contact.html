@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contact the maintainer — Pickwick</title>
+<meta name="description" content="Report a bug or share an idea for Pickwick. Goes straight to the app's maintainer — no account needed.">
+<style>
+  :root {
+    /* Pickwick brand teals — see app Theme.kt (#00695C logo, #4DB6AC primary) */
+    --bg: #eef6f4;
+    --card: #ffffff;
+    --text: #12211e;
+    --muted: #5c7370;
+    --accent: #00897b;
+    --accent-dark: #00695c;
+    --accent-text: #ffffff;
+    --pill-bg: #e2efec;
+    --shadow: 0 8px 30px rgba(0, 80, 68, .14);
+    --error: #b3402a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1a18;
+      --card: #1b2825;
+      --text: #cce8e3;
+      --muted: #8fa8a3;
+      --accent: #4db6ac;
+      --accent-dark: #26a69a;
+      --accent-text: #00352f;
+      --pill-bg: #24342f;
+      --shadow: 0 8px 30px rgba(0, 0, 0, .45);
+      --error: #e08a76;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 0 24px; }
+
+  header.wrap { text-align: center; padding: 48px 24px 24px; }
+  .logo {
+    width: 56px; height: 56px;
+    margin: 0 auto 14px;
+    border-radius: 14px;
+    background: #00695c;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 4px 14px rgba(0, 80, 68, .3);
+  }
+  .logo svg { width: 26px; height: 26px; margin-left: 3px; }
+  h1 { font-size: 32px; letter-spacing: -.5px; }
+  .tagline { font-size: 16px; color: var(--muted); margin: 8px auto 0; }
+
+  .card {
+    background: var(--card);
+    border-radius: 18px;
+    box-shadow: var(--shadow);
+    padding: 26px 28px;
+    margin: 18px 0;
+  }
+  label.field { display: block; font-weight: 700; font-size: 15px; margin: 18px 0 6px; }
+  label.field:first-child { margin-top: 0; }
+  .hint { font-weight: 400; font-size: 13px; color: var(--muted); }
+  input[type=text], textarea, select {
+    width: 100%;
+    font: inherit;
+    color: var(--text);
+    background: var(--bg);
+    border: 1.5px solid var(--pill-bg);
+    border-radius: 12px;
+    padding: 10px 14px;
+  }
+  input[type=text]:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); }
+  textarea { resize: vertical; min-height: 70px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    font: inherit; font-size: 14px; font-weight: 600;
+    color: var(--muted);
+    background: var(--pill-bg);
+    border: 0; border-radius: 999px;
+    padding: 7px 16px;
+    cursor: pointer;
+    transition: background .12s ease, color .12s ease;
+  }
+  .chip:hover { color: var(--text); }
+  .chip.on { background: var(--accent); color: var(--accent-text); }
+
+  /* Honeypot: invisible to humans, tempting to bots. Not display:none —
+     some bots skip fields they can see are hidden. */
+  .hp { position: absolute; left: -9999px; top: -9999px; height: 1px; overflow: hidden; }
+
+  .turnstile-slot { margin: 18px 0 4px; min-height: 8px; }
+
+  .btn {
+    display: inline-block;
+    font: inherit; font-weight: 700; font-size: 16px;
+    text-decoration: none;
+    padding: 13px 26px;
+    border-radius: 12px;
+    border: 0; cursor: pointer;
+    transition: background .15s ease, transform .1s ease;
+  }
+  .btn:active { transform: scale(.97); }
+  .btn-primary { background: var(--accent); color: var(--accent-text); }
+  .btn-primary:hover { background: var(--accent-dark); }
+  .btn-primary[disabled] { opacity: .55; cursor: default; }
+  .btn-ghost { background: var(--pill-bg); color: var(--text); }
+  .btn-ghost:hover { background: var(--accent); color: var(--accent-text); }
+
+  .msg { margin-top: 14px; font-size: 14.5px; }
+  .msg.err { color: var(--error); font-weight: 600; }
+  .msg.ok { color: var(--accent-dark); font-weight: 600; }
+  @media (prefers-color-scheme: dark) { .msg.ok { color: var(--accent); } }
+
+  .notice {
+    background: var(--pill-bg);
+    border-radius: 12px;
+    padding: 12px 16px;
+    font-size: 14px;
+    color: var(--muted);
+    margin-bottom: 18px;
+  }
+
+  .done { text-align: center; padding: 14px 0; }
+  .done .big { font-size: 42px; margin-bottom: 8px; }
+  .done p { color: var(--muted); max-width: 420px; margin: 0 auto 18px; }
+
+  footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px;
+    padding: 26px 24px 50px;
+    line-height: 1.7;
+  }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+
+<header class="wrap">
+  <a href="./" style="text-decoration:none"><div class="logo" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="#ffffff"><path d="M6 3.5v17l14-8.5z"/></svg>
+  </div></a>
+  <h1>Contact the maintainer</h1>
+  <p class="tagline">
+    Found a bug, or have an idea for Pickwick? This goes straight to the person who
+    builds it — no account needed. We don't collect your name or email.
+  </p>
+</header>
+
+<main class="wrap">
+  <div class="card">
+    <div class="notice" id="soon" hidden>
+      💤 Contact isn't connected yet — check back soon.
+      In the meantime you can browse the <a href="directory.html">directory</a>.
+    </div>
+
+    <form id="form" novalidate>
+      <label class="field">What's this about?</label>
+      <div class="chips" id="kind">
+        <button class="chip" type="button" data-kind="problem">🐛 Something's broken</button>
+        <button class="chip" type="button" data-kind="idea">💡 I have an idea</button>
+      </div>
+
+      <label class="field" for="message">Tell us more</label>
+      <textarea id="message" name="message" maxlength="2000"
+                placeholder="What happened, or what you'd like to see?"></textarea>
+
+      <div class="hp" aria-hidden="true">
+        <label>Leave this field empty <input type="text" name="website" tabindex="-1" autocomplete="off"></label>
+      </div>
+
+      <div class="turnstile-slot" id="turnstileSlot"></div>
+
+      <button class="btn btn-primary" id="submit" type="submit">Send</button>
+      <p class="msg" id="msg" role="status"></p>
+    </form>
+
+    <div class="done" id="done" hidden>
+      <div class="big">🌱</div>
+      <h2>Thanks — it's on its way!</h2>
+      <p>Your message went straight to the maintainer.</p>
+      <p id="doneLink"></p>
+      <a class="btn btn-ghost" href="./">Back home</a>
+    </div>
+  </div>
+</main>
+
+<footer>
+  Messages are anonymous — this form sends only what you type above.<br>
+  <a href="directory.html">Channel directory</a> · <a href="./">Pickwick home</a>
+</footer>
+
+<script>
+(function () {
+  // Submission Worker + Turnstile widget — see worker/README.md.
+  var WORKER_URL = 'https://pickwick-suggest.pickwick.workers.dev/contact';
+  var TURNSTILE_SITE_KEY = '0x4AAAAAAEH3jD3yhkEWEye8';
+
+  var $ = function (id) { return document.getElementById(id); };
+  var picked = { kind: null };
+
+  (function () {
+    var row = $('kind');
+    var buttons = row.querySelectorAll('.chip');
+    for (var i = 0; i < buttons.length; i++) {
+      (function (b) {
+        b.addEventListener('click', function () {
+          for (var j = 0; j < buttons.length; j++) buttons[j].classList.remove('on');
+          b.classList.add('on');
+          picked.kind = b.getAttribute('data-kind');
+        });
+      })(buttons[i]);
+    }
+  })();
+
+  var configured = WORKER_URL && TURNSTILE_SITE_KEY;
+  if (!configured) {
+    $('soon').hidden = false;
+    $('submit').disabled = true;
+  } else {
+    var s = document.createElement('script');
+    s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js';
+    s.async = true; s.defer = true;
+    document.head.appendChild(s);
+    var slot = document.createElement('div');
+    slot.className = 'cf-turnstile';
+    slot.setAttribute('data-sitekey', TURNSTILE_SITE_KEY);
+    $('turnstileSlot').appendChild(slot);
+  }
+
+  function fail(text) {
+    var m = $('msg');
+    m.className = 'msg err';
+    m.textContent = text;
+  }
+
+  $('form').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    if (!configured) return;
+    $('msg').textContent = '';
+
+    var message = $('message').value.trim();
+    if (!picked.kind || !message) {
+      return fail('Please pick a type and write a message.');
+    }
+
+    var token = (window.turnstile && window.turnstile.getResponse()) || '';
+    if (!token) return fail('Please tick the “verify you’re human” box.');
+
+    var btn = $('submit');
+    btn.disabled = true;
+    btn.textContent = 'Sending…';
+
+    fetch(WORKER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        kind: picked.kind,
+        message: message,
+        website: $('form').elements.website.value,
+        turnstile: token
+      })
+    })
+    .then(function (r) { return r.json().catch(function () { return { status: 'error' }; }); })
+    .then(function (res) {
+      if (res.status === 'ok') {
+        $('form').hidden = true;
+        $('done').hidden = false;
+        if (res.url) {
+          var p = $('doneLink');
+          var a = document.createElement('a');
+          a.href = res.url; a.textContent = 'Follow it here';
+          p.appendChild(a);
+        }
+        return;
+      }
+      if (res.status === 'invalid') {
+        fail(res.message || 'Please pick a type and write a message.');
+      } else if (res.status === 'busy') {
+        fail('The inbox is full right now — please try again in a few days.');
+      } else {
+        fail('Something went wrong on our side — please try again later.');
+      }
+      if (window.turnstile) window.turnstile.reset();
+    })
+    .catch(function () {
+      fail('Couldn’t reach the submission service — check your connection and try again.');
+      if (window.turnstile) window.turnstile.reset();
+    })
+    .then(function () {
+      btn.disabled = false;
+      btn.textContent = 'Send';
+    });
+  });
+})();
+</script>
+
+</body>
+</html>

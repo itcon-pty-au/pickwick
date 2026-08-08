@@ -9,9 +9,13 @@
       "ages": [
         "2-4"
       ],
-      "topics": ["Preschool","Music"],
+      "topics": [
+        "Preschool",
+        "Music"
+      ],
       "note": "Super simple is great for Spanish kids content",
-      "added": "2026-08-08"
+      "added": "2026-08-08",
+      "channelId": "UCyY3Wd5x85o8AKXjYSoxFAQ"
     }
   ]
 }

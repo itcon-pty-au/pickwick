@@ -6,9 +6,18 @@ compatibility_date = "2026-08-01"
 #   TURNSTILE_SECRET — from the Turnstile widget for pickwick.tv
 #   GITHUB_TOKEN     — fine-grained PAT, repo itcon-pty-au/pickwick only,
 #                      permissions: Contents (read/write) + Pull requests (read/write)
+#                      + Issues (read/write) + Discussions (read/write)
 
 [vars]
 GITHUB_REPO = "itcon-pty-au/pickwick"
 DIRECTORY_DIR = "site/directory"
 ALLOWED_ORIGINS = "https://pickwick.tv,https://www.pickwick.tv"
-MAX_OPEN_SUBMISSIONS = "25"
+# Raised from 25 when the app gained whole-list submission — one family's
+# list should usually fit in a single push; the cap stays as the abuse
+# ceiling and review-bandwidth valve, and resubmitting later drains the rest.
+MAX_OPEN_SUBMISSIONS = "50"
+MAX_OPEN_CONTACT = "20"
+# GraphQL node ids for /contact ideas — discussions have no REST create.
+# Re-read them if the repo is ever transferred or the category recreated.
+REPO_NODE_ID = "R_kgDOTq8oHw"
+IDEAS_CATEGORY_ID = "DIC_kwDOTq8oH84DC7eu"

@@ -155,11 +155,6 @@
 
 <main class="wrap">
   <div class="card">
-    <div class="notice" id="soon" hidden>
-      💤 Suggestions are opening soon — this form isn't connected yet.
-      In the meantime you can browse the <a href="directory.html">directory</a>.
-    </div>
-
     <form id="form" novalidate>
       <label class="field" for="url">YouTube channel or playlist link
         <span class="hint">— paste it straight from YouTube's Share button, any format works</span></label>
@@ -262,20 +257,14 @@
     sel.value = 'en';
   })();
 
-  var configured = WORKER_URL && TURNSTILE_SITE_KEY;
-  if (!configured) {
-    $('soon').hidden = false;
-    $('submit').disabled = true;
-  } else {
-    var s = document.createElement('script');
-    s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js';
-    s.async = true; s.defer = true;
-    document.head.appendChild(s);
-    var slot = document.createElement('div');
-    slot.className = 'cf-turnstile';
-    slot.setAttribute('data-sitekey', TURNSTILE_SITE_KEY);
-    $('turnstileSlot').appendChild(slot);
-  }
+  var s = document.createElement('script');
+  s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js';
+  s.async = true; s.defer = true;
+  document.head.appendChild(s);
+  var slot = document.createElement('div');
+  slot.className = 'cf-turnstile';
+  slot.setAttribute('data-sitekey', TURNSTILE_SITE_KEY);
+  $('turnstileSlot').appendChild(slot);
 
   // Lenient on purpose — parents paste whatever the Share button gave them.
   // Returns a canonical URL string, 'video' for a lone video link (so the
@@ -310,7 +299,6 @@
 
   $('form').addEventListener('submit', function (ev) {
     ev.preventDefault();
-    if (!configured) return;
     $('msg').textContent = '';
 
     var parsed = parseYouTubeLink($('url').value);
