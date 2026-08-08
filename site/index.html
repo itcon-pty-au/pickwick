@@ -79,13 +79,44 @@
     border-radius: 999px;
   }
 
-  /* Wider than .wrap's 880px so all six buttons fit on one line on desktop;
-     breaks out of the centered column without affecting the rest of the header. */
-  .cta {
-    display: flex; justify-content: center; gap: 12px; flex-wrap: wrap;
-    width: min(1080px, calc(100vw - 48px));
-    position: relative; left: 50%; transform: translateX(-50%);
+  .cta { display: flex; justify-content: center; }
+
+  /* Hamburger menu — all secondary links live here on every screen size;
+     only Download stays out as the hero button. */
+  .menu-toggle {
+    position: absolute;
+    top: 20px; right: 20px;
+    width: 46px; height: 46px;
+    border: 0;
+    border-radius: 12px;
+    background: var(--pill-bg);
+    color: var(--text);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
   }
+  .menu-toggle:hover { background: var(--accent); color: var(--accent-text); }
+  .menu-toggle svg { width: 24px; height: 24px; }
+  .menu {
+    position: absolute;
+    top: 74px; right: 20px;
+    min-width: 220px;
+    background: var(--card);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+    padding: 8px;
+    z-index: 10;
+  }
+  .menu[hidden] { display: none; }
+  .menu a {
+    display: block;
+    padding: 11px 16px;
+    border-radius: 10px;
+    text-decoration: none;
+    color: var(--text);
+    font-weight: 600;
+    font-size: 15px;
+  }
+  .menu a:hover { background: var(--pill-bg); }
   .btn {
     display: inline-block;
     text-decoration: none;
@@ -160,6 +191,20 @@
 </head>
 <body>
 
+<button class="menu-toggle" aria-label="Menu" aria-expanded="false" aria-controls="site-menu">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true">
+    <path d="M4 6h16M4 12h16M4 18h16"/>
+  </svg>
+</button>
+<nav class="menu" id="site-menu" hidden>
+  <a href="gallery.html">🖼️ Screenshots</a>
+  <a href="directory.html">📺 Channel directory</a>
+  <a href="https://github.com/itcon-pty-au/pickwick/blob/main/docs/SETUP.md">📖 Setup guide</a>
+  <a href="donate.html">❤️ Donate</a>
+  <a href="contact.html">✉️ Contact admin</a>
+  <a href="https://github.com/itcon-pty-au/pickwick">GitHub</a>
+</nav>
+
 <header class="wrap">
   <div class="logo" aria-hidden="true">
     <svg viewBox="0 0 24 24" fill="#ffffff"><path d="M6 3.5v17l14-8.5z"/></svg>
@@ -175,12 +220,6 @@
   </div>
   <div class="cta">
     <a class="btn btn-primary" href="https://github.com/itcon-pty-au/pickwick/releases">Download</a>
-    <a class="btn btn-ghost" href="gallery.html">🖼️ Screenshots</a>
-    <a class="btn btn-ghost" href="directory.html">📺 Channel directory</a>
-    <a class="btn btn-ghost" href="https://github.com/itcon-pty-au/pickwick/blob/main/docs/SETUP.md">📖 Setup guide</a>
-    <a class="btn btn-ghost" href="donate.html">❤️ Donate</a>
-    <a class="btn btn-ghost" href="contact.html">✉️ Contact admin</a>
-    <a class="btn btn-ghost" href="https://github.com/itcon-pty-au/pickwick">GitHub</a>
   </div>
 </header>
 
@@ -260,6 +299,26 @@
   Terms of Service — for personal/family use.<br>
   An independent project — not affiliated with, endorsed by, or connected to YouTube or Google.
 </footer>
+
+<script>
+  const toggle = document.querySelector('.menu-toggle');
+  const menu = document.getElementById('site-menu');
+  function setOpen(open) {
+    menu.hidden = !open;
+    toggle.setAttribute('aria-expanded', String(open));
+  }
+  toggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    setOpen(menu.hidden);
+  });
+  // Every link navigates away, so closing is only needed for click-outside/Esc.
+  document.addEventListener('click', (e) => {
+    if (!menu.hidden && !menu.contains(e.target)) setOpen(false);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !menu.hidden) { setOpen(false); toggle.focus(); }
+  });
+</script>
 
 </body>
 </html>
