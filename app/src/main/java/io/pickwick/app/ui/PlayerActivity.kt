@@ -134,7 +134,27 @@ class PlayerActivity : ComponentActivity() {
 
         captionsOn = getSharedPreferences("player", MODE_PRIVATE).getBoolean("captions", false)
 
-        player = ExoPlayer.Builder(this).build().apply {
+        // Read further ahead than the 50s default: with the chunked data source
+        // the network can outrun playback, so minutes of buffer absorb Wi-Fi
+        // dips instead of stalling. Back-buffer keeps 30s behind the playhead
+        // so the kid's favourite "watch that again" ±10s hops don't refetch.
+        val loadControl = androidx.media3.exoplayer.DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                50_000, 300_000,
+                androidx.media3.exoplayer.DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS,
+                androidx.media3.exoplayer.DefaultLoadControl
+                    .DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS
+            )
+            .setBackBuffer(30_000, false)
+            // Hard byte ceiling, and not optional: the time-based window above
+            // is only a request, and media3's default video target is 128 MB.
+            // A Chromecast gives us a 256 MB heap that the browse screen's
+            // thumbnails have already eaten ~120 MB of, so an unbounded
+            // 5-minute window on a high-bitrate stream would OOM. 48 MB is
+            // several minutes at the bitrates these streams actually run at.
+            .setTargetBufferBytes(48 * 1024 * 1024)
+            .build()
+        player = ExoPlayer.Builder(this).setLoadControl(loadControl).build().apply {
             addListener(object : Player.Listener {
                 override fun onPlaybackStateChanged(playbackState: Int) {
                     buffering.value = playbackState == Player.STATE_BUFFERING
@@ -279,9 +299,16 @@ class PlayerActivity : ComponentActivity() {
                     val exo = player ?: return@LaunchedEffect
                     currentSubtitles = pb.subtitles
                     // DefaultDataSource: http for streams, file for offline
-                    // downloads, content for sideloaded SAF files.
-                    val factory = androidx.media3.datasource.DefaultDataSource
-                        .Factory(this@PlayerActivity)
+                    // downloads, content for sideloaded SAF files. Wrapped so
+                    // googlevideo streams fetch in range-parameter chunks.
+                    // Measured on a Chromecast, same video: unwrapped, the
+                    // buffer starved (stalled at 0s ahead, then crept up at
+                    // ~1.5x playback); chunked, the whole video was resident
+                    // 19s in. See ChunkedStreamDataSource for why.
+                    val factory = io.pickwick.app.data.ChunkedStreamDataSource.Factory(
+                        androidx.media3.datasource.DefaultDataSource
+                            .Factory(this@PlayerActivity)
+                    )
                     fun progressive(url: String) =
                         androidx.media3.exoplayer.source.ProgressiveMediaSource
                             .Factory(factory).createMediaSource(MediaItem.fromUri(url))
@@ -530,6 +557,7 @@ private fun BoxScope.TvControlsOverlay(
     var visible by remember { mutableStateOf(false) }
     var positionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
+    var bufferedMs by remember { mutableLongStateOf(0L) }
     var playing by remember { mutableStateOf(true) }
 
     LaunchedEffect(until) {
@@ -537,6 +565,7 @@ private fun BoxScope.TvControlsOverlay(
             playerProvider()?.let {
                 positionMs = it.currentPosition.coerceAtLeast(0)
                 durationMs = it.duration.coerceAtLeast(0)
+                bufferedMs = it.bufferedPosition.coerceAtLeast(0)
                 playing = it.isPlaying
             }
             visible = true
@@ -569,12 +598,23 @@ private fun BoxScope.TvControlsOverlay(
                 )
             }
             Spacer(Modifier.height(10.dp))
+            // Three layers, YouTube's convention: dim track for the whole
+            // video, a lighter band for how far ahead is downloaded, red for
+            // what has been played. The buffered band is the honest answer to
+            // "why did it stop?" — a band that stays hard up against the red
+            // is a starving connection, not a broken app.
             Box(
                 Modifier
                     .fillMaxWidth()
                     .height(6.dp)
-                    .background(Color(0x59FFFFFF))
+                    .background(Color(0x40FFFFFF))
             ) {
+                Box(
+                    Modifier
+                        .fillMaxWidth((bufferedMs.toFloat() / durationMs).coerceIn(0f, 1f))
+                        .height(6.dp)
+                        .background(Color(0x8CFFFFFF))
+                )
                 Box(
                     Modifier
                         .fillMaxWidth((positionMs.toFloat() / durationMs).coerceIn(0f, 1f))
