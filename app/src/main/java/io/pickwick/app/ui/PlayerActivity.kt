@@ -107,6 +107,10 @@ class PlayerActivity : ComponentActivity() {
     /** Kid's sticky captions choice (survives across videos and app runs). */
     private var captionsOn = false
     private var currentSubtitles: List<YouTubeRepository.Subtitle> = emptyList()
+    private val trackPanel = mutableStateOf(TvTrackPanel.Hidden)
+    private val trackCursor = mutableIntStateOf(0)
+    private val selectedAudioTrack = mutableIntStateOf(0)
+    private val selectedSubtitleTrack = mutableIntStateOf(-1)
     /** Community-marked promo stretches for the current video (see SponsorBlock). */
     private val sponsorSegments =
         mutableStateOf<List<io.pickwick.app.data.SponsorBlock.Segment>>(emptyList())
@@ -409,7 +413,16 @@ class PlayerActivity : ComponentActivity() {
                         CircularProgressIndicator()
                     }
                     if (isTv && timeUp == null) {
-                        TvControlsOverlay(controlsVisibleUntil, sponsorSegments.value) { player }
+                        TvControlsOverlay(
+                            controlsVisibleUntil,
+                            sponsorSegments.value,
+                            trackPanel,
+                            trackCursor,
+                            playback,
+                            selectedAudioTrack.intValue,
+                            selectedSubtitleTrack.intValue,
+                            captionsOn
+                        ) { player }
                     }
                     if (timeUp == null) NoticeOverlay(notice)
                 }
@@ -437,6 +450,9 @@ class PlayerActivity : ComponentActivity() {
      */
     private fun playIndex(i: Int) {
         indexState.intValue = i
+        selectedAudioTrack.intValue = 0
+        selectedSubtitleTrack.intValue = -1
+        trackPanel.value = TvTrackPanel.Hidden
         resolveJob?.cancel()
         resolveJob = lifecycleScope.launch {
             playbackState.value = null
@@ -513,6 +529,7 @@ class PlayerActivity : ComponentActivity() {
     ) {
         val exo = player ?: return
         currentSubtitles = pb.subtitles
+        val audioUrl = pb.audioTracks.getOrNull(selectedAudioTrack.intValue)?.url ?: pb.audioUrl
         // DefaultDataSource: http for streams, file for offline
         // downloads, content for sideloaded SAF files. Wrapped so
         // googlevideo streams fetch in range-parameter chunks.
@@ -527,8 +544,8 @@ class PlayerActivity : ComponentActivity() {
             androidx.media3.exoplayer.source.ProgressiveMediaSource
                 .Factory(factory).createMediaSource(MediaItem.fromUri(url))
         val wasPlaying = if (resumeMs != null) exo.playWhenReady else true
-        if (audioOnly && pb.audioUrl != null) {
-            exo.setMediaSource(progressive(pb.audioUrl))
+        if (audioOnly && audioUrl != null) {
+            exo.setMediaSource(progressive(audioUrl))
         } else {
             // Subtitles ride along as side-loaded tracks on the video item;
             // DefaultMediaSourceFactory parses them during extraction (the
@@ -552,9 +569,9 @@ class PlayerActivity : ComponentActivity() {
                 )
             // HD: separate video+audio merged in the player (NewPipe-style).
             exo.setMediaSource(
-                if (pb.audioUrl != null) {
+                if (audioUrl != null) {
                     androidx.media3.exoplayer.source.MergingMediaSource(
-                        video, progressive(pb.audioUrl)
+                        video, progressive(audioUrl)
                     )
                 } else video
             )
@@ -649,6 +666,10 @@ class PlayerActivity : ComponentActivity() {
     override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent?): Boolean {
         if (!isTv) return super.onKeyDown(keyCode, event)
         val exo = player ?: return super.onKeyDown(keyCode, event)
+        if (trackPanel.value != TvTrackPanel.Hidden && handleTrackPanelKey(keyCode)) {
+            pokeControls()
+            return true
+        }
         val handled = when (keyCode) {
             android.view.KeyEvent.KEYCODE_DPAD_CENTER,
             android.view.KeyEvent.KEYCODE_ENTER,
@@ -667,10 +688,17 @@ class PlayerActivity : ComponentActivity() {
             }
             // Up just peeks at the time without changing anything.
             android.view.KeyEvent.KEYCODE_DPAD_UP -> true
-            // Down (or a dedicated captions key) toggles subtitles.
-            android.view.KeyEvent.KEYCODE_DPAD_DOWN,
+            android.view.KeyEvent.KEYCODE_DPAD_DOWN -> {
+                trackCursor.intValue = 0
+                trackPanel.value = TvTrackPanel.Toolbar
+                true
+            }
             android.view.KeyEvent.KEYCODE_CAPTIONS -> {
-                toggleCaptions(); true
+                trackCursor.intValue = if (captionsOn) {
+                    selectedSubtitleTrack.intValue + 1
+                } else 0
+                trackPanel.value = TvTrackPanel.Subtitles
+                true
             }
             else -> false
         }
@@ -679,6 +707,94 @@ class PlayerActivity : ComponentActivity() {
             return true
         }
         return super.onKeyDown(keyCode, event)
+    }
+
+    private fun handleTrackPanelKey(keyCode: Int): Boolean {
+        val pb = currentPlayback ?: return false
+        return when (trackPanel.value) {
+            TvTrackPanel.Hidden -> false
+            TvTrackPanel.Toolbar -> when (keyCode) {
+                android.view.KeyEvent.KEYCODE_DPAD_LEFT -> {
+                    trackCursor.intValue = 0; true
+                }
+                android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                    trackCursor.intValue = 1; true
+                }
+                android.view.KeyEvent.KEYCODE_DPAD_CENTER,
+                android.view.KeyEvent.KEYCODE_ENTER -> {
+                    trackPanel.value = if (trackCursor.intValue == 0) {
+                        trackCursor.intValue = selectedAudioTrack.intValue
+                        TvTrackPanel.Audio
+                    } else {
+                        trackCursor.intValue = if (captionsOn) {
+                            selectedSubtitleTrack.intValue + 1
+                        } else 0
+                        TvTrackPanel.Subtitles
+                    }
+                    true
+                }
+                android.view.KeyEvent.KEYCODE_DPAD_UP,
+                android.view.KeyEvent.KEYCODE_BACK -> {
+                    trackPanel.value = TvTrackPanel.Hidden; true
+                }
+                else -> false
+            }
+            TvTrackPanel.Audio -> handleOptionKey(
+                keyCode, pb.audioTracks.size.coerceAtLeast(1), toolbarCursor = 0
+            ) {
+                val chosen = if (pb.audioTracks.isEmpty()) 0
+                    else trackCursor.intValue.coerceIn(0, pb.audioTracks.lastIndex)
+                if (pb.audioTracks.isNotEmpty() && chosen != selectedAudioTrack.intValue) {
+                    selectedAudioTrack.intValue = chosen
+                    attachSources(pb, audioOnly = false, resumeMs = player?.currentPosition)
+                }
+                notice.value = Notice(
+                    "Audio: " + (pb.audioTracks.getOrNull(chosen)?.name ?: "Original")
+                )
+            }
+            TvTrackPanel.Subtitles -> handleOptionKey(
+                keyCode, pb.subtitles.size + 1, toolbarCursor = 1
+            ) {
+                val chosen = trackCursor.intValue - 1
+                selectedSubtitleTrack.intValue = chosen
+                captionsOn = chosen >= 0
+                getSharedPreferences("player", MODE_PRIVATE)
+                    .edit().putBoolean("captions", captionsOn).apply()
+                applyCaptionsPreference()
+                notice.value = Notice(
+                    if (chosen < 0) "Subtitles off"
+                    else "Subtitles: ${pb.subtitles[chosen].name}"
+                )
+            }
+        }
+    }
+
+    private fun handleOptionKey(
+        keyCode: Int,
+        optionCount: Int,
+        toolbarCursor: Int,
+        select: () -> Unit
+    ): Boolean = when (keyCode) {
+        android.view.KeyEvent.KEYCODE_DPAD_UP -> {
+            trackCursor.intValue = (trackCursor.intValue - 1).coerceAtLeast(0); true
+        }
+        android.view.KeyEvent.KEYCODE_DPAD_DOWN -> {
+            trackCursor.intValue = (trackCursor.intValue + 1).coerceAtMost(optionCount - 1); true
+        }
+        android.view.KeyEvent.KEYCODE_DPAD_CENTER,
+        android.view.KeyEvent.KEYCODE_ENTER -> {
+            select()
+            trackPanel.value = TvTrackPanel.Toolbar
+            trackCursor.intValue = toolbarCursor
+            true
+        }
+        android.view.KeyEvent.KEYCODE_DPAD_LEFT,
+        android.view.KeyEvent.KEYCODE_BACK -> {
+            trackPanel.value = TvTrackPanel.Toolbar
+            trackCursor.intValue = toolbarCursor
+            true
+        }
+        else -> false
     }
 
     /**
@@ -690,8 +806,10 @@ class PlayerActivity : ComponentActivity() {
         val builder = exo.trackSelectionParameters.buildUpon()
             .setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_TEXT, !captionsOn)
         if (captionsOn) {
+            val selected = currentSubtitles.getOrNull(selectedSubtitleTrack.intValue)
             val languages =
-                (listOf(java.util.Locale.getDefault().language) +
+                (listOfNotNull(selected?.languageTag) +
+                    java.util.Locale.getDefault().language +
                     currentSubtitles.map { it.languageTag })
                     .filter { it.isNotBlank() }.distinct()
             builder.setPreferredTextLanguages(*languages.toTypedArray())
@@ -774,6 +892,8 @@ class PlayerActivity : ComponentActivity() {
 /** A transient kid-facing message; `at` gives repeats a fresh identity. */
 private data class Notice(val text: String, val at: Long = System.currentTimeMillis())
 
+private enum class TvTrackPanel { Hidden, Toolbar, Audio, Subtitles }
+
 /** Top-center pill that shows a notice for a few seconds, then fades away. */
 @Composable
 private fun BoxScope.NoticeOverlay(state: MutableState<Notice?>) {
@@ -799,9 +919,17 @@ private fun BoxScope.NoticeOverlay(state: MutableState<Notice?>) {
 private fun BoxScope.TvControlsOverlay(
     visibleUntil: State<Long>,
     sponsorSegments: List<io.pickwick.app.data.SponsorBlock.Segment>,
+    panelState: State<TvTrackPanel>,
+    cursorState: State<Int>,
+    playback: YouTubeRepository.Playback?,
+    selectedAudio: Int,
+    selectedSubtitle: Int,
+    captionsOn: Boolean,
     playerProvider: () -> ExoPlayer?
 ) {
     val until by visibleUntil
+    val panel by panelState
+    val cursor by cursorState
     var visible by remember { mutableStateOf(false) }
     var positionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
@@ -822,7 +950,7 @@ private fun BoxScope.TvControlsOverlay(
         visible = false
     }
 
-    if (visible && durationMs > 0) {
+    if ((visible || panel != TvTrackPanel.Hidden) && durationMs > 0) {
         Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -830,6 +958,57 @@ private fun BoxScope.TvControlsOverlay(
                 .background(Color(0xB3000000))
                 .padding(horizontal = 32.dp, vertical = 20.dp)
         ) {
+            if (panel == TvTrackPanel.Audio || panel == TvTrackPanel.Subtitles) {
+                val options = if (panel == TvTrackPanel.Audio) {
+                    playback?.audioTracks.orEmpty().mapIndexed { index, track ->
+                        val original = if (track.original) "  Original" else ""
+                        Triple(track.name + original, index == selectedAudio, index)
+                    }.ifEmpty { listOf(Triple("Original", true, 0)) }
+                } else {
+                    listOf(Triple("Off", !captionsOn, 0)) +
+                        playback?.subtitles.orEmpty().mapIndexed { index, track ->
+                            Triple(track.name, captionsOn && index == selectedSubtitle, index + 1)
+                        }
+                }
+                Column(
+                    modifier = Modifier
+                        .padding(bottom = 16.dp)
+                        .background(Color(0xE6161616), RoundedCornerShape(6.dp))
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        if (panel == TvTrackPanel.Audio) "Audio" else "Subtitles",
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    val windowStart = (cursor - 3)
+                        .coerceIn(0, (options.size - 7).coerceAtLeast(0))
+                    options.drop(windowStart).take(7).forEach { (label, checked, index) ->
+                        Text(
+                            (if (checked) "●  " else "○  ") + label,
+                            color = Color.White,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    if (index == cursor) Color(0xFF3D7E76)
+                                    else Color.Transparent,
+                                    RoundedCornerShape(4.dp)
+                                )
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                        )
+                    }
+                }
+            }
+            if (panel != TvTrackPanel.Hidden) {
+                Row(
+                    modifier = Modifier.padding(bottom = 14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    TvTrackIcon("♫", "Audio", panel == TvTrackPanel.Toolbar && cursor == 0)
+                    TvTrackIcon("CC", "Subtitles", panel == TvTrackPanel.Toolbar && cursor == 1)
+                }
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -884,5 +1063,23 @@ private fun BoxScope.TvControlsOverlay(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun TvTrackIcon(symbol: String, label: String, selected: Boolean) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            symbol,
+            color = Color.White,
+            style = MaterialTheme.typography.titleLarge,
+            modifier = Modifier
+                .background(
+                    if (selected) Color(0xFF3D7E76) else Color(0x66000000),
+                    RoundedCornerShape(4.dp)
+                )
+                .padding(horizontal = 14.dp, vertical = 8.dp)
+        )
+        Text(label, color = Color.White, style = MaterialTheme.typography.labelMedium)
     }
 }

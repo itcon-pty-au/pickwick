@@ -110,12 +110,12 @@ internal fun Modifier.dpadLongPress(onLongPress: () -> Unit): Modifier {
         when {
             event.type == KeyEventType.KeyDown && event.nativeKeyEvent.repeatCount == 1 -> {
                 fired = true
-                onLongPress()
                 true
             }
             event.type == KeyEventType.KeyDown && event.nativeKeyEvent.repeatCount > 1 -> true
             event.type == KeyEventType.KeyUp && fired -> {
                 fired = false
+                onLongPress()
                 true
             }
             else -> false
