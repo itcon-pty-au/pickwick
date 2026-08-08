@@ -327,6 +327,14 @@ internal fun DirectorySection(
             (selectedAges.isEmpty() || e.ages.any { it in selectedAges }) &&
             (selectedTopics.isEmpty() || e.topics.any { it in selectedTopics })
     }
+    // What "Add all" would actually add: the filtered view, minus what's
+    // already in the list — so the button doubles as a "how many are new" count.
+    val addable = remember(shown, entries) {
+        shown.mapNotNull { d ->
+            WhitelistParser.parse(d.url).sources.firstOrNull()?.copy(label = d.name)
+        }.distinctBy { it.id }
+            .filter { p -> entries.none { it.id == p.id || it.url == p.url } }
+    }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(
             if (shown.size == all.size) "${all.size} channels & playlists"
@@ -335,6 +343,14 @@ internal fun DirectorySection(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.weight(1f)
         )
+        TextButton(
+            modifier = Modifier.tvFocusHighlight(),
+            enabled = addable.isNotEmpty(),
+            onClick = {
+                addable.forEach(onAdd)
+                message = "Added ${addable.size} — tagged NEW in the channel list below"
+            }
+        ) { Text(if (addable.isEmpty()) "All added ✓" else "Add all (${addable.size})") }
         TextButton(
             modifier = Modifier.tvFocusHighlight(),
             enabled = !busy,

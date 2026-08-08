@@ -495,11 +495,27 @@ private fun AdminScreen(
                 pairingStore.paired().forEach { LanClient.pushConfig(it, json) }
             }
         }
+        // Same write-through for the break skip — one field, straight to disk
+        // and the paired devices.
+        fun commitBreakPass(kidId: String?, passUntil: Long?) {
+            io.pickwick.app.data.LanPushScope.scope.launch {
+                val updated = configStore.load().let { c ->
+                    if (kidId == null) c.copy(limits = c.limits.copy(breakPassUntilMillis = passUntil))
+                    else c.copy(profiles = c.profiles.map {
+                        if (it.id == kidId) it.copy(limits = it.limits.copy(breakPassUntilMillis = passUntil)) else it
+                    })
+                }
+                configStore.save(updated)
+                val json = ConfigStore.toJson(updated)
+                pairingStore.paired().forEach { LanClient.pushConfig(it, json) }
+            }
+        }
         if (profiles.isEmpty()) {
             ScreenTimeSection(
                 limits,
                 onChanged = { limits = it },
-                onPassCommitted = { windowId, until -> commitPass(null, windowId, until) }
+                onPassCommitted = { windowId, until -> commitPass(null, windowId, until) },
+                onBreakPassCommitted = { until -> commitBreakPass(null, until) }
             )
         } else {
             // Per-kid rules: pick a kid, edit their rules, or copy a sibling's.
@@ -516,7 +532,8 @@ private fun AdminScreen(
                         if (it.id == editingKid.id) it.copy(limits = newLimits) else it
                     }
                 },
-                onPassCommitted = { windowId, until -> commitPass(editingKid.id, windowId, until) }
+                onPassCommitted = { windowId, until -> commitPass(editingKid.id, windowId, until) },
+                onBreakPassCommitted = { until -> commitBreakPass(editingKid.id, until) }
             )
             val others = profiles.filter { it.id != editingKid.id }
             if (others.isNotEmpty()) {

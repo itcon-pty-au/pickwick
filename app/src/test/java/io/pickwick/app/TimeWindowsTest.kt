@@ -152,6 +152,23 @@ class TimeWindowsTest {
     }
 
     @Test
+    fun `a break skip round-trips and changes the fingerprint`() {
+        val plain = config(Limits(sessionMinutes = 30, breakMinutes = 30))
+        val skipped = config(
+            Limits(sessionMinutes = 30, breakMinutes = 30, breakPassUntilMillis = 1_800_000_000_000L)
+        )
+        // Same reason as the window pass: the reconcile only re-pushes on a
+        // mismatch, so a skip that didn't move the hash would never reach a
+        // sleeping TV.
+        assertTrue(ConfigStore.fingerprint(plain) != ConfigStore.fingerprint(skipped))
+        val parsed = ConfigStore.fromJson(ConfigStore.toJson(skipped))
+        assertEquals(
+            1_800_000_000_000L,
+            parsed.limits.breakPassUntilMillis
+        )
+    }
+
+    @Test
     fun `a pass changes the fingerprint so a sleeping device still hears about it`() {
         val plain = config(Limits(windows = listOf(school)))
         val passed = config(Limits(windows = listOf(school.copy(passUntilMillis = 1_800_000_000_000L))))

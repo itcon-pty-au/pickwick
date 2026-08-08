@@ -50,11 +50,16 @@ class ConfigStore(context: Context) {
      */
     private fun scrubLapsedPasses(w: Whitelist): Whitelist {
         val now = System.currentTimeMillis()
-        fun scrub(l: Limits): Limits =
-            if (l.windows.none { (it.passUntilMillis ?: Long.MAX_VALUE) < now }) l
-            else l.copy(windows = l.windows.map {
-                if ((it.passUntilMillis ?: Long.MAX_VALUE) < now) it.copy(passUntilMillis = null) else it
-            })
+        fun scrub(l: Limits): Limits {
+            val windows =
+                if (l.windows.none { (it.passUntilMillis ?: Long.MAX_VALUE) < now }) l.windows
+                else l.windows.map {
+                    if ((it.passUntilMillis ?: Long.MAX_VALUE) < now) it.copy(passUntilMillis = null) else it
+                }
+            val breakPass = l.breakPassUntilMillis?.takeIf { it >= now }
+            return if (windows === l.windows && breakPass == l.breakPassUntilMillis) l
+            else l.copy(windows = windows, breakPassUntilMillis = breakPass)
+        }
         val limits = scrub(w.limits)
         val profiles = w.profiles.map { p -> p.copy(limits = scrub(p.limits)) }
         return if (limits === w.limits && profiles == w.profiles) w
@@ -311,13 +316,19 @@ class ConfigStore(context: Context) {
                 l.sessionMinutes, l.weekdaySessions, l.weekendSessions, l.breakMinutes,
                 legacy?.startMin, legacy?.endMin
             ).joinToString(",")
-            if (legacy != null || l.windows.isEmpty()) return base
+            // Appended only when set (same reason as pauses: the offline
+            // reconcile only re-pushes on a mismatch, so a break skip that
+            // didn't move the hash would never reach a sleeping device) — and
+            // here rather than at the Whitelist level, so a per-kid skip moves
+            // that kid's part of the hash too.
+            val breakPass = l.breakPassUntilMillis?.let { ";BP:$it" } ?: ""
+            if (legacy != null || l.windows.isEmpty()) return base + breakPass
             return base + l.windows.joinToString(";", prefix = ";W:") { w ->
                 // Parent-typed text is scrubbed of this format's separators so
                 // two different window lists can't canonicalize identically.
                 "${w.id},${w.label.replace(Regex("[,;]"), " ")},${w.startMin},${w.endMin}," +
                     "${w.days.sorted().joinToString(".")},${w.passUntilMillis ?: 0}"
-            }
+            } + breakPass
         }
 
         private fun limitsToJson(l: Limits) = JSONObject().apply {
@@ -339,6 +350,7 @@ class ConfigStore(context: Context) {
                 put("bedtimeEnd", it.endMin)
             }
             l.pausedUntilMillis?.let { put("pausedUntil", it) }
+            l.breakPassUntilMillis?.let { put("breakPassUntil", it) }
         }
 
         /** Windows as a JSON array string — also the SharedPreferences form. */
@@ -411,7 +423,8 @@ class ConfigStore(context: Context) {
                 weekendSessions = opt("weekendSessions"),
                 breakMinutes = opt("breakMinutes"),
                 windows = windows,
-                pausedUntilMillis = if (lo.has("pausedUntil")) lo.getLong("pausedUntil") else null
+                pausedUntilMillis = if (lo.has("pausedUntil")) lo.getLong("pausedUntil") else null,
+                breakPassUntilMillis = if (lo.has("breakPassUntil")) lo.getLong("breakPassUntil") else null
             )
         }
 

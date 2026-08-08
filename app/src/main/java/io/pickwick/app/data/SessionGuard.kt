@@ -43,6 +43,7 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
             "Pickwick",
             "limits[$profileSuffix] <- session=${l.sessionMinutes} " +
                 "wd=${l.weekdaySessions} we=${l.weekendSessions} break=${l.breakMinutes} " +
+                "breakPass=${l.breakPassUntilMillis} " +
                 "windows=${l.windows.joinToString { it.label }} paused=${l.pausedUntilMillis}"
         )
         prefs.edit()
@@ -52,6 +53,7 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
             .putInt("l_break", l.breakMinutes ?: -1)
             .putString("l_windows", ConfigStore.windowsToJson(l.windows))
             .putLong("l_paused", l.pausedUntilMillis ?: -1L)
+            .putLong("l_breakPass", l.breakPassUntilMillis ?: -1L)
             .apply()
     }
 
@@ -63,7 +65,8 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
             weekendSessions = get("l_we"),
             breakMinutes = get("l_break"),
             windows = ConfigStore.windowsFromJson(prefs.getString("l_windows", null)),
-            pausedUntilMillis = prefs.getLong("l_paused", -1L).takeIf { it > 0 }
+            pausedUntilMillis = prefs.getLong("l_paused", -1L).takeIf { it > 0 },
+            breakPassUntilMillis = prefs.getLong("l_breakPass", -1L).takeIf { it > 0 }
         )
     }
 
@@ -74,6 +77,21 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
      */
     private fun isPaused(l: Limits): Boolean =
         System.currentTimeMillis() < (l.pausedUntilMillis ?: 0L)
+
+    /**
+     * Parent's "skip the next break", still unspent. One break only, per
+     * device: the first break it waives writes the pass's own timestamp as
+     * spent, so the same pass never covers a second one here. Expires at
+     * midnight on its own (it's set to end-of-today and scrubbed on load).
+     */
+    private fun breakPassActive(l: Limits): Boolean {
+        val pass = l.breakPassUntilMillis ?: return false
+        return System.currentTimeMillis() < pass && prefs.getLong("breakPassSpent", 0) != pass
+    }
+
+    private fun spendBreakPass(l: Limits) {
+        prefs.edit().putLong("breakPassSpent", l.breakPassUntilMillis ?: return).apply()
+    }
 
 
     /** Daily watch budget in ms (incl. parent-granted bonus), or null when not configured. */
@@ -142,7 +160,14 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
                 prefs.edit().putLong("lockUntil", 0).putLong("sittingWatchedMs", 0).apply()
             }
         } else if (now < lockUntil) {
-            return "Time for a break! You can watch again at ${timeOf(lockUntil)} ⏰"
+            // Skip mid-break lifts the running break — that's the one the
+            // parent is looking at.
+            if (breakPassActive(l)) {
+                spendBreakPass(l)
+                prefs.edit().putLong("lockUntil", 0).putLong("sittingWatchedMs", 0).apply()
+            } else {
+                return "Time for a break! You can watch again at ${timeOf(lockUntil)} ⏰"
+            }
         }
 
         startFreshSittingAfterGap(l, now)
@@ -182,6 +207,13 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
         val breakLen = l.breakMinutes ?: return null
         val sittingCapMs = l.sessionMinutes?.let { it * 60_000L } ?: return null
         if (sitting >= sittingCapMs) {
+            // The parent's skip: no lock, a fresh sitting, and the film plays
+            // on. The daily budget above still caps the day.
+            if (breakPassActive(l)) {
+                spendBreakPass(l)
+                prefs.edit().putLong("sittingWatchedMs", 0).apply()
+                return null
+            }
             prefs.edit().putLong("lockUntil", now + breakLen * 60_000L).apply()
             return "Time for a break! Great watching 🎉"
         }
@@ -207,8 +239,9 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
                 candidates += (budget - prefs.getLong("dailyWatchedMs", 0))
                     .coerceAtLeast(0) * 100 / multiplierPercent
             }
-            // The sitting cap only counts while it can actually lock (break set).
-            if (l.breakMinutes != null) l.sessionMinutes?.let { cap ->
+            // The sitting cap only counts while it can actually lock (break
+            // set, and no unspent skip waiting to waive it).
+            if (l.breakMinutes != null && !breakPassActive(l)) l.sessionMinutes?.let { cap ->
                 candidates += (cap * 60_000L - prefs.getLong("sittingWatchedMs", 0))
                     .coerceAtLeast(0) * 100 / multiplierPercent
             }
@@ -267,6 +300,7 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
                 .putLong("lockUntil", 0)
                 .putLong("bonusMs", 0)
                 .putLong("windowPassUntil", 0)
+                .putLong("breakPassSpent", 0)
                 .apply()
         }
     }

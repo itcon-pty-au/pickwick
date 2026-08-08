@@ -2,7 +2,9 @@ package io.pickwick.app.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -34,7 +36,9 @@ internal fun ScreenTimeSection(
      * without Save & close must still get tonight off. Null (tests/previews)
      * leaves the pass as form state only.
      */
-    onPassCommitted: ((windowId: String, passUntil: Long?) -> Unit)? = null
+    onPassCommitted: ((windowId: String, passUntil: Long?) -> Unit)? = null,
+    /** Same write-through for the break skip below the break stepper. */
+    onBreakPassCommitted: ((passUntil: Long?) -> Unit)? = null
 ) {
     StepperRow(
         label = "Time per session",
@@ -60,6 +64,13 @@ internal fun ScreenTimeSection(
         format = { "$it min" },
         onChanged = { onChanged(limits.copy(breakMinutes = it)) }
     )
+    // Only while there's a break rule to skip — no rule, no row.
+    if (limits.breakMinutes != null) {
+        SkipBreakRow(limits.breakPassUntilMillis) { until ->
+            onChanged(limits.copy(breakPassUntilMillis = until))
+            onBreakPassCommitted?.invoke(until)
+        }
+    }
 
     TimeWindowsSection(
         limits.windows,
@@ -143,6 +154,20 @@ private fun TimeWindowsSection(
                 )
             }
         ) { Text("+ School hours") }
+        TextButton(
+            modifier = Modifier.tvFocusHighlight(),
+            onClick = {
+                onChanged(
+                    // A deliberate placeholder — blank name, neutral midday
+                    // span — that reads as "yours to fill in", not a schedule
+                    // we invented.
+                    windows + TimeWindow(
+                        id = newWindowId(windows), label = "",
+                        startMin = 12 * 60, endMin = 14 * 60, days = ALL_DAYS
+                    )
+                )
+            }
+        ) { Text("+ Custom") }
     }
 }
 
@@ -185,6 +210,28 @@ private fun TimeWindowCard(
         )
         DayChips(window.days) { onChanged(window.copy(days = it)) }
         SkipOnceRow(window, onPassCommitted, onChanged)
+    }
+}
+
+/**
+ * The film that runs past the sitting cap: waives the next break only — the
+ * first break it covers spends it, and an unused skip expires at midnight.
+ * Committed and pushed the moment it's tapped, same as a window's Skip.
+ */
+@Composable
+private fun SkipBreakRow(passUntil: Long?, onChanged: (Long?) -> Unit) {
+    val skipped = (passUntil ?: 0L) > System.currentTimeMillis()
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            if (skipped) "  Next break skipped" else "  Skip the next break",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f)
+        )
+        TextButton(
+            modifier = Modifier.tvFocusHighlight(),
+            onClick = { onChanged(if (skipped) null else endOfToday()) }
+        ) { Text(if (skipped) "Undo" else "Skip") }
     }
 }
 
@@ -232,7 +279,12 @@ private fun SkipOnceRow(
 
 @Composable
 private fun DayChips(days: Set<Int>, onChanged: (Set<Int>) -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+    // Scrolls: seven chips overflow a phone in portrait, and clipping at the
+    // screen edge mangled the row.
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier.horizontalScroll(rememberScrollState())
+    ) {
         DAY_LABELS.forEachIndexed { index, name ->
             val day = index + 1
             val on = day in days

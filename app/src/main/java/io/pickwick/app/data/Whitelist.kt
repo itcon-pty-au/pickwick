@@ -92,6 +92,14 @@ data class Limits(
     val weekendSessions: Int? = null,
     val breakMinutes: Int? = null,
     /**
+     * Parent pass over the next break — the film that runs past the sitting
+     * cap. One break only: the first break it waives consumes it (per device),
+     * and set to the next midnight so an unused skip quietly expires. Kept in
+     * the config like a window's pass so it reaches every device and moves the
+     * fingerprint.
+     */
+    val breakPassUntilMillis: Long? = null,
+    /**
      * Blocked clock windows. Empty = no window at all; there is no default
      * bedtime for a parent who never set one.
      */
