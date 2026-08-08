@@ -410,16 +410,36 @@ private fun AdminScreen(
             if (devices.isEmpty()) return@launch
             val appContext = context.applicationContext
             io.pickwick.app.data.LanPushScope.scope.launch {
-                var ok = 0
-                devices.forEach { if (LanClient.pushConfig(it, json)) ok++ }
+                // Logged per device, like the reconcile's line: "did the save
+                // reach the TV" was undiagnosable when the only witness was a
+                // toast nobody was looking at.
+                suspend fun push(targets: List<PairedDevice>): List<PairedDevice> =
+                    targets.filterNot { d ->
+                        LanClient.pushConfig(d, json).also { sent ->
+                            android.util.Log.i(
+                                "Pickwick",
+                                "save push → ${d.name}: ${if (sent) "accepted" else "unreachable"}"
+                            )
+                        }
+                    }
+                var missed = push(devices)
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                     android.widget.Toast.makeText(
                         appContext,
-                        if (ok == devices.size) "Synced to $ok device(s) ✓"
-                        else "Saved — ${devices.size - ok} device(s) unreachable; " +
+                        if (missed.isEmpty()) "Synced to ${devices.size} device(s) ✓"
+                        else "Saved — ${missed.size} device(s) unreachable; " +
                             "they'll sync when back online",
                         android.widget.Toast.LENGTH_LONG
                     ).show()
+                }
+                // A standby Chromecast rejoins Wi-Fi seconds after waking, and a
+                // just-(re)installed app has no server until its next launch —
+                // both miss the save by moments. Two quiet retries beat leaving
+                // the parent to wonder until the 5-minute reconcile.
+                repeat(2) {
+                    if (missed.isEmpty()) return@launch
+                    kotlinx.coroutines.delay(20_000)
+                    missed = push(missed)
                 }
             }
         }
