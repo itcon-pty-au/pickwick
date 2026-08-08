@@ -2,6 +2,10 @@ package io.pickwick.app.data
 
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
@@ -30,8 +34,45 @@ data class PairedDevice(
     val name: String,
     val host: String,
     val port: Int,
-    val token: String
-)
+    /** OUR token, presented as X-Token — the credential, not the device's name. */
+    val token: String,
+    /**
+     * The remote device's own identity token, learned from its /status reply.
+     * host:port are just where the device happened to live when the QR was
+     * scanned — DHCP re-leases and port drift both invalidate them — so this
+     * is the only stable way to recognize "our TV" during re-discovery.
+     * Null on entries written by older builds until the first successful
+     * sync backfills it.
+     */
+    val id: String? = null
+) {
+    /**
+     * Stable list key: the remote identity when known, else the address the
+     * device was paired at. Never [token] — every entry carries THIS phone's
+     * token, so token-keyed list operations match every entry at once and
+     * collapse the list to a single device.
+     */
+    val key: String get() = id ?: "$host:$port"
+}
+
+/**
+ * Add-or-replace, keyed the same way [PairedDevice.key] is: an entry is the
+ * same device if the identities match, or failing that if it lives at the same
+ * address — a re-pair of a moved TV (known id, new address) must replace the
+ * stale entry, and a re-pair of an id-less legacy entry can only match on
+ * where it lives.
+ */
+internal fun List<PairedDevice>.upsertPaired(device: PairedDevice): List<PairedDevice> =
+    filterNot {
+        (device.id != null && it.id == device.id) ||
+            (it.host == device.host && it.port == device.port)
+    } + device
+
+internal fun List<PairedDevice>.removePaired(key: String): List<PairedDevice> =
+    filterNot { it.key == key }
+
+internal fun List<PairedDevice>.renamePaired(key: String, newName: String): List<PairedDevice> =
+    map { if (it.key == key) it.copy(name = newName) else it }
 
 /** Both roles: the TV's own pairing token, and the phone's list of paired devices. */
 class PairingStore(context: Context) {
@@ -109,20 +150,27 @@ class PairingStore(context: Context) {
             val arr = JSONArray(prefs.getString("paired", "[]"))
             (0 until arr.length()).map { i ->
                 val o = arr.getJSONObject(i)
-                PairedDevice(o.getString("name"), o.getString("host"), o.getInt("port"), o.getString("token"))
+                PairedDevice(
+                    o.getString("name"), o.getString("host"), o.getInt("port"),
+                    o.getString("token"), o.optString("id").ifEmpty { null }
+                )
             }
         }.getOrDefault(emptyList())
 
-    fun addPaired(device: PairedDevice) {
-        val list = paired().filter { it.token != device.token } + device
-        savePaired(list)
-    }
+    fun addPaired(device: PairedDevice) = savePaired(paired().upsertPaired(device))
 
-    fun removePaired(token: String) = savePaired(paired().filter { it.token != token })
+    fun removePaired(key: String) = savePaired(paired().removePaired(key))
 
-    /** Parent-chosen display name ("Living room TV"); identity stays the token. */
-    fun renamePaired(token: String, newName: String) = savePaired(
-        paired().map { if (it.token == token) it.copy(name = newName) else it }
+    /** Parent-chosen display name ("Living room TV"); identity stays [PairedDevice.key]. */
+    fun renamePaired(key: String, newName: String) = savePaired(paired().renamePaired(key, newName))
+
+    /**
+     * Re-point an entry after re-discovery or an identity backfill. Matched on
+     * the old host:port (the only stable key an id-less legacy entry has);
+     * everything else about the entry is replaced.
+     */
+    fun replacePaired(old: PairedDevice, new: PairedDevice) = savePaired(
+        paired().map { if (it.host == old.host && it.port == old.port) new else it }
     )
 
     private fun savePaired(list: List<PairedDevice>) {
@@ -130,6 +178,7 @@ class PairingStore(context: Context) {
         list.forEach { d ->
             arr.put(JSONObject().apply {
                 put("name", d.name); put("host", d.host); put("port", d.port); put("token", d.token)
+                d.id?.let { put("id", it) }
             })
         }
         prefs.edit().putString("paired", arr.toString()).apply()
@@ -223,7 +272,7 @@ class LanServer(
 
     fun start() {
         if (serverSocket != null) return
-        for (candidate in 8765..8775) {
+        for (candidate in PORT_RANGE) {
             try {
                 serverSocket = ServerSocket(candidate)
                 port = candidate
@@ -333,8 +382,12 @@ class LanServer(
         val path = target.substringBefore('?')
 
         // Declared length is attacker-controlled and allocated in one go, so
-        // this check has to come before any body read.
-        if (contentLength > MAX_BODY_BYTES) {
+        // this check has to come before any body read. The index push carries a
+        // whole channel's video list (a deep channel passes 1 MB easily) and is
+        // only ever read behind the approved-token gate, so it gets a larger
+        // cap — the declared number alone allocates nothing.
+        val bodyCap = if (path == "/index") MAX_INDEX_BODY_BYTES else MAX_BODY_BYTES
+        if (contentLength > bodyCap) {
             respond(413, "too large")
             return
         }
@@ -511,6 +564,10 @@ class LanServer(
     }
 
     companion object {
+        /** Where the server may live: first free port wins. One spelling for
+         *  the bind loop and the re-discovery sweep, so they can't drift. */
+        val PORT_RANGE = 8765..8775
+
         /** Generous for a request line or header, far below anything harmful. */
         private const val MAX_LINE_BYTES = 8 * 1024
         private const val MAX_HEADERS = 50
@@ -521,6 +578,10 @@ class LanServer(
          * inside this, and it caps what a single request can make us allocate.
          */
         private const val MAX_BODY_BYTES = 1024 * 1024
+
+        /** /index only (see the cap check): ~250 bytes/video means 1 MB tops out
+         *  near 4,000 videos, and big channels go far past that. */
+        private const val MAX_INDEX_BODY_BYTES = 8 * 1024 * 1024
 
         private const val CORE_WORKERS = 2
         private const val MAX_WORKERS = 8
@@ -554,11 +615,139 @@ object LanClient {
     suspend fun status(device: PairedDevice): Pair<String, Long>? =
         fullStatus(device)?.let { it.hash to it.updatedAt }
 
+    /**
+     * A paired device stopped answering at its stored host:port — usually a
+     * DHCP re-lease after the TV sat powered off, sometimes the server binding
+     * a different port in its 8765..8775 range. Sweep our own /24 for a device
+     * that (a) accepts our token and (b) reports the identity we paired with,
+     * and return the entry re-pointed at wherever it actually is.
+     *
+     * Identity is the gate against adopting the wrong device: a kid tablet and
+     * the TV both accept this phone's token, and both answer /status. An
+     * id-less legacy entry (pre-backfill) is only re-pointed when the sweep
+     * finds exactly one candidate — ambiguity means keep the stale address and
+     * let the parent re-pair, rather than silently binding to the wrong kid.
+     *
+     * Null result = nothing found (device off / other network) or the cooldown
+     * hasn't lapsed. The cooldown keeps the periodic sync from sweeping the
+     * LAN every minute while a TV is legitimately powered down.
+     */
+    suspend fun rediscover(device: PairedDevice): PairedDevice? = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        val last = lastSweepAt.get()
+        if (now - last < SWEEP_COOLDOWN_MS || !lastSweepAt.compareAndSet(last, now)) {
+            return@withContext null
+        }
+        val prefixes = localV4Prefixes()
+        if (prefixes.isEmpty()) return@withContext null
+
+        val candidates = kotlinx.coroutines.coroutineScope {
+            val gate = Semaphore(48)
+            prefixes.flatMap { prefix -> (1..254).map { "$prefix.$it" } }
+                .map { host ->
+                    async {
+                        gate.withPermit { probeHost(host, device.token) }
+                    }
+                }.awaitAll().filterNotNull()
+        }
+
+        // One line per sweep so "found nothing" and "found the wrong thing"
+        // are distinguishable from logcat without a debugger.
+        android.util.Log.i(
+            "Pickwick",
+            "lan sweep for ${device.name}: ${candidates.size} candidate(s) " +
+                candidates.joinToString { "${it.first.first}:${it.first.second}" }
+        )
+        val match = when {
+            device.id != null -> candidates.firstOrNull { it.second == device.id }
+            candidates.size == 1 -> candidates.single()
+            else -> null
+        } ?: return@withContext null
+
+        val (hostPort, identity) = match
+        device.copy(host = hostPort.first, port = hostPort.second, id = identity ?: device.id)
+    }
+
+    /**
+     * One host's slice of the sweep: walk the server's port range in order.
+     * A raw connect classifies each port BEFORE any HTTP: no SYN-ACK inside
+     * the timeout means nobody lives at this address at all — skip the whole
+     * host, which is what keeps a full-subnet sweep at seconds, not minutes.
+     * Refused means the host is alive on some other port; connected-but-mute
+     * (a hung app still holding the port) means move on to the next port —
+     * an HTTP-level timeout must NOT be read as "dead host".
+     */
+    private fun probeHost(host: String, token: String): Pair<Pair<String, Int>, String?>? {
+        for (port in LanServer.PORT_RANGE) {
+            try {
+                java.net.Socket().use { s ->
+                    s.connect(java.net.InetSocketAddress(host, port), CONNECT_PROBE_MS)
+                }
+            } catch (e: java.net.SocketTimeoutException) {
+                return null // dead host: don't walk ten more ports into the void
+            } catch (e: java.io.IOException) {
+                continue // refused: alive, just nothing on this port
+            }
+            try {
+                scanClient.newCall(
+                    Request.Builder()
+                        .url("http://$host:$port/status")
+                        .header("X-Token", token)
+                        .build()
+                ).execute().use { resp ->
+                    if (resp.isSuccessful) {
+                        val json = JSONObject(resp.body?.string().orEmpty())
+                        return (host to port) to json.optString("token").ifEmpty { null }
+                    }
+                    // Answered but refused us (403: another family's device, or
+                    // our approval was revoked — nothing a rescan can fix).
+                    return null
+                }
+            } catch (e: java.io.IOException) {
+                // Listening but not speaking our HTTP: try the next port.
+            }
+        }
+        return null
+    }
+
+    /** The /24 prefixes of our own site-local IPv4 addresses ("192.168.0"). */
+    private fun localV4Prefixes(): List<String> = runCatching {
+        java.net.NetworkInterface.getNetworkInterfaces().asSequence()
+            .filter { it.isUp && !it.isLoopback }
+            .flatMap { it.inetAddresses.asSequence() }
+            .filterIsInstance<java.net.Inet4Address>()
+            .filter { it.isSiteLocalAddress }
+            .map { it.hostAddress.substringBeforeLast('.') }
+            .distinct()
+            .toList()
+    }.getOrDefault(emptyList())
+
+    /** Sweep-only client: hundreds of probes, most of them dead addresses —
+     *  the shared client's 5 s connect timeout and retry interceptor would
+     *  stretch one sweep into minutes. */
+    private val scanClient = okhttp3.OkHttpClient.Builder()
+        .connectTimeout(400, java.util.concurrent.TimeUnit.MILLISECONDS)
+        .readTimeout(1_500, java.util.concurrent.TimeUnit.MILLISECONDS)
+        .retryOnConnectionFailure(false)
+        .build()
+
+    private val lastSweepAt = java.util.concurrent.atomic.AtomicLong(0)
+    private const val SWEEP_COOLDOWN_MS = 5 * 60_000L
+    private const val CONNECT_PROBE_MS = 400
+
     /** Status including the device's own identity token (for profile assignment). */
     suspend fun fullStatus(device: PairedDevice): DeviceStatus? = withContext(Dispatchers.IO) {
         runCatching {
             request(device, "GET", "/status", null).use { resp ->
-                if (!resp.isSuccessful) return@withContext null
+                if (!resp.isSuccessful) {
+                    // An HTTP answer is NOT "unreachable" — a 403 here means the
+                    // device dropped our approval, which re-pairing fixes and
+                    // nothing else will. Say so, or it debugs like a network bug.
+                    android.util.Log.i(
+                        "Pickwick", "status ${device.name}: HTTP ${resp.code}"
+                    )
+                    return@withContext null
+                }
                 val json = JSONObject(resp.body?.string().orEmpty())
                 DeviceStatus(
                     json.getString("hash"),

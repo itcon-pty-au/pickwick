@@ -65,7 +65,7 @@ fun StatsScreen(
         // stats JSON parse are off-main (same shape as AiReviewSection's poll).
         if (payload == null) {
             val cached = withContext(kotlinx.coroutines.Dispatchers.IO) {
-                statsCache.load(device.token)?.let { (at, json) ->
+                statsCache.load(device.key)?.let { (at, json) ->
                     Stats.parse(json)?.let { it to at }
                 }
             }
@@ -76,7 +76,7 @@ fun StatsScreen(
             if (json == null) offline = true
             else {
                 val parsed = withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    Stats.parse(json)?.also { statsCache.save(device.token, json) }
+                    Stats.parse(json)?.also { statsCache.save(device.key, json) }
                 }
                 parsed?.let {
                     payload = it

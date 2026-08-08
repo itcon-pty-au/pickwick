@@ -502,10 +502,6 @@ private fun AdminScreen(
         }
     }
 
-    Column(
-        Modifier
-            .fillMaxSize()
-    ) {
     Box(Modifier.fillMaxSize()) {
     Column(
         Modifier
@@ -837,7 +833,6 @@ private fun AdminScreen(
         }
     }
     }
-    }
 }
 
 @Composable
@@ -868,8 +863,12 @@ private fun SearchIndexSection(
     val myToken = remember { pairingStore.deviceToken() }
     // Live: the shared flow ticks on every manifest write, so counts climb
     // while the parent watches instead of freezing at whatever they were when
-    // the screen opened. ChannelIndex(context) also seeds the flow from disk.
+    // the screen opened. Construction is deliberately I/O-free, so seed the
+    // flow from disk here, off-main.
     val index = remember { io.pickwick.app.data.ChannelIndex(context) }
+    LaunchedEffect(Unit) {
+        withContext(kotlinx.coroutines.Dispatchers.IO) { index.refresh() }
+    }
     val states by io.pickwick.app.data.ChannelIndex.sharedStates.collectAsState()
     val scope = rememberCoroutineScope()
     // The index is keyed by the CANONICAL source id (a @handle resolves to its
@@ -938,9 +937,9 @@ private fun SearchIndexSection(
                         }
                 }
             }
-            val nextRun by produceState<Long?>(null) {
-                value = io.pickwick.app.data.IndexCrawlWorker.nextRunAt(context)
-            }
+            val runSchedule by remember {
+                io.pickwick.app.data.IndexCrawlWorker.runSchedule(context)
+            }.collectAsState(initial = null)
             val fmt = remember {
                 java.text.SimpleDateFormat("d MMM h:mm a", java.util.Locale.US)
             }
@@ -950,8 +949,7 @@ private fun SearchIndexSection(
                     Box(
                         Modifier.size(10.dp)
                             .background(
-                                if (run.failed) androidx.compose.ui.graphics.Color(0xFFE57373)
-                                else androidx.compose.ui.graphics.Color(0xFF81C784),
+                                if (run.failed) StatusFailRed else StatusOkGreen,
                                 androidx.compose.foundation.shape.CircleShape
                             )
                     )
@@ -968,9 +966,15 @@ private fun SearchIndexSection(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            val sched = runSchedule
             Text(
-                nextRun?.let { "Next run ${fmt.format(java.util.Date(it))} — pending" }
-                    ?: "Next run — not scheduled",
+                when {
+                    sched == null -> "Next run — checking…"
+                    sched.running -> "Running now…"
+                    sched.nextRunAt != null ->
+                        "Next run ${fmt.format(java.util.Date(sched.nextRunAt))} — pending"
+                    else -> "Next run — not scheduled"
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -996,7 +1000,7 @@ private fun SearchIndexSection(
                 Text(
                     status,
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (s?.complete == true) androidx.compose.ui.graphics.Color(0xFF81C784)
+                    color = if (s?.complete == true) StatusOkGreen
                     else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }

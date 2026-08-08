@@ -1,6 +1,10 @@
 package io.pickwick.app.data
 
+import io.pickwick.app.BuildConfig
+import org.json.JSONArray
+import org.json.JSONObject
 import org.schabi.newpipe.extractor.Page
+import org.schabi.newpipe.extractor.linkhandler.ListLinkHandler
 
 /**
  * Builds the full [ChannelIndex] on the master device: for each whitelisted
@@ -9,15 +13,18 @@ import org.schabi.newpipe.extractor.Page
  * most aggressive thing the app ever does to YouTube, and a 429 here would
  * degrade normal browsing for the whole family.
  *
- * Pagination cursors (NewPipe [Page]s) live only in memory: they aren't
- * stable across extractor versions, so a process restart re-walks a partly
- * crawled source from page 1 and lets per-videoId dedup absorb the overlap.
+ * Pagination cursors (handle + NewPipe [Page]) persist to disk via
+ * [ChannelIndex], stamped with the app versionCode: a cursor is only trusted
+ * by the build that wrote it, because Page internals aren't stable across
+ * extractor upgrades (which arrive bundled with app updates). A stale or
+ * missing cursor falls back to re-walking from page 1, and per-videoId dedup
+ * absorbs the overlap.
  */
 class IndexCrawler(
     private val yt: YouTubeRepository,
     private val index: ChannelIndex
 ) {
-    /** sourceId → (handle, next page) between steps; lost on process death. */
+    /** sourceId → (handle, next page); write-through cache over the persisted copy. */
     private val cursors = mutableMapOf<String, Pair<YouTubeRepository.FeedHandle, Page>>()
 
     /**
@@ -29,12 +36,13 @@ class IndexCrawler(
         if (index.state(source.id)?.complete == true) return false
 
         val cursor = cursors[source.id]
+            ?: index.loadCursor(source.id)?.let { deserializeCursor(it) }
         val isFirstPage = cursor == null
         val page = if (isFirstPage) {
             yt.uploadsPage(source, background = true)
         } else {
             val (handle, next) = cursor
-            yt.moreUploads(handle, next)
+            yt.moreUploads(handle, next, background = true)
         }
 
         // NewPipe sometimes returns a FULL first page with no continuation
@@ -59,14 +67,15 @@ class IndexCrawler(
         val next = page.nextPage
         return if (!exhausted && handle != null && next != null) {
             cursors[source.id] = handle to next
+            serializeCursor(handle, next)?.let { index.saveCursor(source.id, it) }
             true
         } else if (!exhausted && isFirstPage && handle != null) {
             // Full page but no usable continuation: park it for another run
             // rather than declaring completion — the next run re-fetches page 1
             // (dedup absorbs it) and often gets a real continuation.
-            false.also { cursors.remove(source.id) }
+            false.also { forgetCursor(source.id) }
         } else {
-            cursors.remove(source.id)
+            forgetCursor(source.id)
             index.addVideos(source.id, emptyList(), complete = true)
             false
         }
@@ -74,20 +83,25 @@ class IndexCrawler(
 
     /**
      * Delta harvest: feed it the page-1 videos a refresh already fetched and
-     * it prepends whatever's new. Zero extra network cost.
+     * it prepends whatever's new. Zero extra network cost. Suspend + IO here
+     * because the callers sit on the main dispatcher and addVideos hits disk.
      */
-    fun harvestPage1(source: Source, videos: List<Video>) {
+    suspend fun harvestPage1(source: Source, videos: List<Video>) {
         if (videos.isEmpty()) return
-        index.addVideos(source.id, videos.map { it.toIndexed(source.id) })
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            index.addVideos(source.id, videos.map { it.toIndexed(source.id) })
+        }
     }
 
     /**
      * History harvest: a kid scrolling a channel's older pages has already paid
      * the network cost — append them so browsed depth becomes searchable depth.
      */
-    fun harvestHistory(source: Source, videos: List<Video>) {
+    suspend fun harvestHistory(source: Source, videos: List<Video>) {
         if (videos.isEmpty()) return
-        index.addVideos(source.id, videos.map { it.toIndexed(source.id) }, append = true)
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            index.addVideos(source.id, videos.map { it.toIndexed(source.id) }, append = true)
+        }
     }
 
     /** Whitelist edit dropped a source: forget its cursor too. */
@@ -95,6 +109,79 @@ class IndexCrawler(
         cursors.remove(sourceId)
         index.dropSource(sourceId)
     }
+
+    private fun forgetCursor(sourceId: String) {
+        cursors.remove(sourceId)
+        index.dropCursor(sourceId)
+    }
+
+    // ---- cursor wire format ------------------------------------------------
+
+    private fun serializeCursor(handle: YouTubeRepository.FeedHandle, page: Page): String? =
+        runCatching {
+            JSONObject().apply {
+                put("v", BuildConfig.VERSION_CODE)
+                put("handle", when (handle) {
+                    is YouTubeRepository.FeedHandle.Playlist ->
+                        JSONObject().put("kind", "playlist").put("url", handle.url)
+                    is YouTubeRepository.FeedHandle.ChannelTab -> JSONObject().apply {
+                        put("kind", "tab")
+                        put("url", handle.tab.url)
+                        put("originalUrl", handle.tab.originalUrl)
+                        put("id", handle.tab.id)
+                        put("filters", JSONArray(handle.tab.contentFilters))
+                        put("sort", handle.tab.sortFilter)
+                    }
+                })
+                put("page", JSONObject().apply {
+                    page.url?.let { put("url", it) }
+                    page.id?.let { put("id", it) }
+                    page.ids?.let { put("ids", JSONArray(it)) }
+                    page.cookies?.let { put("cookies", JSONObject(it)) }
+                    page.body?.let {
+                        put("body", java.util.Base64.getEncoder().encodeToString(it))
+                    }
+                })
+            }.toString()
+        }.getOrNull()
+
+    private fun deserializeCursor(json: String): Pair<YouTubeRepository.FeedHandle, Page>? =
+        runCatching {
+            val o = JSONObject(json)
+            // A cursor written by another build re-walks instead — Page
+            // internals may have changed shape with the bundled extractor.
+            if (o.optInt("v") != BuildConfig.VERSION_CODE) return@runCatching null
+            val h = o.getJSONObject("handle")
+            val handle = if (h.getString("kind") == "playlist") {
+                YouTubeRepository.FeedHandle.Playlist(h.getString("url"))
+            } else {
+                val filters = h.optJSONArray("filters") ?: JSONArray()
+                YouTubeRepository.FeedHandle.ChannelTab(
+                    ListLinkHandler(
+                        h.optString("originalUrl"),
+                        h.optString("url"),
+                        h.optString("id"),
+                        (0 until filters.length()).map { filters.getString(it) },
+                        h.optString("sort")
+                    )
+                )
+            }
+            val p = o.getJSONObject("page")
+            val cookies = p.optJSONObject("cookies")?.let { c ->
+                c.keys().asSequence().associateWith { c.getString(it) }
+            }
+            val page = Page(
+                p.optString("url").ifEmpty { null },
+                p.optString("id").ifEmpty { null },
+                p.optJSONArray("ids")?.let { arr ->
+                    (0 until arr.length()).map { arr.getString(it) }
+                },
+                cookies,
+                p.optString("body").takeIf { it.isNotEmpty() }
+                    ?.let { java.util.Base64.getDecoder().decode(it) }
+            )
+            handle to page
+        }.getOrNull()
 
     private fun Video.toIndexed(sourceId: String) = ChannelIndex.IndexedVideo(
         videoId = videoId ?: url.hashCode().toString(16),
@@ -106,10 +193,12 @@ class IndexCrawler(
     )
 
     companion object {
-        /** Between crawl steps: ~2 pages/minute keeps us far under YouTube's
-         *  throttling threshold; a 3,000-video channel fills in over a day or
-         *  so of idle app time, without touching interactive responsiveness. */
-        const val CRAWL_DELAY_MS = 30_000L
+        /**
+         * Pause between crawl pages inside a worker run. A run's budget spread
+         * over a couple of minutes reads as browsing, not scraping — and the
+         * background fetch lane already keeps it off the kid's interactive path.
+         */
+        const val CRAWL_DELAY_MS = 4_000L
 
         /**
          * What a "full" uploads page looks like. A first page at this size with

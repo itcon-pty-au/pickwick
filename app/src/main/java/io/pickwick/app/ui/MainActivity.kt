@@ -81,11 +81,11 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             it.allowedOverrides = initialConfig.aiAllowedVideoIds
         }
         // Every device runs the LAN server now, not just TVs: a kid's phone or
-        // tablet is pairable too (config pushes, grants, index sync). It binds
-        // localhost-facing nothing — still the same token-gated listener, just
-        // no longer gated on form factor.
+        // tablet is pairable too (config pushes, grants, index sync). Same
+        // token-gated listener as before, just no longer gated on form factor.
         if (LanServerHolder.server == null) {
-            LanServerHolder.server = LanServer(                configStore,
+            LanServerHolder.server = LanServer(
+                configStore,
                 grantHandler = { minutes, profileId ->
                     // Route the grant to the named kid's guard; unnamed grants
                     // (older admin phones) land on whoever this device shows.
@@ -256,7 +256,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                 // save() re-parses the whole payload and rewrites
                                 // digest baselines — off-main like every store write.
                                 withContext(Dispatchers.IO) {
-                                    io.pickwick.app.data.StatsCache(appContext).save(device.token, it)
+                                    io.pickwick.app.data.StatsCache(appContext).save(device.key, it)
                                 }
                             }
                         },
@@ -318,10 +318,17 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                             suspend fun paired() {
                                 awaitingApproval = false
                                 status = "Copying settings from ${flow.name}…"
-                                val device = PairedDevice(flow.name, flow.host, flow.port, myToken)
+                                var device = PairedDevice(flow.name, flow.host, flow.port, myToken)
                                 // Prefs and config are disk + JSON work; off the main
                                 // thread so the spinner keeps animating.
                                 val local = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                    // Ask who this device is before storing it: id is the
+                                    // stable key for dedupe/remove/rename, and pairing is
+                                    // the one moment we know host:port is fresh. Sync
+                                    // backfills it later if this round trip fails.
+                                    LanClient.fullStatus(device)?.deviceToken?.let {
+                                        device = device.copy(id = it)
+                                    }
                                     pairingStore.addPaired(device)
                                     // Scanning a device to manage it makes this phone a parent.
                                     pairingStore.setRole(PairingStore.Role.PARENT)

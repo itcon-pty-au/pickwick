@@ -1,8 +1,6 @@
 package io.pickwick.app.data
 
 import android.content.Context
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -20,7 +18,11 @@ import java.io.File
  */
 class ChannelIndex(context: Context) {
 
-    private val dir = File(context.filesDir, "search-index").apply { mkdirs() }
+    // No disk work here: construction happens on the main thread (activity
+    // setup, remember{} in settings). mkdirs runs lazily on the write paths,
+    // and the manifest loads on first state access — callers of anything
+    // file-backed are already on Dispatchers.IO.
+    private val dir = File(context.filesDir, "search-index")
     private val manifestFile = File(dir, "manifest.json")
 
     /** Per-source crawl state, persisted so a crawl survives process death. */
@@ -31,20 +33,24 @@ class ChannelIndex(context: Context) {
         val newestVideoId: String?,
         /** True once the crawl reached the channel's oldest video. */
         val complete: Boolean
-    )
+    ) {
+        /** Cheap change fingerprint: count+newest catches both deltas and
+         *  rebuilds. Shared by statusJson and the master's push comparison. */
+        fun contentHash(): Int = (count.toString() + ":" + (newestVideoId ?: "")).hashCode()
+    }
 
-    /** In-memory copy of the manifest; disk is the source of truth. */
-    private var states: Map<String, SourceState> = loadManifest()
+    /** In-memory copy of the manifest; disk is the source of truth. Loaded on
+     *  first access (off-main), and seeds the shared flow as a side effect. */
+    private var statesBacking: Map<String, SourceState>? = null
+    private var states: Map<String, SourceState>
+        get() = statesBacking ?: loadManifest().also {
+            statesBacking = it
+            sharedStates.value = it
+        }
         set(value) {
-            field = value
+            statesBacking = value
             sharedStates.value = value
         }
-
-    init {
-        // Seed the shared flow from disk, so a fresh process's settings screen
-        // shows the persisted state before any crawl step runs.
-        sharedStates.value = states
-    }
 
     /** One indexed video — the fields search and the results screen need. */
     data class IndexedVideo(
@@ -93,23 +99,11 @@ class ChannelIndex(context: Context) {
     fun loadSource(sourceId: String): List<IndexedVideo> {
         val f = sourceFile(sourceId)
         if (!f.exists()) return emptyList()
-        return runCatching {
-            val arr = JSONArray(f.readText())
-            (0 until arr.length()).map { i ->
-                val o = arr.getJSONObject(i)
-                IndexedVideo(
-                    videoId = o.getString("id"),
-                    title = o.getString("t"),
-                    channelName = o.optString("c"),
-                    thumbnailUrl = o.optString("th").ifEmpty { null },
-                    durationSeconds = o.optLong("d", 0),
-                    sourceId = sourceId
-                )
-            }
-        }.getOrDefault(emptyList())
+        return parseSource(f.readText(), sourceId)
     }
 
     private fun saveSource(sourceId: String, videos: List<IndexedVideo>) {
+        dir.mkdirs()
         val arr = JSONArray()
         videos.forEach { v ->
             arr.put(JSONObject().apply {
@@ -123,9 +117,10 @@ class ChannelIndex(context: Context) {
         sourceFile(sourceId).writeText(arr.toString())
     }
 
-    /** Whitelist edit removed a source — its index goes with it. */
+    /** Whitelist edit removed a source — its index and crawl cursor go with it. */
     fun dropSource(sourceId: String) {
         sourceFile(sourceId).delete()
+        dropCursor(sourceId)
         states = states - sourceId
         saveManifest()
     }
@@ -189,6 +184,7 @@ class ChannelIndex(context: Context) {
     }.getOrDefault(emptyMap())
 
     private fun saveManifest() {
+        dir.mkdirs()
         val o = JSONObject()
         states.forEach { (id, s) ->
             o.put(id, JSONObject().apply {
@@ -222,6 +218,7 @@ class ChannelIndex(context: Context) {
 
     fun recordRun(pages: Int, failed: Boolean) {
         runCatching {
+            dir.mkdirs()
             runFile.writeText(
                 JSONObject()
                     .put("at", System.currentTimeMillis())
@@ -247,8 +244,7 @@ class ChannelIndex(context: Context) {
             o.put(id, JSONObject().apply {
                 put("count", s.count)
                 put("complete", s.complete)
-                // Content hash: count+newest catches both deltas and rebuilds.
-                put("hash", (s.count.toString() + ":" + (s.newestVideoId ?: "")).hashCode())
+                put("hash", s.contentHash())
             })
         }
         return o.toString()
@@ -262,7 +258,7 @@ class ChannelIndex(context: Context) {
 
     /** Apply a pushed source file (from the master). Replaces ours wholesale. */
     fun importSource(sourceId: String, json: String, state: SourceState) {
-        saveSource(sourceId, loadSourceFromJson(json, sourceId))
+        saveSource(sourceId, parseSource(json, sourceId))
         states = states + (sourceId to state)
         saveManifest()
     }
@@ -295,7 +291,7 @@ class ChannelIndex(context: Context) {
         )
     }
 
-    private fun loadSourceFromJson(json: String, sourceId: String): List<IndexedVideo> =
+    private fun parseSource(json: String, sourceId: String): List<IndexedVideo> =
         runCatching {
             val arr = JSONArray(json)
             (0 until arr.length()).map { i ->
@@ -311,8 +307,33 @@ class ChannelIndex(context: Context) {
             }
         }.getOrDefault(emptyList())
 
-    /** All file work off-main — called from the LAN worker and the crawler. */
-    suspend fun <T> io(block: () -> T): T = withContext(Dispatchers.IO) { block() }
+    // ---- crawl cursors ----------------------------------------------------
+
+    private val cursorsFile = File(dir, "cursors.json")
+
+    /**
+     * Opaque per-source pagination cursor, persisted so a WorkManager run
+     * resumes where the previous one stopped instead of re-walking from page 1
+     * (which stalled any channel deeper than one run's page budget forever).
+     * The JSON is the crawler's — this just stores it.
+     */
+    fun loadCursor(sourceId: String): String? = runCatching {
+        if (!cursorsFile.exists()) return null
+        JSONObject(cursorsFile.readText()).optString(sourceId).ifEmpty { null }
+    }.getOrNull()
+
+    fun saveCursor(sourceId: String, json: String) = updateCursors { it.put(sourceId, json) }
+
+    fun dropCursor(sourceId: String) = updateCursors { it.remove(sourceId) }
+
+    private fun updateCursors(mutate: (JSONObject) -> Unit) {
+        runCatching {
+            val o = if (cursorsFile.exists()) JSONObject(cursorsFile.readText()) else JSONObject()
+            mutate(o)
+            dir.mkdirs()
+            cursorsFile.writeText(o.toString())
+        }
+    }
 
     companion object {
         /**

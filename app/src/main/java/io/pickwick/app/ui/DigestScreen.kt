@@ -69,8 +69,8 @@ fun WeeklyDigestScreen(
             val fmt = SimpleDateFormat("yyyyMMdd", Locale.US)
             val today = fmt.format(Date())
             pairingStore.paired().mapNotNull { device ->
-                val live = LanClient.stats(device)?.also { statsCache.save(device.token, it) }
-                val cached = if (live == null) statsCache.load(device.token) else null
+                val live = LanClient.stats(device)?.also { statsCache.save(device.key, it) }
+                val cached = if (live == null) statsCache.load(device.key) else null
                 val json = live ?: cached?.second
                 val payload = json?.let { Stats.parse(it) } ?: return@mapNotNull null
                 DeviceDigest(
@@ -80,7 +80,7 @@ fun WeeklyDigestScreen(
                     // whichever profile is active, and its file must match.
                     weekly = Digest.assemble(
                         payload,
-                        digestStore.load(DigestStore.key(device.token, payload.profileName)),
+                        digestStore.load(DigestStore.key(device.key, payload.profileName)),
                         today,
                         // A stale snapshot's "today" is the day it was fetched —
                         // plotting it under the phone's today would move, say,
@@ -120,7 +120,7 @@ fun WeeklyDigestScreen(
                 else -> list.forEach { d ->
                     // Identity-keyed so per-card state (the AI summary) can't
                     // attach to the wrong device if the list ever changes.
-                    key(d.device.token) {
+                    key(d.device.key) {
                         Spacer(Modifier.height(16.dp))
                         DeviceWeekCard(d.device, d.kidName, d.weekly, d.fresh, aiEnabled, configStore)
                     }

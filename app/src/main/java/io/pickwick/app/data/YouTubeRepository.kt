@@ -241,9 +241,10 @@ class YouTubeRepository {
             }
         }
 
-    suspend fun moreUploads(handle: FeedHandle, page: Page): UploadsPage =
+    suspend fun moreUploads(handle: FeedHandle, page: Page, background: Boolean = false): UploadsPage =
         withContext(Dispatchers.IO) {
-            val more = interactiveFetches.withPermit {
+            val limiter = if (background) backgroundFetches else interactiveFetches
+            val more = limiter.withPermit {
                 retrying("more uploads") {
                     when (handle) {
                         is FeedHandle.ChannelTab -> ChannelTabInfo.getMoreItems(youtube, handle.tab, page)
@@ -425,6 +426,16 @@ class YouTubeRepository {
                     }
                     .values
                     .mapNotNull { streams -> streams.maxByOrNull { it.averageBitrate } }
+                    // Original first, then bitrate as a deterministic tiebreak:
+                    // some multi-language videos flag no track ORIGINAL, and
+                    // without the tiebreak the default (first) track — what a
+                    // kid hears — would be whichever dub grouped first.
+                    .sortedWith(
+                        compareByDescending<org.schabi.newpipe.extractor.stream.AudioStream> {
+                            it.audioTrackType ==
+                                org.schabi.newpipe.extractor.stream.AudioTrackType.ORIGINAL
+                        }.thenByDescending { it.averageBitrate }
+                    )
                     .map { stream ->
                         val locale = stream.audioLocale
                         AudioTrack(
@@ -437,7 +448,6 @@ class YouTubeRepository {
                                 org.schabi.newpipe.extractor.stream.AudioTrackType.ORIGINAL
                         )
                     }
-                    .sortedByDescending { it.original }
                 val bestAudio = audioTracks.firstOrNull()
                 if (bestVideo != null && bestAudio != null) {
                     return@withContext Playback(

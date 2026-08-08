@@ -161,6 +161,10 @@ class MainViewModel(
                 // empty claims it; only the master builds the search index (its
                 // crawl is rate-limit-expensive, so the family pays it once).
                 // Kid devices never claim it, no matter how empty the field is.
+                // Two co-parents CAN race this and both claim — harmless: the
+                // MS: term in the config hash makes the copies differ, the
+                // newest-wins reconcile below converges them, and the loser's
+                // next worker run sees it isn't master and stops crawling.
                 val isParent = pairingStore?.role() != PairingStore.Role.KID
                 val loaded = store.load()
                 if (loaded.masterDeviceToken == null && isParent) {
@@ -170,13 +174,35 @@ class MainViewModel(
                 }
                 val localHash = ConfigStore.fingerprint(store.load())
                 val localAt = store.updatedAt()
-                devices.forEach { device ->
-                    val status = LanClient.status(device)
+                devices.forEach { stored ->
+                    var device = stored
+                    var status = LanClient.fullStatus(device)
                     if (status == null) {
-                        android.util.Log.i("Pickwick", "config sync: ${device.name} unreachable")
-                        return@forEach
+                        // Not answering at the stored address — likely a DHCP
+                        // re-lease while the TV sat off, or server port drift.
+                        // Sweep the LAN for our device and re-point the entry.
+                        val moved = LanClient.rediscover(device)
+                        if (moved == null) {
+                            android.util.Log.i("Pickwick", "config sync: ${device.name} unreachable")
+                            return@forEach
+                        }
+                        pairingStore?.replacePaired(device, moved)
+                        android.util.Log.i(
+                            "Pickwick",
+                            "config sync: ${device.name} moved " +
+                                "${device.host}:${device.port} -> ${moved.host}:${moved.port}"
+                        )
+                        device = moved
+                        status = LanClient.fullStatus(device) ?: return@forEach
+                    } else if (device.id == null && status.deviceToken != null) {
+                        // Legacy entry (paired before identities were stored):
+                        // learn who this is, so a future re-discovery can prove
+                        // it found the same device and not a sibling's tablet.
+                        device = device.copy(id = status.deviceToken)
+                        pairingStore?.replacePaired(stored, device)
                     }
-                    val (remoteHash, remoteAt) = status
+                    val remoteHash = status.hash
+                    val remoteAt = status.updatedAt
                     when {
                         remoteHash == localHash -> {}
                         remoteAt < localAt -> {
@@ -272,9 +298,7 @@ class MainViewModel(
                         .getOrNull() ?: return@forEach
                     index.allStates().forEach { (sourceId, state) ->
                         val remoteHash = remote.optJSONObject(sourceId)?.optInt("hash")
-                        val localHash =
-                            (state.count.toString() + ":" + (state.newestVideoId ?: "")).hashCode()
-                        if (remoteHash != localHash) {
+                        if (remoteHash != state.contentHash()) {
                             val body = index.exportSourceWithState(sourceId) ?: return@forEach
                             LanClient.pushIndexSource(device, sourceId, body)
                         }
@@ -307,16 +331,17 @@ class MainViewModel(
             visibleSources(sources).map { it.id }.toSet()
         }
         val hits = withContext(Dispatchers.IO) { index.search(q, visibleIds) }
-        val videos = hits
-            .map { it.toVideo() }
-            .distinctBy { it.url }
+        // Dedup before counting: the same video indexed under two sources is
+        // one result, not a "held" item — held means blocked or screened out.
+        val deduped = hits.map { it.toVideo() }.distinctBy { it.url }
+        val videos = deduped
             .filter { it.videoId !in blockedVideoIds }
             .filter { screener?.isVisible(it) != false }
         rawVideos = videos
         _state.value = _state.value.copy(
             loading = false,
             videos = annotated(includeFinished = true),
-            held = hits.size - videos.size
+            held = deduped.size - videos.size
         )
     }
 
@@ -519,11 +544,6 @@ class MainViewModel(
         }
     }
 
-    /**
-     * The master's trickle crawl: one page of one incomplete source every
-     * [IndexCrawler.CRAWL_DELAY_MS], round-robin. Runs only while this device
-     * holds the master role; a co-parent's ViewModel exits immediately.
-     */
     /**
      * Sends anything not yet screened to the AI in the background; each verdict
      * batch re-filters whatever screen the kid is on, so held videos pop in as

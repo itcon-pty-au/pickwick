@@ -14,6 +14,7 @@
     --muted: #5c7370;
     --accent: #00897b;
     --accent-dark: #00695c;
+    --link: #00695c;
     --accent-text: #ffffff;
     --pill-bg: #e2efec;
     --shadow: 0 8px 30px rgba(0, 80, 68, .14);
@@ -26,12 +27,19 @@
       --muted: #8fa8a3;
       --accent: #4db6ac;
       --accent-dark: #26a69a;
+      --link: #ffffff;
       --accent-text: #00352f;
       --pill-bg: #24342f;
       --shadow: 0 8px 30px rgba(0, 0, 0, .45);
     }
   }
   * { box-sizing: border-box; margin: 0; }
+  /* One color in every state — the UA's purple :visited belongs to neither
+     palette. :where() zeroes the specificity so this only ever paints prose
+     links: a bare a:visited (0,1,1) would outrank .btn and footer a and
+     repaint buttons and footers the moment they were visited. Author origin
+     beats the UA sheet regardless of specificity, so the purple still loses. */
+  :where(a, a:visited, a:active) { color: var(--link); }
   body {
     background: var(--bg);
     color: var(--text);

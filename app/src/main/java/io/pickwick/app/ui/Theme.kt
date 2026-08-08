@@ -66,6 +66,11 @@ val SponsorSegmentGreen = Color(0xFF00C853)
 /** The "newer build available" dot on the settings gear. */
 val UpdateDot = Color(0xFFFF5252)
 
+/** Status readouts in settings (search-index health, per-channel completeness):
+ *  soft Material green/red — full-saturation traffic lights read as alarms. */
+val StatusOkGreen = Color(0xFF81C784)
+val StatusFailRed = Color(0xFFE57373)
+
 /** The home screen's non-channel tiles — the phone grid and the TV row draw
  *  the same tiles, so their identity colors get one spelling here. */
 val SurpriseTileCyan = Color(0xFF00ACC1)

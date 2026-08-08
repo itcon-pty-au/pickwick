@@ -121,9 +121,9 @@ internal fun PhoneDevicesSection(
     val scope = rememberCoroutineScope()
     var devices by remember { mutableStateOf(pairingStore.paired()) }
     var syncStates by remember { mutableStateOf<Map<String, DeviceSync>>(emptyMap()) }
-    /** device.token → pending pairing requests (name, requestToken) awaiting approval. */
+    /** device.key → pending pairing requests (name, requestToken) awaiting approval. */
     var pendingByDevice by remember { mutableStateOf<Map<String, List<Pair<String, String>>>>(emptyMap()) }
-    /** device.token → approved admin phones (name, adminToken). */
+    /** device.key → approved admin phones (name, adminToken). */
     var adminsByDevice by remember { mutableStateOf<Map<String, List<Pair<String, String>>>>(emptyMap()) }
     /** A revoke awaiting confirmation: (device, adminName, adminToken). */
     var pendingRevoke by remember { mutableStateOf<Triple<PairedDevice, String, String>?>(null) }
@@ -136,14 +136,14 @@ internal fun PhoneDevicesSection(
 
     fun checkAll() {
         devices.forEach { device ->
-            syncStates = syncStates + (device.token to DeviceSync.Checking)
+            syncStates = syncStates + (device.key to DeviceSync.Checking)
             scope.launch {
                 val status = LanClient.fullStatus(device)
-                syncStates = syncStates + (device.token to
+                syncStates = syncStates + (device.key to
                     (status?.let { DeviceSync.Reachable(it.hash, it.updatedAt, it.deviceToken) }
                         ?: DeviceSync.Offline))
-                pendingByDevice = pendingByDevice + (device.token to LanClient.pendingRequests(device))
-                adminsByDevice = adminsByDevice + (device.token to LanClient.admins(device))
+                pendingByDevice = pendingByDevice + (device.key to LanClient.pendingRequests(device))
+                adminsByDevice = adminsByDevice + (device.key to LanClient.admins(device))
             }
         }
     }
@@ -240,7 +240,7 @@ internal fun PhoneDevicesSection(
     }
 
     renaming?.let { device ->
-        var name by remember(device.token) { mutableStateOf(device.name) }
+        var name by remember(device.key) { mutableStateOf(device.name) }
         AlertDialog(
             onDismissRequest = { renaming = null },
             title = { Text("Rename device") },
@@ -256,8 +256,8 @@ internal fun PhoneDevicesSection(
                 Button(
                     enabled = name.isNotBlank(),
                     onClick = {
-                        // Display name only — pairing identity stays the token.
-                        pairingStore.renamePaired(device.token, name.trim())
+                        // Display name only — pairing identity stays device.key.
+                        pairingStore.renamePaired(device.key, name.trim())
                         devices = pairingStore.paired()
                         renaming = null
                     }
@@ -286,7 +286,7 @@ internal fun PhoneDevicesSection(
         )
     }
     devices.forEach { device ->
-        val sync = syncStates[device.token]
+        val sync = syncStates[device.key]
         // One tile per device: identity and state up top, actions on their own
         // line — buttons squeezed beside the sync text truncated both.
         Card(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
@@ -349,13 +349,13 @@ internal fun PhoneDevicesSection(
                     }
                     CompactButton(onClick = { onOpenStats(device) }) { Text("Stats") }
                     CompactButton(onClick = {
-                        pairingStore.removePaired(device.token)
+                        pairingStore.removePaired(device.key)
                         devices = pairingStore.paired()
                     }) { Text("Unpair") }
                 }
                 assignmentRow("Watching:", (sync as? DeviceSync.Reachable)?.deviceToken)
                 // Admin phones approved on this device (revocable, except this phone).
-                val admins = adminsByDevice[device.token].orEmpty()
+                val admins = adminsByDevice[device.key].orEmpty()
                 if (admins.size > 1 || (admins.size == 1 && admins[0].second != myToken)) {
                     admins.forEach { (adminName, adminToken) ->
                         val isThisPhone = adminToken == myToken
@@ -382,7 +382,7 @@ internal fun PhoneDevicesSection(
                     }
                 }
                 // New phones asking to become admins for this device.
-                pendingByDevice[device.token].orEmpty().forEach { (reqName, reqToken) ->
+                pendingByDevice[device.key].orEmpty().forEach { (reqName, reqToken) ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             "“$reqName” asks to manage ${device.name}",

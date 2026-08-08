@@ -336,9 +336,9 @@ internal fun AiReviewSection(
             remoteByDevice = withContext(kotlinx.coroutines.Dispatchers.IO) {
                 pairingStore.paired().associate { device ->
                     val json = (if (live) LanClient.stats(device)
-                        ?.also { statsCache.save(device.token, it) } else null)
-                        ?: statsCache.load(device.token)?.second
-                    device.token to
+                        ?.also { statsCache.save(device.key, it) } else null)
+                        ?: statsCache.load(device.key)?.second
+                    device.key to
                         json?.let { io.pickwick.app.data.Stats.parse(it)?.aiFlagged }.orEmpty()
                 }
             }

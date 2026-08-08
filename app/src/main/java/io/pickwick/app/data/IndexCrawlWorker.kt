@@ -6,8 +6,11 @@ import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import java.util.concurrent.TimeUnit
 
 /**
@@ -29,21 +32,22 @@ class IndexCrawlWorker(
         val config = ConfigStore(applicationContext).load()
         val me = pairingStore.deviceToken()
 
-        // Master-only: a kid device or co-parent must never crawl YouTube.
-        if (config.masterDeviceToken != me) return Result.success()
-
         val index = ChannelIndex(applicationContext)
         val crawler = IndexCrawler(YouTubeRepository(), index)
-        val yt = YouTubeRepository()
 
         // Resolve the current whitelist into Sources (labels/avatars may be
         // absent — the index only needs id/url/kind, so a bare Source is fine).
         val sources = config.sources.map { e ->
             Source(e.id, e.url, e.label ?: e.id, null, e.kind, e.timeMultiplierPercent)
         }
-        // Drop sources the whitelist no longer lists.
+        // Drop sources the whitelist no longer lists. On EVERY device, before
+        // the master gate: pushes never propagate deletions, so a kid device
+        // that skipped this would keep a removed channel's index forever.
         val wanted = sources.map { it.id }.toSet()
         index.allStates().keys.filter { it !in wanted }.forEach { crawler.dropSource(it) }
+
+        // Master-only past here: a kid device or co-parent must never crawl.
+        if (config.masterDeviceToken != me) return Result.success()
 
         // Repair: builds before the exhaustion fix marked channels complete
         // after a single full page (the NewPipe no-continuation quirk). A
@@ -68,6 +72,9 @@ class IndexCrawlWorker(
         var failures = 0
         for (source in incomplete) {
             while (pages < PAGES_PER_RUN) {
+                // Spread the budget out instead of firing it as one burst —
+                // see CRAWL_DELAY_MS. First page of the run goes immediately.
+                if (pages > 0) kotlinx.coroutines.delay(IndexCrawler.CRAWL_DELAY_MS)
                 val more = runCatching { crawler.crawlOnce(source) }
                     .getOrElse {
                         android.util.Log.w("Pickwick", "index crawl failed", it)
@@ -95,20 +102,42 @@ class IndexCrawlWorker(
     companion object {
         private const val WORK_NAME = "channel-index-crawl"
 
-        /** Next scheduled run in epoch millis, or null if not scheduled. */
-        suspend fun nextRunAt(context: Context): Long? {
-            val infos = WorkManager.getInstance(context)
-                .getWorkInfosForUniqueWork(WORK_NAME).get()
-            return infos.firstOrNull()?.nextScheduleTimeMillis
-                ?.takeIf { it > 0 && it != Long.MAX_VALUE }
-        }
+        /** Running now, or waiting for [nextRunAt] (null = not scheduled). */
+        data class RunSchedule(val running: Boolean, val nextRunAt: Long?)
 
         /**
-         * Pages per 15-minute run. At ~30/page, one run indexes ~600 videos.
-         * 40 channels × 500 videos ≈ 34 runs ≈ a working day of background
-         * time — versus ~12 hours of *app-open* time with the old in-app loop.
+         * Live schedule for the diagnostics row. A flow, not a one-shot read:
+         * a crawl runs 5-6 minutes of every 15, so a snapshot taken while
+         * expanded goes stale within the visit. WorkManager also reports
+         * nextScheduleTimeMillis as Long.MAX_VALUE for every non-ENQUEUED
+         * state — RUNNING included — so the time alone can't distinguish
+         * "crawling right now" from "never scheduled"; the state can.
          */
-        private const val PAGES_PER_RUN = 20
+        fun runSchedule(context: Context): Flow<RunSchedule> =
+            WorkManager.getInstance(context)
+                .getWorkInfosForUniqueWorkFlow(WORK_NAME)
+                .map { infos ->
+                    val info = infos.firstOrNull()
+                    RunSchedule(
+                        running = info?.state == WorkInfo.State.RUNNING,
+                        nextRunAt = info?.nextScheduleTimeMillis
+                            ?.takeIf { it > 0 && it != Long.MAX_VALUE }
+                    )
+                }
+
+        /**
+         * Pages per run. Sized against the system's ~10-minute cap on a single
+         * worker execution, NOT the 15-minute period: at CRAWL_DELAY_MS spacing
+         * plus fetch time this lands near 5-6 minutes, leaving real headroom
+         * before the platform kills the run mid-page.
+         *
+         * The 15-minute period is WorkManager's floor and can't be shortened,
+         * so throughput has to come from doing more per window rather than
+         * more windows. Averaged over the period this is still only ~4
+         * requests/minute — the burst is paced, and it uses the background
+         * fetch lane, so the kid's browsing never queues behind it.
+         */
+        private const val PAGES_PER_RUN = 60
 
         /** 15 minutes is WorkManager's minimum periodic interval. */
         fun schedule(context: Context) {
