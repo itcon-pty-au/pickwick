@@ -63,7 +63,12 @@ class IndexCrawlWorker(
         }
 
         val incomplete = sources.filter { index.state(it.id)?.complete != true }
-        if (incomplete.isEmpty()) return Result.success()
+        if (incomplete.isEmpty()) {
+            // Still stamp the diagnostics line: a fully-crawled catalog should
+            // read "ran, nothing to do", not "hasn't run since the last page".
+            index.recordRun(0, failed = false)
+            return Result.success()
+        }
 
         // Bounded batch per run: PAGES_PER_RUN pages, round-robin from the
         // first incomplete source. ~17 pages per 500-video channel, so one

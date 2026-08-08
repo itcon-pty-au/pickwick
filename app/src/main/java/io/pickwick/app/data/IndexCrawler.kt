@@ -14,11 +14,12 @@ import org.schabi.newpipe.extractor.linkhandler.ListLinkHandler
  * degrade normal browsing for the whole family.
  *
  * Pagination cursors (handle + NewPipe [Page]) persist to disk via
- * [ChannelIndex], stamped with the app versionCode: a cursor is only trusted
- * by the build that wrote it, because Page internals aren't stable across
- * extractor upgrades (which arrive bundled with app updates). A stale or
- * missing cursor falls back to re-walking from page 1, and per-videoId dedup
- * absorbs the overlap.
+ * [ChannelIndex], stamped with the bundled extractor's version: Page internals
+ * (continuation body, cookies) aren't stable across extractor upgrades, but
+ * they ARE stable across app releases that don't touch the dependency — so
+ * cursors survive ordinary updates instead of forcing a silent multi-run
+ * re-walk after every release. A stale or missing cursor falls back to
+ * re-walking from page 1, and per-videoId dedup absorbs the overlap.
  */
 class IndexCrawler(
     private val yt: YouTubeRepository,
@@ -120,7 +121,7 @@ class IndexCrawler(
     private fun serializeCursor(handle: YouTubeRepository.FeedHandle, page: Page): String? =
         runCatching {
             JSONObject().apply {
-                put("v", BuildConfig.VERSION_CODE)
+                put("xv", BuildConfig.EXTRACTOR_VERSION)
                 put("handle", when (handle) {
                     is YouTubeRepository.FeedHandle.Playlist ->
                         JSONObject().put("kind", "playlist").put("url", handle.url)
@@ -148,9 +149,12 @@ class IndexCrawler(
     private fun deserializeCursor(json: String): Pair<YouTubeRepository.FeedHandle, Page>? =
         runCatching {
             val o = JSONObject(json)
-            // A cursor written by another build re-walks instead — Page
-            // internals may have changed shape with the bundled extractor.
-            if (o.optInt("v") != BuildConfig.VERSION_CODE) return@runCatching null
+            // A cursor written by a different extractor version re-walks
+            // instead — Page internals may have changed shape. Older cursors
+            // carried a "v" versionCode stamp; they lack "xv" and so are
+            // rejected once, which is what the old scheme did on every update
+            // anyway.
+            if (o.optString("xv") != BuildConfig.EXTRACTOR_VERSION) return@runCatching null
             val h = o.getJSONObject("handle")
             val handle = if (h.getString("kind") == "playlist") {
                 YouTubeRepository.FeedHandle.Playlist(h.getString("url"))

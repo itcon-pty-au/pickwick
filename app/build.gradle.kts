@@ -59,6 +59,16 @@ android {
             "SUGGEST_WORKER_URL",
             "\"https://pickwick-suggest.pickwick.workers.dev/\""
         )
+
+        // Crawl-cursor trust stamp: a persisted NewPipe Page is only readable
+        // by the extractor version that wrote it, and the extractor only
+        // changes when this dependency does — sourced from the catalog so the
+        // stamp can't drift from the actual library.
+        buildConfigField(
+            "String",
+            "EXTRACTOR_VERSION",
+            "\"${libs.versions.newpipeextractor.get()}\""
+        )
     }
 
     signingConfigs {
