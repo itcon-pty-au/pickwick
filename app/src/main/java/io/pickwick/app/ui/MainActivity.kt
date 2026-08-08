@@ -420,11 +420,15 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 // settings stack mid-edit.
                 var showSettings by rememberSaveable { mutableStateOf(false) }
                 if (showSettings) {
-                    // A device another parent phone manages (approved on it, but
-                    // this device has no kid devices of its own) gets the pairing
-                    // QR, not the admin editor — there's nothing to administer here.
-                    val isKidDevice = !deviceIsTv && pairingStore.paired().isEmpty() &&
-                        pairingStore.approvedPhones().isNotEmpty()
+                    // A device another parent phone manages gets the pairing QR,
+                    // not the admin editor — there's nothing to administer here.
+                    // Two ways in: an admin already paired to it, or the parent
+                    // explicitly dedicated it to a kid (which must hold BEFORE
+                    // any admin exists, or the QR that pairing needs never shows).
+                    val isKidDevice = !deviceIsTv &&
+                        (pairingStore.role() == PairingStore.Role.KID ||
+                            (pairingStore.paired().isEmpty() &&
+                                pairingStore.approvedPhones().isNotEmpty()))
                     SettingsFlow(settings, configStore, pairingStore, deviceIsTv, isKidDevice) { changed ->
                         showSettings = false
                         // Kids may have been added/edited — re-resolve everything.

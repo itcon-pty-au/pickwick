@@ -176,10 +176,17 @@ fun SettingsFlow(
                     }
                 }
             }
-            Stage.Editor ->
+            Stage.Editor -> {
+                // State, not the passed-in flag: dedicating the device to a kid
+                // must swap this screen to the QR immediately — the parent is
+                // standing there with the other phone ready to scan, and being
+                // bounced out of settings first would read as "nothing happened".
+                var kidDevice by remember { mutableStateOf(isKidDevice) }
                 if (isTv) TvSettingsScreen(configStore, pairingStore)
-                else if (isKidDevice) KidDeviceScreen(configStore)
-                else AdminScreen(configStore, pairingStore, onDone)
+                else if (kidDevice) KidDeviceScreen(configStore)
+                else AdminScreen(configStore, pairingStore, onDone,
+                    onBecameKidDevice = { kidDevice = true })
+            }
         }
     }
     }
@@ -299,7 +306,9 @@ internal fun PairingPanel(configStore: ConfigStore, tv: Boolean = false) {
 private fun AdminScreen(
     configStore: ConfigStore,
     pairingStore: PairingStore,
-    onDone: (changed: Boolean) -> Unit
+    onDone: (changed: Boolean) -> Unit,
+    /** The parent confirmed "this device is a kid's" — swap to the QR screen. */
+    onBecameKidDevice: () -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
     val yt = remember { YouTubeRepository() }
@@ -688,6 +697,7 @@ private fun AdminScreen(
         SectionTitle("Kid devices")
         PhoneDevicesSection(
             pairingStore, configStore,
+            onBecameKidDevice = onBecameKidDevice,
             profiles = profiles,
             deviceProfiles = deviceProfiles,
             // The form's fingerprint, not the file's: "in sync ✓" measured against

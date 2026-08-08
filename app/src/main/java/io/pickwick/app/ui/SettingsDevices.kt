@@ -116,7 +116,9 @@ internal fun PhoneDevicesSection(
     /** Promote an admin phone to master (it takes over indexing). */
     onMakeMaster: (String) -> Unit = {},
     onOpenStats: (PairedDevice) -> Unit,
-    onConfigReplaced: () -> Unit = {}
+    onConfigReplaced: () -> Unit = {},
+    /** The parent confirmed this very device belongs to a kid (no-TV household). */
+    onBecameKidDevice: () -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
     var devices by remember { mutableStateOf(pairingStore.paired()) }
@@ -284,6 +286,41 @@ internal fun PhoneDevicesSection(
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        // No-TV household bootstrap: the device in hand IS the kid's. Without
+        // this there is no way in — the pairing QR only shows on a device that
+        // already knows it's a kid's, and nothing else can make it one. Offered
+        // only while this device administers nobody; a phone with kid devices
+        // is unambiguously the parent's.
+        var confirmDedicate by remember { mutableStateOf(false) }
+        Spacer(Modifier.height(6.dp))
+        CompactButton(onClick = { confirmDedicate = true }) {
+            Text("This device is my kid's…")
+        }
+        if (confirmDedicate) {
+            AlertDialog(
+                onDismissRequest = { confirmDedicate = false },
+                title = { Text("Hand this device to a kid?") },
+                text = {
+                    Text(
+                        "These parent settings will be replaced by a pairing QR " +
+                            "code — scan it with a parent's phone to manage this " +
+                            "device from there, just like a TV.\n\n" +
+                            "This is permanent: the only way to make it a " +
+                            "parent device again is reinstalling the app."
+                    )
+                },
+                confirmButton = {
+                    Button(onClick = {
+                        pairingStore.dedicateAsKid()
+                        confirmDedicate = false
+                        onBecameKidDevice()
+                    }) { Text("Make it a kid's device") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { confirmDedicate = false }) { Text("Cancel") }
+                }
+            )
+        }
     }
     devices.forEach { device ->
         val sync = syncStates[device.key]

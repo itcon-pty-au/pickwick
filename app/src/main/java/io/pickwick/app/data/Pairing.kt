@@ -97,6 +97,18 @@ class PairingStore(context: Context) {
         if (role() == null) prefs.edit().putString("role", role.name).apply()
     }
 
+    /**
+     * The one deliberate role change: a parent dedicating this phone/tablet to
+     * a kid (the no-TV household — nothing else ever shows a pairing QR on a
+     * non-TV device). Bypasses [setRole]'s first-writer-wins guard because it
+     * is an explicit, confirmed parent action, not an inference. One-way by
+     * design: the admin editor never comes back without a reinstall, same as
+     * a TV.
+     */
+    fun dedicateAsKid() {
+        prefs.edit().putString("role", Role.KID.name).apply()
+    }
+
     /** This device's stable identity token (a phone presents it when pairing). */
     fun deviceToken(): String =
         prefs.getString("device_token", null) ?: ByteArray(16)
