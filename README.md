@@ -36,14 +36,26 @@ with no ads.
 - **🎲 Surprise me** — a random mix drawn from allowed channels
 - **❤️ My list** — videos they saved by holding a tile (long-press / hold OK on the remote)
 - **Keep watching** — resume where they left off, on any of the family's devices
+- **🔎 Search** — find videos by name, but only *inside* the allowed channels: it
+  searches an on-device index of the whitelist, so a search can never surface
+  anything a parent didn't approve
+- **📚 Up next** — hold any poster (long-press / hold OK) for one menu: add to
+  the queue, save to My list, or request an offline copy; queued videos play in
+  order and clear themselves only when truly finished
+- **🎧 Listen mode** *(only if a parent enables it)* — press the power button and
+  the audio keeps playing with the screen off, for audiobooks and music at
+  bedtime; minutes drain at a rate the parent chooses
 - **📥 Downloads** — a row of videos saved for offline; the kid can *ask* for a
   video from its poster ("Waiting for approval…") and a parent approves on their
   phone, so car trips and dead Wi-Fi still work
-- A fullscreen player with no ads and nothing to escape into; playlists auto-play in order
+- A fullscreen player with no ads and nothing to escape into; playlists
+  auto-play in order, and in-video sponsor segments are skipped automatically
+  (via SponsorBlock's community data)
 - **NEW badges** when an allowed channel has fresh uploads
 - **Time price tags** on tiles (0.5x … FREE, or 1.5x for "junk food" channels) —
   cheaper channels drain the clock slower, so kids can spend their time knowingly
-- **Subtitles** on demand — CC button on phones, ▼ on the TV remote; the choice sticks
+- **Subtitles, audio language and quality** on demand — CC button on phones,
+  ▼ on the TV remote opens the track controls; choices stick
 - Gentle **"5 minutes left" / "1 minute left"** warnings before time runs out
 - Friendly screens when time is up: "Time for a break! ⏰", "It's bedtime! 🌙"
 
@@ -62,9 +74,10 @@ Open settings (fingerprint-gated, with a 4-digit parent PIN as fallback) on the 
   lists, NEW badges and stats are all per kid; the first kid a family creates
   inherits everything the device already knew.
 - **Channels & playlists** — search YouTube by name and tap Add; or paste any
-  channel/playlist link. Import from a hosted whitelist text file, and
-  **export/share** your own list back out (save to file or share sheet) so other
-  families can import it. With multiple kids, one shared list carries
+  channel/playlist link. Pick from the built-in **suggested channels directory**
+  (community-curated, multilingual), import a whitelist from a file, and
+  **export/share** your own list back out (save to file or share sheet) — or
+  **submit it to the directory** so other families can find it. With multiple kids, one shared list carries
   **per-kid switches** on every channel — adding one asks "who is this for?",
   and the default is everyone. **Discover with AI** describes what you want in
   plain words ("fun science experiments for kids") and proposes channels, each
@@ -73,8 +86,13 @@ Open settings (fingerprint-gated, with a 4-digit parent PIN as fallback) on the 
   1x → 1.25x → 1.5x → 0.75x → 0.5x → 0.25x → FREE (long-press resets) — so
   educational channels can cost less (or nothing) and junk can cost extra.
 - **Screen time** — session length, sessions per weekday/weekend, break length,
-  bedtime window. The daily budget is `session × sessions`; only actual watching
-  counts, and stopping early never forfeits time.
+  and **blocked windows**: any number of named no-watching spans (bedtime,
+  school hours, dinner), each with its own days of the week and a one-time
+  **Skip tonight** pass for special occasions. The daily budget is
+  `session × sessions`; only actual watching counts, and stopping early never
+  forfeits time. An optional **listening rate** turns on kid-side listen mode
+  (screen-off audio) at that drain multiplier — leave it unset and the feature
+  doesn't exist on kid devices.
 - **Grant extra time** — +15/+30/+60 today for a named kid, applied to every
   device instantly.
 - **Pause for today** — one tap stops watching on every device until midnight.
@@ -98,13 +116,17 @@ Open settings (fingerprint-gated, with a 4-digit parent PIN as fallback) on the 
   recently watched. Stats snapshots stay on the phone, so reviewing the day —
   and ruling on AI-flagged videos — works even while the TV is off; decisions
   sync to it automatically the next time it's reachable.
+- **📅 Weekly digest** — a once-a-week summary per kid: minutes watched each
+  day, channels added or removed during the week, screening decisions still
+  waiting on you, and an optional AI-written note.
 - **Admin phones** — approve/deny new phones that ask to pair; revoke old ones.
 - **App updates** — parent-triggered self-update from GitHub releases.
 
 ## Pairing (one minute, once)
 
 1. Install the APK on the TV and on the parent's phone.
-2. TV: settings → a QR code appears.
+2. TV: settings → a QR code appears. (A kid's phone or tablet pairs the same
+   way — every kid device shows a pairing QR in its settings.)
 3. Phone: scan it with the camera → Pickwick opens → confirm.
 4. The **first** phone becomes the admin automatically, but only while the TV is
    actually showing that QR — so nothing else on the network can quietly claim
@@ -126,7 +148,8 @@ them manually per device (settings → Kid devices → **Pull**).
 ```
 budget/day  = session × sessions (weekday or weekend)
 sitting cap = session          — after that: a break of «break» minutes
-bedtime     = hard window (may cross midnight)
+blocked     = named no-watching windows (bedtime, school…), per days of week,
+              may cross midnight; each grants one parent-issued Skip pass
 grants      = parent adds minutes today; clears breaks; waives bedtime briefly
 multiplier  = per-channel drain rate (FREE, 0.25x–1.5x): scales budget & sitting
               use only — bedtime and breaks always apply, even on FREE channels
@@ -139,7 +162,10 @@ sitting with nothing lost. Everything resets at midnight. No rules set → no li
 
 Thumbnail resolution and playback quality adapt to the device and connection:
 up to 1080p on a TV with fast Wi-Fi (video+audio streams merged in ExoPlayer),
-degrading gracefully to lighter streams on weak links.
+degrading gracefully to lighter streams on weak links. Streams are fetched in
+ranged chunks the way official clients do — defeating server-side throttling —
+with a five-minute read-ahead buffer, so a Wi-Fi dip drains the buffer instead
+of stalling playback.
 
 ## Installing
 
@@ -157,10 +183,13 @@ come from inside the app (parent settings → Check for updates).
 
 - No accounts, no analytics, no cloud: history, stats and settings live on your
   devices; phone↔TV traffic never leaves the LAN (token-authenticated).
-- The one exception is **AI screening**, which is off unless you turn it on and
-  supply your own endpoint/key. Even then it sends only video titles, channel names
-  and durations — never watch history — and pointing it at a local server keeps
-  everything in the house.
+- The one opt-in exception is **AI screening**, which is off unless you turn it
+  on and supply your own endpoint/key. Even then it sends only video titles,
+  channel names and durations — never watch history — and pointing it at a local
+  server keeps everything in the house.
+- **Sponsor skipping** queries SponsorBlock's public database using only a
+  4-character hash prefix of the video ID, so the service can't tell which
+  video is actually being watched.
 - Plays streams directly rather than through YouTube's ad-supported player, which
   is against YouTube's Terms of Service — the same trade NewPipe users accept.
   For personal/family use; that's why it isn't in any app store.
