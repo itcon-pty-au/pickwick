@@ -217,6 +217,26 @@ fun PickwickScreen(
                             )
                         }
                     }
+                    // Search hits from the crawled index are screened live, in
+                    // windows — an honest bar (we know the window's size), with
+                    // results appended below as verdicts land.
+                    val sp = state.searchScreening
+                    if (state.screen is Screen.SearchResults && sp != null) {
+                        LinearProgressIndicator(
+                            progress = {
+                                if (sp.total == 0) 0f else sp.done.toFloat() / sp.total
+                            },
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)
+                        )
+                        Text(
+                            "Showing ${state.videos.size} · " +
+                                "${sp.total - sp.done} awaiting screening…" +
+                                if (sp.beyondWindow > 0) " (${sp.beyondWindow} more matches)" else "",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                    }
                     if (state.screen is Screen.Queue) {
                         QueueList(
                             state.videos,
@@ -231,11 +251,15 @@ fun PickwickScreen(
                         onPlay = onPlay,
                         // An all-held source must say so — a silently empty grid
                         // reads as broken to the kid and the parent alike.
-                        emptyText = if (state.held > 0) {
-                            "${state.held} video(s) here are waiting for a parent's OK.\n" +
-                                "A parent can allow them from the app on their phone\n" +
-                                "(the kid device's page, under \"AI screening\")."
-                        } else "Nothing here yet.",
+                        emptyText = when {
+                            // Mid-screening emptiness isn't "held" — results are coming.
+                            sp != null -> "Checking these videos for you…"
+                            state.held > 0 ->
+                                "${state.held} video(s) here are waiting for a parent's OK.\n" +
+                                    "A parent can allow them from the app on their phone\n" +
+                                    "(the kid device's page, under \"AI screening\")."
+                            else -> "Nothing here yet."
+                        },
                         loadingMore = state.loadingMore,
                         watchlisted = state.watchlisted,
                         onToggleWatchlist = vm::toggleWatchlist,
@@ -246,7 +270,13 @@ fun PickwickScreen(
                         queued = state.queued,
                         onToggleQueue = vm::toggleQueue,
                         grabFocus = isTv,
-                        onNearEnd = if (state.screen is Screen.ChannelVideos) vm::loadMoreUploads else null
+                        onNearEnd = when (state.screen) {
+                            is Screen.ChannelVideos -> vm::loadMoreUploads
+                            // Scrolling deep extends the screening window — the
+                            // AI bill follows what's actually being looked at.
+                            is Screen.SearchResults -> vm::screenMoreSearch
+                            else -> null
+                        }
                     )
                     }
                 }

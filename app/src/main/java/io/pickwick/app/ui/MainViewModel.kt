@@ -12,6 +12,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** Search hits screened per window — the bill tracks what's actually looked at,
+ *  not the thousands a broad query can match against a full back catalog. */
+private const val SEARCH_SCREEN_BATCH = 50
+
 class MainViewModel(
     private val whitelist: WhitelistRepository,
     private val history: WatchHistoryStore,
@@ -325,23 +329,111 @@ class MainViewModel(
         if (q.isEmpty()) return@launch
         _state.value = _state.value.copy(
             screen = Screen.SearchResults(q), loading = true, videos = emptyList(),
-            held = 0, error = null
+            held = 0, searchScreening = null, error = null
         )
         val visibleIds = withContext(Dispatchers.IO) {
             visibleSources(sources).map { it.id }.toSet()
         }
         val hits = withContext(Dispatchers.IO) { index.search(q, visibleIds) }
-        // Dedup before counting: the same video indexed under two sources is
-        // one result, not a "held" item — held means blocked or screened out.
-        val deduped = hits.map { it.toVideo() }.distinctBy { it.url }
-        val videos = deduped
+        val terms = q.lowercase().split(Regex("\\s+")).filter { it.isNotEmpty() }
+        // Dedup: the same video indexed under two sources is one result. The
+        // index has no relevance ranking, so impose one: title hits above
+        // channel-name-only hits (stable sort keeps newest-first within each
+        // band) — the first screening window should be the results a kid
+        // actually searched for, not whatever source iterated first.
+        searchMatches = hits.map { it.toVideo() }.distinctBy { it.url }
             .filter { it.videoId !in blockedVideoIds }
-            .filter { screener?.isVisible(it) != false }
-        rawVideos = videos
+            .sortedBy { v -> if (terms.all { it in v.title.lowercase() }) 0 else 1 }
+        searchWindow = 0
+        searchSent = 0
+        // Everything already cleared (or screening off) paints immediately —
+        // the back catalog's unscreened bulk trickles in behind it.
+        rawVideos = withContext(Dispatchers.IO) {
+            searchMatches.filter { screener?.isVisible(it) != false }
+        }
+        _state.value = _state.value.copy(loading = false, videos = annotated(includeFinished = true))
+        screenMoreSearch()
+    }
+
+    // ---- live screening of search hits ------------------------------------
+    // The crawled index is never pre-screened (that would bill the AI for a
+    // whole back catalog nobody may ever search), so search screens on demand:
+    // a window of the best matches now, the next window when the kid scrolls.
+
+    /** Relevance-ordered, deduped, unblocked matches for the current query. */
+    private var searchMatches: List<Video> = emptyList()
+    /** How much of [searchMatches] has been offered to the screener. */
+    private var searchWindow = 0
+    /** Matches actually sent to the AI this search (the progress bar's total). */
+    private var searchSent = 0
+    private var searchScreenMoreInFlight = false
+
+    /** Called on search open and again when the kid nears the end of the grid. */
+    fun screenMoreSearch() {
+        val scr = screener
+        if (_state.value.screen !is Screen.SearchResults) return
+        if (scr == null || searchScreenMoreInFlight || searchWindow >= searchMatches.size) return
+        searchScreenMoreInFlight = true
+        viewModelScope.launch {
+            try {
+                val batch = withContext(Dispatchers.IO) {
+                    // Extend the window until it covers the next batch of
+                    // unscreened matches; already-verdicted ones pass through free.
+                    val out = mutableListOf<Video>()
+                    var i = searchWindow
+                    while (i < searchMatches.size && out.size < SEARCH_SCREEN_BATCH) {
+                        searchMatches[i].takeIf { scr.needsScreening(it) }?.let { out += it }
+                        i++
+                    }
+                    searchWindow = i
+                    out
+                }
+                searchSent += batch.size
+                publishSearchScreening()
+                if (batch.isNotEmpty()) {
+                    scr.screenAsync(viewModelScope, batch) { onSearchVerdicts() }
+                }
+            } finally {
+                searchScreenMoreInFlight = false
+            }
+        }
+    }
+
+    /** A verdict batch landed (ours or a peer's): append what it cleared. */
+    private fun onSearchVerdicts() {
+        viewModelScope.launch {
+            if (_state.value.screen !is Screen.SearchResults) return@launch
+            val shown = rawVideos.mapTo(HashSet()) { it.url }
+            val cleared = withContext(Dispatchers.IO) {
+                searchMatches.filter { it.url !in shown && screener?.isVisible(it) == true }
+            }
+            // Append-only: cleared videos join at the bottom so nothing the
+            // kid is already looking at moves.
+            if (cleared.isNotEmpty()) rawVideos = rawVideos + cleared
+            publishSearchScreening()
+        }
+    }
+
+    /** Recompute the progress line/bar and held count for the search screen. */
+    private suspend fun publishSearchScreening() {
+        val scr = screener
+        var pending = 0
+        var heldNow = 0
+        if (scr != null) withContext(Dispatchers.IO) {
+            searchMatches.take(searchWindow).forEach { v ->
+                if (scr.needsScreening(v)) pending++
+                else if (!scr.isVisible(v)) heldNow++
+            }
+        }
+        if (_state.value.screen !is Screen.SearchResults) return
         _state.value = _state.value.copy(
-            loading = false,
             videos = annotated(includeFinished = true),
-            held = deduped.size - videos.size
+            held = heldNow,
+            searchScreening = if (pending > 0) SearchScreening(
+                total = searchSent,
+                done = searchSent - pending,
+                beyondWindow = searchMatches.size - searchWindow
+            ) else null
         )
     }
 
@@ -557,6 +649,9 @@ class MainViewModel(
     private fun reapplyScreening() {
         viewModelScope.launch {
             val onHome = _state.value.screen == Screen.Home
+            // Search owns its own re-filter: results append as verdicts land
+            // (never a wholesale rebuild, which could reorder under the kid).
+            val onSearch = _state.value.screen is Screen.SearchResults
             val includeFinished = includeFinishedNow()
             // Tiles and the resume row walk the per-source cache files — off-main.
             val (tiles, keepWatching) = withContext(Dispatchers.IO) {
@@ -566,11 +661,12 @@ class MainViewModel(
                 // Verdicts can clear (or fully hold) a source — tiles follow along.
                 channels = tiles,
                 keepWatching = keepWatching,
-                videos = if (onHome) _state.value.videos
+                videos = if (onHome || onSearch) _state.value.videos
                 else annotated(includeFinished = includeFinished),
-                held = if (onHome) _state.value.held
+                held = if (onHome || onSearch) _state.value.held
                 else heldByScreening()
             )
+            if (onSearch) onSearchVerdicts()
         }
     }
 

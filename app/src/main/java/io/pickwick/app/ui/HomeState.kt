@@ -46,5 +46,14 @@ data class UiState(
     /** Video URLs requested/approved/fetching — not yet playable offline (⏳). */
     val downloadPending: Set<String> = emptySet(),
     /** Video URLs fully on disk, playable without a network (✅). */
-    val downloaded: Set<String> = emptySet()
+    val downloaded: Set<String> = emptySet(),
+    /** Live-screening progress on the search screen; null when nothing is in flight. */
+    val searchScreening: SearchScreening? = null
 )
+
+/**
+ * Search hits handed to the AI screener in the current window. [done]/[total]
+ * drives the progress bar; results append to the grid as verdicts land.
+ * [beyondWindow] = matches past the screened window, screened as the kid scrolls.
+ */
+data class SearchScreening(val total: Int, val done: Int, val beyondWindow: Int)

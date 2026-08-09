@@ -248,6 +248,19 @@ class Screener(private val store: ScreeningStore) {
     }
 
     /**
+     * Whether [isVisible]'s "hidden" would merely mean "no verdict yet" — i.e. a
+     * screening call could still clear it, as opposed to an existing deny. Lets
+     * search count "awaiting screening" separately from "held for review".
+     */
+    fun needsScreening(video: Video): Boolean {
+        val cfg = config
+        if (!cfg.enabled) return false
+        val id = video.videoId ?: return false
+        if (id in allowedOverrides) return false
+        return store.get(id)?.rulesVersion != cfg.rulesVersion
+    }
+
+    /**
      * Screens whatever in [videos] has no current verdict, in batches, calling
      * [onUpdated] as each batch of verdicts lands so the UI can re-filter. A failed
      * batch retries with backoff ([RETRY_DELAYS_MS]) — transient provider errors
