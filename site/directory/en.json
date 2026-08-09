@@ -1,6 +1,6 @@
 {
   "language": "en",
-  "updated": "2026-08-08",
+  "updated": "2026-08-09",
   "entries": [
     {
       "url": "https://www.youtube.com/user/scishowkids",
@@ -643,6 +643,20 @@
       "note": "Stories with life lessons",
       "added": "2026-08-08",
       "channelId": "UC0qrcKuayvbMtPj-WXNFylA"
+    },
+    {
+      "url": "https://www.youtube.com/channel/UCsXVk37bltHxD1rDPwtNM8Q",
+      "name": "Kurzgesagt – In a Nutshell",
+      "kind": "channel",
+      "channelId": "UCsXVk37bltHxD1rDPwtNM8Q",
+      "ages": [
+        "11+"
+      ],
+      "topics": [
+        "Science"
+      ],
+      "note": "Great science channel for older kids",
+      "added": "2026-08-09"
     }
   ]
 }
