@@ -17,7 +17,7 @@ No ads, no Shorts, no comments, no recommendations, no rabbit holes, no accounts
 Open source (GPL-3.0), sideloaded — not distributed via app stores.
 
 > **Pickwick is in beta.** It's in daily use and the core — curating channels,
-> pairing, playback, screen time — is solid. But it's developed by a small team
+> pairing, playback, screen time — is solid. But it's developed by a single person
 > on a handful of devices, so some of the newer features haven't yet been
 > confirmed on every phone, tablet and TV combination. Expect the occasional
 > rough edge, and please [open an issue](https://github.com/itcon-pty-au/pickwick/issues)
