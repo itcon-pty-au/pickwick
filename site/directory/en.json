@@ -657,6 +657,18 @@
       ],
       "note": "Great science channel for older kids",
       "added": "2026-08-09"
+    },
+    {
+      "url": "https://www.youtube.com/@animalogic",
+      "name": "Animalogic",
+      "kind": "channel",
+      "channelId": "UCwg6_F2hDHYrqbNSGjmar4w",
+      "ages": [],
+      "topics": [
+        "Nature & animals"
+      ],
+      "note": "",
+      "added": "2026-08-09"
     }
   ]
 }
