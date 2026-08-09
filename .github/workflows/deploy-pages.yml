@@ -5,6 +5,14 @@
 # pushes in eight minutes collided (Pages allows one deployment in flight, so
 # the losers report `cancelled` or a 400 "due to in progress deployment").
 # A workflow lets us filter on path and queue instead of collide.
+#
+# The repo's Pages *source* setting still reads `main /docs`, left over from
+# that legacy builder. It is inert while build_type is `workflow` — this
+# artifact is what serves pickwick.tv — and it cannot be corrected: the API
+# accepts only `/` or `/docs`, never `/site`. Don't "tidy" it to `/`, which
+# would publish the repo root (README, CLAUDE.md) if Pages were ever switched
+# back to "Deploy from a branch". Switching back at all is the thing to avoid;
+# the site would go stale and wrong, not merely unbuilt.
 name: Deploy Pages
 
 on:
