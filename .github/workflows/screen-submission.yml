@@ -131,8 +131,8 @@ jobs:
                   summary: {type: "string"},
                   concerns: {type: "array", items: {type: "string"}},
                   suggested_ages: {type: "array", items: {type: "string", enum: ["2-4", "5-7", "8-10", "11+"]}},
-                  suggested_topics: {type: "array", items: {type: "string", enum: ["Science", "Nature & animals", "Math", "Space", "Engineering & tech", "Geography", "History", "Stories", "Reading & language", "Preschool", "Music", "Crafts & making", "Art & drawing", "Cooking & baking", "Sports & movement", "Feelings & social skills", "Cartoons & shows"]}, maxItems: 3},
-                  suggested_note: {type: "string", maxLength: 140}
+                  suggested_topics: {type: "array", items: {type: "string", enum: ["Science", "Nature & animals", "Math", "Space", "Engineering & tech", "Geography", "History", "Stories", "Reading & language", "Preschool", "Music", "Crafts & making", "Art & drawing", "Cooking & baking", "Sports & movement", "Feelings & social skills", "Cartoons & shows"]}},
+                  suggested_note: {type: "string"}
                 },
                 required: ["rating", "age_fit", "summary", "concerns", "suggested_ages", "suggested_topics", "suggested_note"],
                 additionalProperties: false
