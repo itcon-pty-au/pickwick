@@ -87,7 +87,29 @@
     border-radius: 999px;
   }
 
+  /* Amber, not brand teal — the beta pill has to read as a caveat rather than
+     as one more feature badge sitting in .nots above it. */
+  .beta {
+    display: inline-block;
+    background: #f0b232;
+    color: #3a2a05;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .5px;
+    text-transform: uppercase;
+    padding: 3px 10px;
+    border-radius: 999px;
+    vertical-align: middle;
+    margin-left: 10px;
+  }
+
   .cta { display: flex; justify-content: center; }
+  .beta-note {
+    font-size: 14px;
+    color: var(--muted);
+    max-width: 520px;
+    margin: 14px auto 0;
+  }
 
   /* Hamburger menu — all secondary links live here on every screen size;
      only Download stays out as the hero button. */
@@ -217,7 +239,7 @@
   <div class="logo" aria-hidden="true">
     <svg viewBox="0 0 24 24" fill="#ffffff"><path d="M6 3.5v17l14-8.5z"/></svg>
   </div>
-  <h1>Pickwick</h1>
+  <h1>Pickwick<span class="beta">Beta</span></h1>
   <p class="tagline">
     A kid-safe, whitelist-only video player for Android phones, tablets and Google&nbsp;TV —
     <strong>parents choose exactly which YouTube channels exist; nothing else is reachable.</strong>
@@ -229,6 +251,12 @@
   <div class="cta">
     <a class="btn btn-primary" href="https://github.com/itcon-pty-au/pickwick/releases">Download</a>
   </div>
+  <p class="beta-note">
+    Pickwick is in beta. The core — curating channels, pairing, playback, screen
+    time — is in daily use, but some newer features are still being confirmed
+    across different phones, tablets and TVs. Your channels and settings live on
+    the devices themselves, not in the cloud, so uninstalling throws them away.
+  </p>
 </header>
 
 <main class="wrap">

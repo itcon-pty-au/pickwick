@@ -31,7 +31,7 @@ android {
         minSdk = 26 // adaptive icons; every realistic target device is far above this
         targetSdk = 34
         versionCode = 19
-        versionName = "0.6.9"
+        versionName = "0.6.9-beta"
 
         // Self-update manifest: JSON with versionCode/versionName/apkUrl.
         buildConfigField(

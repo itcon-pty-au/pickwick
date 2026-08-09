@@ -7,6 +7,7 @@
   <a href="https://pickwick.tv/donate.html">
     <img src="https://img.shields.io/badge/%E2%9D%A4%EF%B8%8F%20Donate-keep%20Pickwick%20maintained-00897B?style=for-the-badge&labelColor=00695C" alt="Donate — keep Pickwick maintained">
   </a>
+  <img src="https://img.shields.io/badge/status-beta-E8A33D?style=for-the-badge&labelColor=B87A24" alt="Status: beta">
   <br>
   <sub>Free forever &amp; open source — donations fund the upkeep that keeps playback working.</sub>
 </p>
@@ -16,6 +17,14 @@ A kid-safe, whitelist-only video player for Android phones, tablets and Google T
 No ads, no Shorts, no comments, no recommendations, no rabbit holes, no accounts, no cloud.
 
 Open source (GPL-3.0), sideloaded — not distributed via app stores.
+
+> **Pickwick is in beta.** It's in daily use and the core — curating channels,
+> pairing, playback, screen time — is solid. But it's developed by a small team
+> on a handful of devices, so some of the newer features haven't yet been
+> confirmed on every phone, tablet and TV combination. Expect the occasional
+> rough edge, and please [open an issue](https://github.com/itcon-pty-au/pickwick/issues)
+> when you hit one. Note too that curation lives only on the device: an uninstall
+> wipes it, and there is no cloud backup to restore from.
 
 ## Why
 

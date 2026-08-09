@@ -3,6 +3,12 @@
 This guide assumes **no technical background**. It takes about 20 minutes:
 ten for the TV, five for your phone, five to pair them and add channels.
 
+> **Pickwick is in beta.** The setup below is the well-trodden path, but some
+> newer features are still being confirmed across different phones, tablets and
+> TVs — expect the occasional rough edge. Your channels and settings are stored
+> on the devices themselves, not in the cloud, so keep in mind that uninstalling
+> the app throws them away.
+
 Pickwick isn't in any app store (see the README for why), so you install it
 by "sideloading" — which just means installing an app from a file instead of
 from a store. Millions of people do this; the only catch is that Android makes
