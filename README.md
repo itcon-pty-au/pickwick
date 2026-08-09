@@ -6,9 +6,7 @@
 <p align="center">
   <a href="https://pickwick.tv/donate.html">
     <img src="https://img.shields.io/badge/%E2%9D%A4%EF%B8%8F%20Donate-keep%20Pickwick%20maintained-00897B?style=for-the-badge&labelColor=00695C" alt="Donate — keep Pickwick maintained">
-  </a>
-  <img src="https://img.shields.io/badge/status-beta-E8A33D?style=for-the-badge&labelColor=B87A24" alt="Status: beta">
-  <br>
+  </a><br>
   <sub>Free forever &amp; open source — donations fund the upkeep that keeps playback working.</sub>
 </p>
 
