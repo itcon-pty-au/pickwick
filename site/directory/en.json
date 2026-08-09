@@ -649,11 +649,11 @@
       "name": "Kurzgesagt – In a Nutshell",
       "kind": "channel",
       "channelId": "UCsXVk37bltHxD1rDPwtNM8Q",
-      "ages": [],
+      "ages": ["8-10", "11+"],
       "topics": [
         "Science"
       ],
-      "note": "",
+      "note": "Great science channel for older kids",
       "added": "2026-08-09"
     }
   ]
