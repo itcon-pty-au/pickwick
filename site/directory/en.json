@@ -649,7 +649,10 @@
       "name": "Kurzgesagt – In a Nutshell",
       "kind": "channel",
       "channelId": "UCsXVk37bltHxD1rDPwtNM8Q",
-      "ages": ["8-10", "11+"],
+      "ages": [
+        "11+",
+        "8-10"
+      ],
       "topics": [
         "Science"
       ],
