@@ -103,12 +103,16 @@ internal fun QueueList(
                     .tvFocusHighlight { focused = it }
                     .clickable { onPlayFrom(i) }
             ) {
-                Box {
+                // The Box itself must carry the size: WatchedProgressBar fills
+                // the parent's max width, and an unconstrained Box in a Row
+                // balloons to the whole row once a bar appears — crushing the
+                // title and the ▲▼✕ buttons to zero width.
+                Box(Modifier.width(120.dp).aspectRatio(16f / 9f)) {
                     AsyncImage(
                         model = item.video.thumbnailUrl,
                         contentDescription = item.video.title,
                         contentScale = ContentScale.Crop,
-                        modifier = Modifier.width(120.dp).aspectRatio(16f / 9f)
+                        modifier = Modifier.fillMaxSize()
                     )
                     item.progress?.let { fraction -> WatchedProgressBar(fraction) }
                 }
