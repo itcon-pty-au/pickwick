@@ -73,12 +73,18 @@ class Updater(private val context: Context) {
     }
 
     /**
-     * Launch-time path: at most one real fetch a day, then publish the cached
-     * answer so the settings-gear dot shows without any network at all.
+     * Launch-time path: publish the cached answer immediately (the dot shows
+     * with no network at all), then refresh it with one real fetch per app
+     * process. This used to be throttled to one fetch a day, which meant a
+     * release shipped inside that window showed no gear dot until something
+     * else (the settings screen) happened to check — the manifest is ~150
+     * bytes, so freshness on every cold launch costs nothing. The process
+     * guard (not a prefs timestamp) is what keeps activity re-creation from
+     * re-fetching.
      */
     suspend fun autoCheck() {
-        val stale = System.currentTimeMillis() - prefs.getLong("last_check_at", 0L) >= CHECK_EVERY_MS
-        if (stale) check() else UpdateEvents.pending.value = pending()
+        UpdateEvents.pending.value = pending()
+        if (checkedThisProcess.compareAndSet(false, true)) check()
     }
 
     /** Downloads the APK, then hands it to the system installer (user confirms). */
@@ -103,6 +109,7 @@ class Updater(private val context: Context) {
     }
 
     private companion object {
-        const val CHECK_EVERY_MS = 24 * 60 * 60 * 1000L
+        /** One fresh manifest fetch per process, however many Updaters exist. */
+        val checkedThisProcess = java.util.concurrent.atomic.AtomicBoolean(false)
     }
 }
