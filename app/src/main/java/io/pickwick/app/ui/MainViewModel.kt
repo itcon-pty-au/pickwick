@@ -686,10 +686,13 @@ class MainViewModel(
 
     /**
      * Channel browsing keeps fully-watched videos visible (kids rewatch!) — they
-     * render dimmed with a full red bar. Surprise excludes them: it's the
-     * discovery mix, and clutter there would defeat its purpose.
+     * render dimmed with a full red bar. Up next does too: an item there was put
+     * there on purpose, so hiding it would look like the add silently failed.
+     * Surprise excludes them: it's the discovery mix, and clutter there would
+     * defeat its purpose.
      */
-    private fun includeFinishedNow(): Boolean = _state.value.screen is Screen.ChannelVideos
+    private fun includeFinishedNow(): Boolean =
+        _state.value.screen is Screen.ChannelVideos || _state.value.screen == Screen.Queue
 
     /** Raw videos on the current screen hidden by the screener (no verdict yet or held for review). */
     private fun heldByScreening(): Int = rawVideos.count { v ->
@@ -975,17 +978,22 @@ class MainViewModel(
             _state.value = _state.value.copy(queued = queued)
             if (listVideos != null) {
                 rawVideos = listVideos
-                _state.value = _state.value.copy(videos = annotated(includeFinished = false), held = heldByScreening())
+                _state.value = _state.value.copy(videos = annotated(includeFinished = true), held = heldByScreening())
             }
             // No syncWatchState(): the queue is device-local by design.
         }
     }
 
-    /** Watched-to-the-end videos leave the lineup automatically. */
+    /**
+     * Videos that finished *after* they were lined up leave automatically. The
+     * comparison against addedAt is the whole point: pruning on watch history
+     * alone made a rewatch unqueueable — the kid picks a favourite they've seen,
+     * and it vanishes before the lineup is even on screen.
+     */
     private fun pruneFinishedQueue() {
-        queueStore.load()
-            .filter { history.progress(it.url)?.isFinished == true }
-            .forEach { queueStore.remove(it.url) }
+        queueStore.entries()
+            .filter { it.finishedSinceQueued(history.progress(it.video.url)) }
+            .forEach { queueStore.remove(it.video.url) }
     }
 
     fun openQueue() {
@@ -1002,7 +1010,7 @@ class MainViewModel(
                 loading = false,
                 error = null,
                 queued = videos.map { it.url }.toSet(),
-                videos = annotated(includeFinished = false),
+                videos = annotated(includeFinished = true),
                 held = heldByScreening()
             )
         }
@@ -1017,7 +1025,7 @@ class MainViewModel(
             rawVideos = videos
             _state.value = _state.value.copy(
                 queued = videos.map { it.url }.toSet(),
-                videos = annotated(includeFinished = false),
+                videos = annotated(includeFinished = true),
                 held = heldByScreening()
             )
         }
@@ -1030,7 +1038,7 @@ class MainViewModel(
                 queueStore.load()
             }
             rawVideos = videos
-            _state.value = _state.value.copy(videos = annotated(includeFinished = false))
+            _state.value = _state.value.copy(videos = annotated(includeFinished = true))
         }
     }
 
