@@ -33,19 +33,43 @@ object DeepCheck {
         pb: YouTubeRepository.Playback,
         timeoutMs: Long
     ): ScreeningStore.Entry? = withContext(Dispatchers.IO) {
+        val started = System.currentTimeMillis()
+        // Fail-open is deliberate, but it must never be *silent* — a run of
+        // timeouts reads as "screening stopped working" unless the log says
+        // exactly what happened to each check.
+        var timedOut = false
+        var transcriptChars = -1
         val result = try {
             withTimeoutOrNull(timeoutMs) {
                 val transcript = Captions.pickEnglish(pb.subtitles)?.let { Captions.fetchText(it) }
+                transcriptChars = transcript?.length ?: -1
                 AiScreener.deepScreen(
                     ai, videoId, title, channel, pb.description, pb.tags, transcript, profiles
                 )
-            }
+            }.also { if (it == null) timedOut = true }
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
-            android.util.Log.w("Pickwick", "Deep check failed", e)
+            android.util.Log.w("Pickwick", "Deep check $videoId failed — allowing unchecked this once", e)
             null
-        } ?: return@withContext null
+        }
+        if (result == null) {
+            if (timedOut) {
+                android.util.Log.w(
+                    "Pickwick",
+                    "Deep check $videoId timed out after ${timeoutMs}ms " +
+                        "(transcript ${if (transcriptChars < 0) "not fetched" else "$transcriptChars chars"}) " +
+                        "— allowing unchecked this once"
+                )
+            }
+            return@withContext null
+        }
+        android.util.Log.i(
+            "Pickwick",
+            "Deep check $videoId: ${result.verdict} (\"${result.reason}\") " +
+                "in ${System.currentTimeMillis() - started}ms, " +
+                "transcript ${if (transcriptChars < 0) "none" else "$transcriptChars chars"}"
+        )
 
         val entry = ScreeningStore.Entry(
             verdict = result.verdict,

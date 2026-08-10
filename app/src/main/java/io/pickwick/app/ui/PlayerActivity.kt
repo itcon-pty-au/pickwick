@@ -590,6 +590,10 @@ class PlayerActivity : ComponentActivity() {
         if (id in cfg.allowedIdsFor(gateProfileId)) return@withContext false
 
         io.pickwick.app.data.DeepCheck.cached(screeningStore, id, ai.rulesVersion)?.let {
+            android.util.Log.i(
+                "Pickwick",
+                "Deep check $id: cached ${it.verdictFor(gateProfileId)} (\"${it.reason}\")"
+            )
             return@withContext it.verdictFor(gateProfileId) != AiScreener.Verdict.ALLOW
         }
 
