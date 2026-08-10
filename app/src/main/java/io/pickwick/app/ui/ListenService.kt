@@ -19,14 +19,15 @@ import androidx.media3.session.MediaSession
 import androidx.media3.ui.PlayerNotificationManager
 
 /**
- * The background half of listen mode: while the phone screen is off, this
- * foreground service is what keeps the process (and so the audio) alive.
+ * The background half of listen mode: while the player isn't in front —
+ * screen off, or another app on top — this foreground service is what keeps
+ * the process (and so the audio) alive.
  * The player itself stays owned by [PlayerActivity], which survives its own
  * onStop — the static handoff mirrors [io.pickwick.app.data.RemotePlayerControl].
  * The media notification puts a pause button on the lock screen, and the
  * [MediaSession] behind it routes headset buttons too. Phones only by
- * construction: the sole caller is PlayerActivity.onStop with the display
- * actually off, a state a TV never reaches while the app runs.
+ * construction: the sole caller is PlayerActivity's enterListenMode, which
+ * bails on TV.
  */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class ListenService : Service() {

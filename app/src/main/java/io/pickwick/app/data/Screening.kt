@@ -30,7 +30,14 @@ class ScreeningStore(private val file: File) {
         val rulesVersion: Int,
         val at: Long,
         /** Per-kid verdicts (profile id → verdict); empty on pre-profile entries. */
-        val perProfile: Map<String, AiScreener.Verdict> = emptyMap()
+        val perProfile: Map<String, AiScreener.Verdict> = emptyMap(),
+        /**
+         * True once the pre-play deep check (description + tags + transcript)
+         * has ruled. A deep verdict is the stronger evidence: the play gate
+         * runs it once per video per rules version, and a title-only batch
+         * must never overwrite it — see [Screener.screenBatch].
+         */
+        val deep: Boolean = false
     ) {
         fun verdictFor(profileId: String?): AiScreener.Verdict =
             profileId?.let { perProfile[it] } ?: verdict
@@ -79,7 +86,8 @@ class ScreeningStore(private val file: File) {
             thumb = o.optString("thumb").ifEmpty { null },
             rulesVersion = o.optInt("rv"),
             at = o.optLong("at"),
-            perProfile = pp
+            perProfile = pp,
+            deep = o.optBoolean("dc")
         )
     }
 
@@ -91,6 +99,7 @@ class ScreeningStore(private val file: File) {
         .put("thumb", e.thumb ?: "")
         .put("rv", e.rulesVersion)
         .put("at", e.at)
+        .apply { if (e.deep) put("dc", true) }
         .apply {
             if (e.perProfile.isNotEmpty()) {
                 put("pp", JSONObject().apply {
@@ -144,6 +153,10 @@ class ScreeningStore(private val file: File) {
      * current rules) count, and never over one we already hold for the same
      * rules — our own verdict is just as good, and not overwriting keeps a
      * pull-then-push exchange from ping-ponging entries between devices.
+     * The one exception: a peer's deep (pre-play) verdict replaces our
+     * title-only one — it judged the actual content, and taking it both saves
+     * this device the play-time AI call and carries a TV's blacklist to the
+     * phone. Deep-over-shallow is one-way, so it can't ping-pong either.
      * Returns how many were new.
      */
     fun importJson(json: String, rulesVersion: Int): Int {
@@ -157,9 +170,9 @@ class ScreeningStore(private val file: File) {
             incoming.keys().forEach { id ->
                 val e = runCatching { parseEntry(incoming.getJSONObject(id)) }.getOrNull()
                     ?: return@forEach
-                if (e.rulesVersion == rulesVersion && existing[id]?.rulesVersion != rulesVersion) {
-                    fresh[id] = e
-                }
+                if (e.rulesVersion != rulesVersion) return@forEach
+                val held = existing[id]?.takeIf { it.rulesVersion == rulesVersion }
+                if (held == null || (e.deep && !held.deep)) fresh[id] = e
             }
             if (fresh.isNotEmpty()) putAll(fresh)
             return fresh.size
@@ -209,7 +222,8 @@ class ScreeningStore(private val file: File) {
  * synchronously from the verdict cache, and screens the unscreened in background
  * batches. Fail-closed by design: no verdict (yet) means not visible.
  */
-class Screener(private val store: ScreeningStore) {
+/** [store] is public for the gates that share its verdicts (DownloadChecker). */
+class Screener(val store: ScreeningStore) {
 
     @Volatile var config: AiConfig = AiConfig()
     /** Parent allow-overrides already resolved for the active kid (global + per-kid). */
@@ -313,7 +327,13 @@ class Screener(private val store: ScreeningStore) {
                 continue
             }
             val byId = batch.associateBy { it.videoId }
-            store.putAll(results.associate { r ->
+            // A play-press deep check can land for one of these ids while the
+            // batch was in flight; its verdict judged the actual content and
+            // must not be replaced by this title-only one.
+            val fresh = results.filterNot { r ->
+                store.get(r.videoId)?.let { it.deep && it.rulesVersion == cfg.rulesVersion } == true
+            }
+            store.putAll(fresh.associate { r ->
                 val v = byId[r.videoId]
                 r.videoId to ScreeningStore.Entry(
                     verdict = r.verdict,

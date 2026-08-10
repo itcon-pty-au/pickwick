@@ -372,7 +372,11 @@ class YouTubeRepository {
         val videoUrl: String,
         val audioUrl: String?,
         val subtitles: List<Subtitle> = emptyList(),
-        val audioTracks: List<AudioTrack> = emptyList()
+        val audioTracks: List<AudioTrack> = emptyList(),
+        /** Uploader-written page fields, carried for the pre-play deep check —
+         *  the StreamInfo fetch already paid for them. Empty for local files. */
+        val description: String = "",
+        val tags: List<String> = emptyList()
     )
 
     /** Human-authored tracks first — auto-captions are a fallback, not a default. */
@@ -451,7 +455,9 @@ class YouTubeRepository {
                 val bestAudio = audioTracks.firstOrNull()
                 if (bestVideo != null && bestAudio != null) {
                     return@withContext Playback(
-                        info.name, bestVideo.content, bestAudio.url, subtitlesOf(info), audioTracks
+                        info.name, bestVideo.content, bestAudio.url, subtitlesOf(info), audioTracks,
+                        description = info.description?.content.orEmpty(),
+                        tags = info.tags.orEmpty()
                     )
                 }
             }
@@ -459,7 +465,11 @@ class YouTubeRepository {
                 .filter { !it.isVideoOnly }
                 .maxByOrNull { it.height }
                 ?: error("No playable stream found")
-            Playback(info.name, muxed.content, null, subtitlesOf(info))
+            Playback(
+                info.name, muxed.content, null, subtitlesOf(info),
+                description = info.description?.content.orEmpty(),
+                tags = info.tags.orEmpty()
+            )
         }
 
     private fun StreamInfoItem.toVideo() = Video(

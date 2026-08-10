@@ -114,6 +114,8 @@ class MainViewModel(
         refresh()
         syncWatchState()
         syncConfigState()
+        // Requests stranded mid-check by an app death resume where they left off.
+        kickDownloadChecker()
         // Approvals, finished downloads and local-library edits update the
         // badges (and the Downloads screen, if it's open) as they happen —
         // LocalLibrary rides the same change signal since it feeds the same shelf.
@@ -645,8 +647,11 @@ class MainViewModel(
         screener?.screenAsync(viewModelScope, videos) { reapplyScreening() }
     }
 
-    /** Re-filters whatever is on screen after new verdicts land (AI batch or a peer's import). */
-    private fun reapplyScreening() {
+    /** Re-filters whatever is on screen after new verdicts land (AI batch, a
+     *  peer's import, or the player's pre-play deep check — the last is why the
+     *  home screen calls this on resume: a video blocked at the play press must
+     *  be gone from the shelf the kid returns to). */
+    fun reapplyScreening() {
         viewModelScope.launch {
             val onHome = _state.value.screen == Screen.Home
             // Search owns its own re-filter: results append as verdicts land
@@ -1031,9 +1036,46 @@ class MainViewModel(
         when {
             url in _state.value.downloaded -> return
             url in _state.value.downloadPending -> store.cancelRequest(url)
-            else -> store.request(item.video)
+            else -> {
+                // With screening on, the request goes through the AI deep check
+                // first and reaches the parent only if it passes — the kid sees
+                // the same ⏳ either way.
+                store.request(item.video, checking = screener?.config?.enabled == true)
+                kickDownloadChecker()
+            }
         }
         // The store bumps DownloadEvents.changes, which refreshes the badges.
+    }
+
+    /**
+     * Works off any CHECKING download requests. Also called once at startup:
+     * an app death mid-check must not strand a request in a state neither the
+     * parent (not REQUESTED yet) nor the kid (still ⏳) can see resolve.
+     */
+    private fun kickDownloadChecker() {
+        val store = downloadStore ?: return
+        val cs = configStore ?: return
+        val scr = screener ?: return
+        io.pickwick.app.data.DownloadChecker.kick(
+            viewModelScope, cs, scr.store, store, yt, activeProfileId
+        ) { video ->
+            // The verdict also hides the video itself — pill first, then the
+            // re-filter takes it off the shelf the kid is looking at.
+            showNotice("\"${video.title}\" isn't available.")
+            reapplyScreening()
+        }
+    }
+
+    private var noticeJob: kotlinx.coroutines.Job? = null
+
+    /** Shows the kid one transient line, replacing any previous one. */
+    private fun showNotice(text: String) {
+        noticeJob?.cancel()
+        _state.value = _state.value.copy(notice = text)
+        noticeJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(5_000)
+            _state.value = _state.value.copy(notice = null)
+        }
     }
 
     /**

@@ -48,7 +48,10 @@ data class UiState(
     /** Video URLs fully on disk, playable without a network (✅). */
     val downloaded: Set<String> = emptySet(),
     /** Live-screening progress on the search screen; null when nothing is in flight. */
-    val searchScreening: SearchScreening? = null
+    val searchScreening: SearchScreening? = null,
+    /** Transient kid-facing pill (e.g. a save request the deep check refused);
+     *  cleared by the ViewModel after a few seconds. */
+    val notice: String? = null
 )
 
 /**

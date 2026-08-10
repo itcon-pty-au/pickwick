@@ -846,7 +846,7 @@ private fun AdminScreen(
 }
 
 @Composable
-private fun SectionTitle(text: String) {
+internal fun SectionTitle(text: String) {
     Spacer(Modifier.height(24.dp))
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
     Spacer(Modifier.height(16.dp))

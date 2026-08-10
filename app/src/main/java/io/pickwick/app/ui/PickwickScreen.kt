@@ -1,7 +1,9 @@
 package io.pickwick.app.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
@@ -88,6 +90,10 @@ fun PickwickScreen(
                     vm.refreshProgress()
                     // Fresh progress after watching — share it with paired devices.
                     vm.syncWatchState()
+                    // The player's pre-play deep check may have blocked the very
+                    // video the kid just pressed — it must not still be on the
+                    // shelf they land back on.
+                    vm.reapplyScreening()
                 }
                 // App returned to foreground: pick up any whitelist edits.
                 Lifecycle.Event.ON_START -> vm.refreshIfIdle()
@@ -110,6 +116,7 @@ fun PickwickScreen(
                 if (isTv) null
                 else androidx.compose.foundation.LocalOverscrollConfiguration.current
         ) {
+        Box(Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
             when {
                 state.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -281,6 +288,24 @@ fun PickwickScreen(
                     }
                 }
             }
+        }
+        // Transient top-center pill, same look as the player's notices — today
+        // it says a save-offline request was refused by the check.
+        state.notice?.let { n ->
+            Text(
+                n,
+                color = androidx.compose.ui.graphics.Color.White,
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 28.dp)
+                    .background(
+                        androidx.compose.ui.graphics.Color(0xCC000000),
+                        shape = RoundedCornerShape(24.dp)
+                    )
+                    .padding(horizontal = 20.dp, vertical = 10.dp)
+            )
+        }
         }
         }
     }

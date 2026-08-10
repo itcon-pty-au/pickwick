@@ -369,30 +369,15 @@ internal fun AiReviewSection(
         }
     val flagged = (localFlagged + remoteOnly).sortedByDescending { it.second.at }
 
-    val screeningNote = if (stillScreening > 0) {
-        " $stillScreening more still being screened — they'll appear here as the AI finishes."
-    } else ""
+    // Two piles for the parent: "AI unsure — waiting on you" stays up top, and
+    // hard blocks (the title pass or the pre-play deep check, this device or a
+    // paired one) sit in their own collapsed section below — those are already
+    // ruled and hidden, listed only so a wrong call can be overruled.
+    val review = flagged.filter { it.second.verdict == io.pickwick.app.data.AiScreener.Verdict.REVIEW }
+    val blockedList = flagged.filter { it.second.verdict == io.pickwick.app.data.AiScreener.Verdict.BLOCK }
 
-    if (flagged.isEmpty()) {
-        Text(
-            "Nothing waiting for you. Videos the AI blocks or is unsure about " +
-                "appear here for your decision." + screeningNote,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        return
-    }
-
-    Text(
-        "${flagged.size} video(s) held back — hidden from the kid until you decide. " +
-            "Each Allow/Block is saved as you tap it." + screeningNote,
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
-    )
-    // No pagination: a parent asked to rule on a queue wants the whole queue, not
-    // a batch that refills after each round trip. The cap only exists so a runaway
-    // store can't build thousands of cards into one scrolling Column.
-    flagged.take(300).forEach { (videoId, e) ->
+    @Composable
+    fun flaggedCard(videoId: String, e: ScreeningStore.Entry) {
         Card(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
             Column(Modifier.padding(12.dp)) {
                 Row(verticalAlignment = Alignment.Top) {
@@ -489,18 +474,89 @@ internal fun AiReviewSection(
             }
         }
     }
-    if (profiles.size >= 2) {
-        Text(
-            "Tap Allow/Block for all kids — hold to choose which kids.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+
+    @Composable
+    fun perKidHint() {
+        if (profiles.size >= 2) {
+            Text(
+                "Tap Allow/Block for all kids — hold to choose which kids.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
-    if (flagged.size > 300) {
+
+    val screeningNote = if (stillScreening > 0) {
+        " $stillScreening more still being screened — they'll appear here as the AI finishes."
+    } else ""
+
+    if (review.isEmpty()) {
         Text(
-            "…and ${flagged.size - 300} more — they appear as you rule on these.",
+            "Nothing waiting for you. Videos the AI is unsure about " +
+                "appear here for your decision." + screeningNote,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+    } else {
+        Text(
+            "${review.size} video(s) held back — hidden from the kid until you decide. " +
+                "Each Allow/Block is saved as you tap it." + screeningNote,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        // No pagination: a parent asked to rule on a queue wants the whole queue, not
+        // a batch that refills after each round trip. The cap only exists so a runaway
+        // store can't build thousands of cards into one scrolling Column.
+        review.take(300).forEach { (videoId, e) -> flaggedCard(videoId, e) }
+        perKidHint()
+        if (review.size > 300) {
+            Text(
+                "…and ${review.size - 300} more — they appear as you rule on these.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+
+    SectionTitle("Blocked videos")
+    if (blockedList.isEmpty()) {
+        Text(
+            "Nothing blocked right now. Videos the AI blocks — at screening, or in " +
+                "the final check just before one plays — collect here so you can " +
+                "overrule a wrong call.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    } else {
+        // Collapsed by default: these are already ruled and hidden — routine
+        // visits are about the queue above, not re-reading old blocks.
+        var blockedExpanded by remember { mutableStateOf(false) }
+        Text(
+            if (blockedExpanded) "▾ ${blockedList.size} video(s) blocked and hidden — hide list"
+            else "▸ ${blockedList.size} video(s) blocked and hidden — show",
+            color = MaterialTheme.colorScheme.primary,
+            style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier
+                .tvFocusHighlight()
+                .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                .combinedClickable(onClick = { blockedExpanded = !blockedExpanded })
+                .padding(horizontal = 4.dp, vertical = 8.dp)
+        )
+        if (blockedExpanded) {
+            Text(
+                "Allow overrules the AI — the video reappears on every device.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            blockedList.take(300).forEach { (videoId, e) -> flaggedCard(videoId, e) }
+            perKidHint()
+            if (blockedList.size > 300) {
+                Text(
+                    "…and ${blockedList.size - 300} more — they appear as you rule on these.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
     }
 }

@@ -245,7 +245,7 @@ fun StatsScreen(
                 )
                 if (held > 0) {
                     Text(
-                        "Review them under \"Waiting for your OK\" in settings.",
+                        "Rule on them under \"Waiting for your OK\" (or \"Blocked videos\") in settings.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary
                     )

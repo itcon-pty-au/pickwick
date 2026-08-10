@@ -498,6 +498,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                 )
                                 intent.putExtra(PlayerActivity.EXTRA_FROM_QUEUE, true)
                                 intent.putExtra(PlayerActivity.EXTRA_PROFILE_SUFFIX, profileSuffix)
+                                intent.putExtra(PlayerActivity.EXTRA_PROFILE_ID, activeProfileId)
                                 startActivity(intent)
                             }
                         }
@@ -525,6 +526,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         // resolved, so the player never re-derives it and can never
                         // disagree with the home screen that launched it.
                         intent.putExtra(PlayerActivity.EXTRA_PROFILE_SUFFIX, profileSuffix)
+                        intent.putExtra(PlayerActivity.EXTRA_PROFILE_ID, activeProfileId)
                         // Screen-time drain rate: exact from the open source; for
                         // mixed rows (Surprise, My list, Keep watching) resolved by
                         // the video's channel name, defaulting to normal speed.

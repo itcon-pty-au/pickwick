@@ -7,9 +7,12 @@ import java.io.File
 /**
  * Offline downloads: the kid requests a video from its poster, the parent
  * approves in settings, and the file lands here for Wi-Fi-free playback.
- * REQUESTED → QUEUED (approved) → DOWNLOADING → DONE, or FAILED for retry.
+ * CHECKING (AI deep check, screening on) → REQUESTED → QUEUED (approved) →
+ * DOWNLOADING → DONE, or FAILED for retry. A CHECKING request the AI refuses
+ * is removed before the parent ever sees it — the verdict lands in the
+ * screening store, so the phone's "Blocked videos" section explains it.
  */
-enum class DownloadStatus { REQUESTED, QUEUED, DOWNLOADING, DONE, FAILED }
+enum class DownloadStatus { CHECKING, REQUESTED, QUEUED, DOWNLOADING, DONE, FAILED }
 
 /**
  * Live signals between the download service and whatever UI is on screen —
@@ -51,13 +54,16 @@ class DownloadStore(context: Context) {
 
     fun entries(): List<Entry> = synchronized(LOCK) { loadEntries() }
 
-    /** Hold-menu "Save offline": joins the parent's approval queue. No-op if known. */
-    fun request(video: Video) {
+    /** Hold-menu "Save offline": joins the parent's approval queue — behind the
+     *  AI deep check first when [checking] (the caller knows if screening is
+     *  on; [DownloadChecker] promotes or removes it). No-op if known. */
+    fun request(video: Video, checking: Boolean = false) {
         if (video.videoId == null) return
+        val status = if (checking) DownloadStatus.CHECKING else DownloadStatus.REQUESTED
         synchronized(LOCK) {
             val all = loadEntries()
             if (all.any { it.video.url == video.url }) return
-            saveEntries(all + Entry(video, DownloadStatus.REQUESTED, System.currentTimeMillis()))
+            saveEntries(all + Entry(video, status, System.currentTimeMillis()))
         }
         DownloadEvents.notifyChanged()
     }
@@ -67,7 +73,9 @@ class DownloadStore(context: Context) {
         synchronized(LOCK) {
             val all = loadEntries()
             val entry = all.firstOrNull { it.video.url == videoUrl } ?: return
-            if (entry.status != DownloadStatus.REQUESTED) return
+            if (entry.status != DownloadStatus.REQUESTED &&
+                entry.status != DownloadStatus.CHECKING
+            ) return
             saveEntries(all - entry)
         }
         DownloadEvents.notifyChanged()

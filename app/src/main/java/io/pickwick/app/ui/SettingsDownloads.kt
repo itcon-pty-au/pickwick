@@ -55,7 +55,9 @@ internal fun DownloadsSection() {
     Text(
         "The kid taps ⬇️ on any video to ask for it offline. Approved videos are " +
             "saved to this device and play without internet — perfect for car trips. " +
-            "Watching them still uses screen time as usual.",
+            "Watching them still uses screen time as usual. With AI screening on, " +
+            "each request is deep-checked first — refused ones never reach this " +
+            "list (they're under \"Blocked videos\", where you can overrule).",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )

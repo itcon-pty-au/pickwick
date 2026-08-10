@@ -41,6 +41,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import io.pickwick.app.data.AiScreener
 import io.pickwick.app.data.NowPlaying
 import io.pickwick.app.data.RemotePlayerControl
 import io.pickwick.app.data.SessionGuard
@@ -83,6 +84,13 @@ class PlayerActivity : ComponentActivity() {
          * once enforced a stale kid's rules and wrote history into their stores.
          */
         const val EXTRA_PROFILE_SUFFIX = "profile_suffix"
+        /**
+         * The kid's profile id, resolved by the launcher alongside the suffix.
+         * The pre-play deep check needs the *id* (per-kid verdicts and allow
+         * overrides key on it); the suffix is a storage namespace and can't be
+         * mapped back. Absent → fail-closed on the strictest per-kid verdict.
+         */
+        const val EXTRA_PROFILE_ID = "profile_id"
     }
 
     private var player: ExoPlayer? = null
@@ -136,6 +144,15 @@ class PlayerActivity : ComponentActivity() {
     private val indexState = mutableIntStateOf(0)
     private val playbackState = mutableStateOf<YouTubeRepository.Playback?>(null)
     private val errorState = mutableStateOf<String?>(null)
+    /** Kid the deep check judges for — see [EXTRA_PROFILE_ID]. */
+    private var gateProfileId: String? = null
+    /** Family config for the gate (AI settings, overrides, kids), loaded off-main once. */
+    private var familyConfig: io.pickwick.app.data.Whitelist? = null
+    private val screeningStore by lazy { io.pickwick.app.data.ScreeningStore(this) }
+    /** True while the pre-play deep check is talking to the AI ("Checking this one…"). */
+    private val deepChecking = mutableStateOf(false)
+    /** Non-null once the deep check said no: the gentle screen before going back. */
+    private val blockedGently = mutableStateOf<String?>(null)
     /** Latches on the first resolved video (see the PlayerView comment below). */
     private val everPlayed = mutableStateOf(false)
     private var resolveJob: kotlinx.coroutines.Job? = null
@@ -171,6 +188,7 @@ class PlayerActivity : ComponentActivity() {
                 ?.takeIf { config.profile(it) != null }
             io.pickwick.app.data.ProfileNamespace(this).suffixFor(active)
         }
+        gateProfileId = intent.getStringExtra(EXTRA_PROFILE_ID)
         channelUsage = io.pickwick.app.data.ChannelUsage(this, profileSuffix)
         currentChannel = intent.getStringExtra(EXTRA_CHANNEL).orEmpty()
         queue = intent.getStringArrayListExtra(EXTRA_QUEUE)
@@ -381,6 +399,8 @@ class PlayerActivity : ComponentActivity() {
                 val error by errorState
                 val played by everPlayed
                 val timeUp by timeUpMessage
+                val blocked by blockedGently
+                val checking by deepChecking
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     when {
                         timeUp != null -> Text(
@@ -388,10 +408,25 @@ class PlayerActivity : ComponentActivity() {
                             color = Color.White,
                             style = MaterialTheme.typography.headlineMedium
                         )
+                        // Deliberately reason-free: the AI's explanation goes to
+                        // the parent's phone, not a TV the child is watching.
+                        blocked != null -> Text(
+                            blocked!!,
+                            color = Color.White,
+                            style = MaterialTheme.typography.headlineMedium
+                        )
                         error != null -> Text("Could not play video: $error", color = Color.White)
                         // Before the first resolved video there is no frame to
-                        // hold, so a bare spinner is honest.
-                        !played -> CircularProgressIndicator()
+                        // hold, so a bare spinner is honest. The label appears
+                        // only while the deep check runs — stream resolution is
+                        // fast enough not to need explaining.
+                        !played -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator()
+                            if (checking) {
+                                Spacer(Modifier.height(12.dp))
+                                Text("Checking this one…", color = Color.White)
+                            }
+                        }
                         // Composed from the first video onwards and never swapped
                         // out again — resolving the *next* one used to replace this
                         // view with a spinner, which destroys the SurfaceView and
@@ -416,12 +451,12 @@ class PlayerActivity : ComponentActivity() {
                     }
                     // Spinner over the held frame: resolving the next video's
                     // streams, initial buffer, seek, or a mid-video stall.
-                    if (timeUp == null && error == null && played &&
+                    if (timeUp == null && error == null && blocked == null && played &&
                         (playback == null || buffering.value)
                     ) {
                         CircularProgressIndicator()
                     }
-                    if (isTv && timeUp == null) {
+                    if (isTv && timeUp == null && blocked == null) {
                         TvControlsOverlay(
                             controlsVisibleUntil,
                             sponsorSegments.value,
@@ -488,38 +523,107 @@ class PlayerActivity : ComponentActivity() {
                     if (segments.isNotEmpty() && isActive) sponsorSegments.value = segments
                 }
             }
-            runCatching {
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val pb = runCatching {
+                val local = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                     // Sideloaded file (content:// via SAF) or a finished
                     // download — both play from disk with no network.
                     localLibrary.playback(queue[i])
                         ?: downloads.localPlayback(queue[i])
-                } ?: repo.resolvePlayback(
+                }
+                val resolved = local ?: repo.resolvePlayback(
                     queue[i],
                     io.pickwick.app.data.QualityTargets.playbackMaxHeight
                 )
+                // First play of a streamed video: the once-per-video deep check
+                // (description + tags + transcript), riding the StreamInfo we
+                // just paid for. Local files skip it — offline playback can't
+                // reach the AI, and downloads were screened before they landed.
+                if (local == null && deepCheckBlocks(queue[i], resolved)) null else resolved
+            }.getOrElse { e ->
+                // A superseded resolve (queue advanced again) must not be
+                // mistaken for a broken video and trigger its own advance.
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                // Mid-playlist failure: skip to the next video instead of dying.
+                if (i < queue.lastIndex) playIndex(i + 1)
+                else errorState.value = e.message
+                return@launch
             }
-                .onSuccess { pb ->
-                    currentTitle = pb.title
-                    currentPlayback = pb
-                    ListenService.title = pb.title
-                    ListenService.channelName = currentChannel
-                    playbackState.value = pb
-                    everPlayed.value = true
-                    attachSources(
-                        pb,
-                        audioOnly = listenActive && pb.audioUrl != null,
-                        resumeMs = null
-                    )
-                }
-                .onFailure { e ->
-                    // A superseded resolve (queue advanced again) must not be
-                    // mistaken for a broken video and trigger its own advance.
-                    if (e is kotlinx.coroutines.CancellationException) throw e
-                    // Mid-playlist failure: skip to the next video instead of dying.
-                    if (i < queue.lastIndex) playIndex(i + 1)
-                    else errorState.value = e.message
-                }
+            if (pb == null) {
+                onDeepBlocked(i)
+                return@launch
+            }
+            currentTitle = pb.title
+            currentPlayback = pb
+            ListenService.title = pb.title
+            ListenService.channelName = currentChannel
+            playbackState.value = pb
+            everPlayed.value = true
+            attachSources(
+                pb,
+                audioOnly = listenActive && pb.audioUrl != null,
+                resumeMs = null
+            )
+        }
+    }
+
+    /**
+     * Whether the pre-play deep check refuses this video for the launching kid.
+     * One AI call per video per rules version, cached in [screeningStore] like
+     * a batch verdict (with the deep flag, so the cheap title pass never
+     * overwrites it) — after that, this answers from disk. Fail-open on
+     * purpose: an unreachable or erroring provider plays the video unchecked
+     * this once and caches nothing, so the next press tries again — the kid is
+     * not punished for an outage.
+     */
+    private suspend fun deepCheckBlocks(
+        pageUrl: String,
+        pb: YouTubeRepository.Playback
+    ): Boolean = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        val id = io.pickwick.app.data.SponsorBlock.videoIdOf(pageUrl)
+            ?: return@withContext false
+        val cfg = familyConfig
+            ?: io.pickwick.app.data.ConfigStore(this@PlayerActivity).load()
+                .also { familyConfig = it }
+        val ai = cfg.ai
+        if (!ai.enabled || ai.model.isBlank()) return@withContext false
+        // A parent's explicit allow beats every AI verdict, deep ones included.
+        if (id in cfg.allowedIdsFor(gateProfileId)) return@withContext false
+
+        io.pickwick.app.data.DeepCheck.cached(screeningStore, id, ai.rulesVersion)?.let {
+            return@withContext it.verdictFor(gateProfileId) != AiScreener.Verdict.ALLOW
+        }
+
+        deepChecking.value = true
+        val entry = try {
+            // Bounded overall: past ~20s the kid is staring at a spinner and an
+            // answer that slow is treated like an outage (play this once).
+            io.pickwick.app.data.DeepCheck.runAndStore(
+                ai, cfg.profiles, screeningStore, id, pb.title, currentChannel,
+                pb, timeoutMs = 20_000
+            )
+        } finally {
+            deepChecking.value = false
+        }
+        // Null = failure/timeout: play unchecked this once, nothing cached.
+        entry != null && entry.verdictFor(gateProfileId) != AiScreener.Verdict.ALLOW
+    }
+
+    /**
+     * Deep check said no. Mid-queue the lineup just moves on, same as a broken
+     * video. For the video the kid actually pressed, a gentle reason-free line
+     * — the AI's explanation is for the parent's phone, not a TV with a child
+     * in front of it — then back to the shelf they came from, where the
+     * verdict now hides this video.
+     */
+    private fun onDeepBlocked(i: Int) {
+        if (i < queue.lastIndex) {
+            playIndex(i + 1)
+            return
+        }
+        blockedGently.value = "This one isn't available."
+        lifecycleScope.launch {
+            delay(4_000)
+            finish()
         }
     }
 
@@ -538,6 +642,14 @@ class PlayerActivity : ComponentActivity() {
     ) {
         val exo = player ?: return
         currentSubtitles = pb.subtitles
+        // Android 13+ builds the lock-screen/QS media controls from the
+        // session's metadata and ignores the notification adapter's strings,
+        // so the title must ride on the MediaItem itself — a bare-URI item
+        // leaves the lock screen showing whatever the system scrapes instead.
+        val mediaMetadata = androidx.media3.common.MediaMetadata.Builder()
+            .setTitle(pb.title)
+            .setArtist(currentChannel.ifBlank { null })
+            .build()
         val audioUrl = pb.audioTracks.getOrNull(selectedAudioTrack.intValue)?.url ?: pb.audioUrl
         // DefaultDataSource: http for streams, file for offline
         // downloads, content for sideloaded SAF files. Wrapped so
@@ -551,7 +663,10 @@ class PlayerActivity : ComponentActivity() {
         )
         fun progressive(url: String) =
             androidx.media3.exoplayer.source.ProgressiveMediaSource
-                .Factory(factory).createMediaSource(MediaItem.fromUri(url))
+                .Factory(factory).createMediaSource(
+                    MediaItem.Builder().setUri(url)
+                        .setMediaMetadata(mediaMetadata).build()
+                )
         val wasPlaying = if (resumeMs != null) exo.playWhenReady else true
         if (audioOnly && audioUrl != null) {
             exo.setMediaSource(progressive(audioUrl))
@@ -573,6 +688,7 @@ class PlayerActivity : ComponentActivity() {
                 .createMediaSource(
                     MediaItem.Builder()
                         .setUri(pb.videoUrl)
+                        .setMediaMetadata(mediaMetadata)
                         .setSubtitleConfigurations(subConfigs)
                         .build()
                 )
@@ -600,10 +716,9 @@ class PlayerActivity : ComponentActivity() {
     }
 
     /**
-     * Power button while playing (phones, listening rate set): keep the sound
-     * going instead of pausing. Entered from [onStop] with the display
-     * actually off — checked directly rather than via ACTION_SCREEN_OFF,
-     * whose delivery order against onStop isn't guaranteed.
+     * Leaving the player while playing (phones, listening rate set) — power
+     * button or switching to another app: keep the sound going instead of
+     * pausing. Entered from [onStop] whenever the activity isn't finishing.
      */
     private fun enterListenMode() {
         if (isTv || listenActive) return
@@ -862,14 +977,14 @@ class PlayerActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
-        // Power button vs navigating away: the display state tells them apart.
-        // Screen off while playing + listening enabled = keep the sound going.
-        val screenOff = !(getSystemService(POWER_SERVICE) as android.os.PowerManager)
-            .isInteractive
+        // Screen off and switching to another app are the same "listening,
+        // not watching" state (family listening rate set): keep the sound
+        // going either way. Only actually leaving the player — back/close,
+        // which finishes the activity — stops playback.
         // The foreground-service start from onStop rides the "leaving a
         // user-visible state" exemption; if an OEM's timing disagrees, losing
-        // the race must mean "this lock pauses", not a crash.
-        if (screenOff) runCatching { enterListenMode() }
+        // the race must mean "this leave pauses", not a crash.
+        if (!isFinishing) runCatching { enterListenMode() }
         // Inline, not dispatched: lifecycleScope dies with the activity, and the
         // exit position is the one write that must not be dropped. Nothing is
         // animating by now, so the blocking commit is harmless.
@@ -881,8 +996,9 @@ class PlayerActivity : ComponentActivity() {
         // Watching counts as presence — the who's-watching screen must not
         // re-ask right after a long video just because home sat idle.
         io.pickwick.app.data.ActiveProfileStore(this).touch()
-        // Listen mode is the whole point of not pausing here; every other way
-        // of leaving (home, back, task switch — all screen-on) still stops it.
+        // Listen mode is the whole point of not pausing here; leaving with
+        // the feature off, the player paused, or the activity finishing
+        // still pauses as always.
         if (!listenActive) player?.pause()
     }
 
