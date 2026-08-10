@@ -13,10 +13,20 @@ import kotlinx.coroutines.withTimeoutOrNull
  */
 object DeepCheck {
 
-    /** The stored deep verdict under the current rules, or null. A title-only
-     *  entry doesn't count — that's exactly what the deep pass upgrades. */
-    fun cached(store: ScreeningStore, videoId: String, rulesVersion: Int): ScreeningStore.Entry? =
-        store.get(videoId)?.takeIf { it.deep && it.rulesVersion == rulesVersion }
+    /** The stored deep verdict still valid under the current rules and channel
+     *  note, or null. A title-only entry doesn't count — that's exactly what
+     *  the deep pass upgrades — and neither does an ALLOW/REVIEW judged under
+     *  a different note. A deep BLOCK never goes stale (blocked stays blocked). */
+    fun cached(
+        store: ScreeningStore,
+        videoId: String,
+        rulesVersion: Int,
+        noteHash: Int
+    ): ScreeningStore.Entry? =
+        store.get(videoId)?.takeIf {
+            it.deep && it.rulesVersion == rulesVersion &&
+                (it.verdict == AiScreener.Verdict.BLOCK || it.noteHash == noteHash)
+        }
 
     /**
      * Runs the deep check and persists the verdict. Null on failure or
@@ -31,7 +41,8 @@ object DeepCheck {
         title: String,
         channel: String,
         pb: YouTubeRepository.Playback,
-        timeoutMs: Long
+        timeoutMs: Long,
+        channelNote: String? = null
     ): ScreeningStore.Entry? = withContext(Dispatchers.IO) {
         val started = System.currentTimeMillis()
         // Fail-open is deliberate, but it must never be *silent* — a run of
@@ -44,7 +55,8 @@ object DeepCheck {
                 val transcript = Captions.pickEnglish(pb.subtitles)?.let { Captions.fetchText(it) }
                 transcriptChars = transcript?.length ?: -1
                 AiScreener.deepScreen(
-                    ai, videoId, title, channel, pb.description, pb.tags, transcript, profiles
+                    ai, videoId, title, channel, pb.description, pb.tags, transcript,
+                    profiles, channelNote
                 )
             }.also { if (it == null) timedOut = true }
         } catch (e: kotlinx.coroutines.CancellationException) {
@@ -82,9 +94,29 @@ object DeepCheck {
             rulesVersion = ai.rulesVersion,
             at = System.currentTimeMillis(),
             perProfile = result.perProfile,
-            deep = true
+            deep = true,
+            noteHash = AiScreener.noteHash(channelNote)
         )
         store.putAll(mapOf(videoId to entry))
         entry
+    }
+
+    /**
+     * Channel name → note, resolved through the source cache: whitelist
+     * entries are keyed by id/URL but verdict-time lookups only have the
+     * uploader name a video carries. Matched by URL, never id — resolution
+     * canonicalizes user/, c/ and @handle ids, so an id join silently drops
+     * those entries. Playlist notes only match when the uploader name happens
+     * to equal the playlist name — notes are a channel feature.
+     */
+    fun notesByChannelName(
+        entries: List<WhitelistEntry>,
+        sources: List<Source>
+    ): Map<String, String> {
+        val byUrl = entries
+            .filter { !it.aiNote.isNullOrBlank() }
+            .associate { it.url to it.aiNote!!.trim() }
+        if (byUrl.isEmpty()) return emptyMap()
+        return sources.mapNotNull { s -> byUrl[s.url]?.let { s.name to it } }.toMap()
     }
 }

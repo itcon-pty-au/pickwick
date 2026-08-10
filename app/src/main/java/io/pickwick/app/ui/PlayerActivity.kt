@@ -148,6 +148,8 @@ class PlayerActivity : ComponentActivity() {
     private var gateProfileId: String? = null
     /** Family config for the gate (AI settings, overrides, kids), loaded off-main once. */
     private var familyConfig: io.pickwick.app.data.Whitelist? = null
+    /** Channel name → parent's channel note, resolved once alongside the config. */
+    private var channelNotes: Map<String, String>? = null
     private val screeningStore by lazy { io.pickwick.app.data.ScreeningStore(this) }
     /** True while the pre-play deep check is talking to the AI ("Checking this one…"). */
     private val deepChecking = mutableStateOf(false)
@@ -589,7 +591,13 @@ class PlayerActivity : ComponentActivity() {
         // A parent's explicit allow beats every AI verdict, deep ones included.
         if (id in cfg.allowedIdsFor(gateProfileId)) return@withContext false
 
-        io.pickwick.app.data.DeepCheck.cached(screeningStore, id, ai.rulesVersion)?.let {
+        val note = (channelNotes ?: io.pickwick.app.data.DeepCheck.notesByChannelName(
+            cfg.sources, io.pickwick.app.data.SourceCache(this@PlayerActivity).load()
+        ).also { channelNotes = it })[currentChannel]
+
+        io.pickwick.app.data.DeepCheck.cached(
+            screeningStore, id, ai.rulesVersion, AiScreener.noteHash(note)
+        )?.let {
             android.util.Log.i(
                 "Pickwick",
                 "Deep check $id: cached ${it.verdictFor(gateProfileId)} (\"${it.reason}\")"
@@ -603,7 +611,7 @@ class PlayerActivity : ComponentActivity() {
             // answer that slow is treated like an outage (play this once).
             io.pickwick.app.data.DeepCheck.runAndStore(
                 ai, cfg.profiles, screeningStore, id, pb.title, currentChannel,
-                pb, timeoutMs = 20_000
+                pb, timeoutMs = 20_000, channelNote = note
             )
         } finally {
             deepChecking.value = false

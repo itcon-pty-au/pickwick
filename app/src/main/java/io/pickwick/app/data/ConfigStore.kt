@@ -156,6 +156,11 @@ class ConfigStore(context: Context) {
                     if (it.profileIds.isNotEmpty()) {
                         append("|v"); append(it.profileIds.sorted().joinToString(","))
                     }
+                    // Note text is part of the fingerprint (an edit must push),
+                    // newline-flattened so it can't fake an entry boundary.
+                    if (!it.aiNote.isNullOrBlank()) {
+                        append("|n"); append(it.aiNote.trim().replace('\n', ' '))
+                    }
                     append('\n')
                 }
                 append("B:"); append(w.blockedVideoIds.sorted().joinToString(","))
@@ -253,6 +258,7 @@ class ConfigStore(context: Context) {
                         if (e.timeMultiplierPercent != 100) put("time", e.timeMultiplierPercent)
                         // Omitted when visible to everyone, same reasoning.
                         if (e.profileIds.isNotEmpty()) put("profiles", JSONArray(e.profileIds.toList()))
+                        if (!e.aiNote.isNullOrBlank()) put("note", e.aiNote.trim())
                     })
                 }
             })
@@ -451,7 +457,8 @@ class ConfigStore(context: Context) {
                     timeMultiplierPercent = o.optInt("time", 100),
                     profileIds = pidArr?.let { arrPids ->
                         (0 until arrPids.length()).map { arrPids.getString(it) }.toSet()
-                    } ?: emptySet()
+                    } ?: emptySet(),
+                    aiNote = o.optString("note").ifEmpty { null }
                 )
             }
             val blocked = mutableSetOf<String>()

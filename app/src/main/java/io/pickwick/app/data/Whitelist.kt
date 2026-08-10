@@ -26,7 +26,16 @@ data class WhitelistEntry(
      * later — so a family that never touches the per-kid switches shares one
      * list, and adding a channel defaults to all.
      */
-    val profileIds: Set<String> = emptySet()
+    val profileIds: Set<String> = emptySet(),
+    /**
+     * Channel-specific screening instructions, applied by the AI on top of the
+     * family rules ("mild cartoon slapstick is fine here; block 'prank' videos").
+     * Null/blank = none. Verdicts remember the note they were judged under
+     * ([ScreeningStore.Entry.noteHash]), so editing this re-screens only this
+     * source's videos — except already-blocked ones, which stay blocked: the
+     * note exists to catch more junk, not to relitigate old blocks.
+     */
+    val aiNote: String? = null
 ) {
     fun visibleTo(profileId: String?): Boolean =
         profileIds.isEmpty() || profileId == null || profileId in profileIds
@@ -334,6 +343,11 @@ object WhitelistExporter {
             if (e.timeMultiplierPercent != 100) {
                 append("  # screen time ")
                 append(if (e.timeMultiplierPercent == 0) "FREE" else "${e.timeMultiplierPercent}%")
+            }
+            // Reference only, like the multiplier: notes are UI-managed and
+            // sync device-to-device, not through files.
+            e.aiNote?.trim()?.ifEmpty { null }?.let {
+                append("  # AI note: ").append(it.replace('\n', ' '))
             }
             append('\n')
         }

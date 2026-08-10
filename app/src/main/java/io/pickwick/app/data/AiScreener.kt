@@ -99,7 +99,21 @@ object AiScreener {
     fun profileKeys(profiles: List<Profile>): Map<String, String> =
         profiles.mapIndexed { i, p -> "p${i + 1}" to p.id }.toMap()
 
-    fun systemPrompt(cfg: AiConfig, profiles: List<Profile> = emptyList()): String = buildString {
+    /**
+     * Fingerprint of the channel note a verdict was judged under. Blank and
+     * null collapse to 0 (no note), so clearing a note and never having one
+     * hash alike. String.hashCode is specified by the JLS, so the value
+     * matches across devices — verdicts shared over the LAN compare cleanly.
+     */
+    fun noteHash(note: String?): Int =
+        note?.trim()?.takeIf { it.isNotEmpty() }?.hashCode() ?: 0
+
+    fun systemPrompt(
+        cfg: AiConfig,
+        profiles: List<Profile> = emptyList(),
+        /** True when any video in the batch carries a channel note. */
+        hasNotes: Boolean = false
+    ): String = buildString {
         if (profiles.isEmpty()) {
             append("You review YouTube videos for a child")
             cfg.childAge?.let { append(" aged $it") }
@@ -119,6 +133,11 @@ object AiScreener {
         append("The videos come from channels the parents already trust, so most are fine — ")
         append("block only real rule violations, and use \"review\" when genuinely unsure ")
         append("(a parent then decides).\n")
+        if (hasNotes) {
+            append("Some videos carry a \"note\": the parents' own instructions for that ")
+            append("video's channel. For that video the note refines — and where they ")
+            append("conflict, overrides — the family rules.\n")
+        }
         append("Reply with JSON only, no other text, in this exact shape:\n")
         if (profiles.isEmpty()) {
             append("{\"verdicts\":[{\"id\":\"<video id>\",\"v\":\"allow|block|review\",\"why\":\"<max 12 words>\"}]}\n")
@@ -131,7 +150,11 @@ object AiScreener {
         append("Include every id you were given exactly once.")
     }
 
-    fun userPrompt(videos: List<Video>): String {
+    fun userPrompt(
+        videos: List<Video>,
+        /** Channel note for a video, or null — see [systemPrompt]'s hasNotes. */
+        noteFor: (Video) -> String? = { null }
+    ): String {
         val arr = JSONArray()
         videos.forEach { v ->
             val id = v.videoId ?: return@forEach
@@ -140,6 +163,7 @@ object AiScreener {
                 put("title", v.title)
                 put("channel", v.channelName)
                 if (v.durationSeconds > 0) put("minutes", v.durationSeconds / 60)
+                noteFor(v)?.trim()?.takeIf { it.isNotEmpty() }?.let { put("note", it) }
             })
         }
         return arr.toString()
@@ -294,12 +318,14 @@ object AiScreener {
     suspend fun screen(
         cfg: AiConfig,
         videos: List<Video>,
-        profiles: List<Profile> = emptyList()
+        profiles: List<Profile> = emptyList(),
+        noteFor: (Video) -> String? = { null }
     ): List<Result> {
         val ids = videos.mapNotNull { it.videoId }.toSet()
         if (ids.isEmpty()) return emptyList()
+        val hasNotes = videos.any { !noteFor(it).isNullOrBlank() }
         return parseVerdicts(
-            chatCompletion(cfg, systemPrompt(cfg, profiles), userPrompt(videos)),
+            chatCompletion(cfg, systemPrompt(cfg, profiles, hasNotes), userPrompt(videos, noteFor)),
             ids,
             profileKeys(profiles)
         )
@@ -326,7 +352,12 @@ object AiScreener {
      * description and transcript are stranger-written free text — the
      * injection warning is load-bearing, same as the digest's.
      */
-    fun deepSystemPrompt(cfg: AiConfig, profiles: List<Profile> = emptyList()): String = buildString {
+    fun deepSystemPrompt(
+        cfg: AiConfig,
+        profiles: List<Profile> = emptyList(),
+        /** The parents' channel-specific instructions, if any. */
+        channelNote: String? = null
+    ): String = buildString {
         if (profiles.isEmpty()) {
             append("A child")
             cfg.childAge?.let { append(" aged $it") }
@@ -344,6 +375,12 @@ object AiScreener {
         append("Family rules:\n")
         append(cfg.rules.ifBlank { "Content must be broadly appropriate for a young child." })
         append("\n\n")
+        channelNote?.trim()?.takeIf { it.isNotEmpty() }?.let {
+            append("The parents also left instructions for this specific channel — they ")
+            append("refine, and where they conflict override, the family rules:\n")
+            append(it)
+            append("\n\n")
+        }
         append("The channel is one the parents already trust, so most videos are fine — ")
         append("block only real rule violations, and use \"review\" when genuinely unsure ")
         append("(a parent then decides).\n")
@@ -396,11 +433,12 @@ object AiScreener {
         description: String,
         tags: List<String>,
         transcript: String?,
-        profiles: List<Profile> = emptyList()
+        profiles: List<Profile> = emptyList(),
+        channelNote: String? = null
     ): Result = parseVerdicts(
         chatCompletion(
             cfg,
-            deepSystemPrompt(cfg, profiles),
+            deepSystemPrompt(cfg, profiles, channelNote),
             deepUserPrompt(videoId, title, channel, description, tags, transcript)
         ),
         setOf(videoId),

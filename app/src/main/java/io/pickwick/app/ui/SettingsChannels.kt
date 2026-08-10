@@ -12,7 +12,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -47,6 +50,8 @@ internal fun ChannelsSection(
     var pendingDelete by remember { mutableStateOf<WhitelistEntry?>(null) }
     /** A just-picked channel awaiting the "who is this for?" answer. */
     var pendingAdd by remember { mutableStateOf<WhitelistEntry?>(null) }
+    /** The entry whose AI note dialog is open. */
+    var noteEntry by remember { mutableStateOf<WhitelistEntry?>(null) }
 
     fun displayName(entry: WhitelistEntry) =
         entry.label ?: resolvedNames[entry.url] ?: entry.id
@@ -67,6 +72,51 @@ internal fun ChannelsSection(
             onConfirm = { forKids ->
                 onChanged((entries + entry.copy(profileIds = forKids)).distinctBy { it.id })
                 pendingAdd = null
+            }
+        )
+    }
+
+    noteEntry?.let { entry ->
+        var text by remember(entry.id) { mutableStateOf(entry.aiNote.orEmpty()) }
+        AlertDialog(
+            onDismissRequest = { noteEntry = null },
+            title = { Text("AI instructions — ${displayName(entry)}") },
+            text = {
+                Column {
+                    Text(
+                        "Rules for this channel only, applied on top of the family " +
+                            "rules (and winning where they clash). This channel's " +
+                            "videos are re-checked under the new instructions; " +
+                            "already-blocked ones stay blocked.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = text,
+                        onValueChange = { text = it },
+                        minLines = 3,
+                        placeholder = {
+                            Text(
+                                "e.g. Mild cartoon slapstick is fine here. " +
+                                    "Block anything filmed as a \"prank\"."
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    val note = text.trim().ifEmpty { null }
+                    onChanged(entries.map {
+                        if (it.id == entry.id) it.copy(aiNote = note) else it
+                    })
+                    noteEntry = null
+                }) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { noteEntry = null }) { Text("Cancel") }
             }
         )
     }
@@ -167,6 +217,22 @@ internal fun ChannelsSection(
                         .padding(horizontal = 6.dp, vertical = 2.dp)
                 )
                 Spacer(Modifier.width(4.dp))
+            }
+            // Per-channel AI instructions; dimmed until one exists. Emoji over
+            // a vector icon, matching the app's other glyph affordances.
+            IconButton(
+                modifier = Modifier.tvFocusHighlight(),
+                onClick = { noteEntry = entry }
+            ) {
+                Text(
+                    "📝",
+                    // alpha, not text color: emoji glyphs ignore the latter.
+                    modifier = Modifier
+                        .alpha(if (entry.aiNote.isNullOrBlank()) 0.35f else 1f)
+                        .semantics {
+                            contentDescription = "AI instructions for ${displayName(entry)}"
+                        }
+                )
             }
             IconButton(
                 modifier = Modifier.tvFocusHighlight(),

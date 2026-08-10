@@ -562,10 +562,18 @@ class MainViewModel(
                         .map { it.url }.toSet()
                     return sourcesList.filter { it.url in visibleUrls }
                 }
+                // Channel notes ride the same name resolution as the tiles:
+                // verdict-time lookups only have a video's uploader name, so
+                // the map re-derives whenever the resolved names improve.
+                fun notes(sourcesList: List<Source>) {
+                    screener?.channelNotes =
+                        io.pickwick.app.data.DeepCheck.notesByChannelName(list.sources, sourcesList)
+                }
                 val provisional = list.sources.map { e ->
                     cachedByUrl[e.url] ?: Source(e.id, e.url, e.label ?: e.id, null, e.kind)
                 }
                 names(provisional)
+                notes(provisional)
                 sources = visible(provisional)
                 publishChannels(sources)
                 // hiddenChannelNames just settled — re-derive the offline badges.
@@ -594,6 +602,7 @@ class MainViewModel(
                         else s
                     }.distinctBy { it.id }
                     names(best)
+                    notes(best)
                     sources = visible(best)
                     sourceCache.save(best)
                     publishChannels(sources)
@@ -1057,7 +1066,7 @@ class MainViewModel(
         val cs = configStore ?: return
         val scr = screener ?: return
         io.pickwick.app.data.DownloadChecker.kick(
-            viewModelScope, cs, scr.store, store, yt, activeProfileId
+            viewModelScope, cs, scr.store, store, yt, sourceCache, activeProfileId
         ) { video ->
             // The verdict also hides the video itself — pill first, then the
             // re-filter takes it off the shelf the kid is looking at.

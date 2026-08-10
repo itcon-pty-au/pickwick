@@ -37,7 +37,14 @@ class ScreeningStore(private val file: File) {
          * runs it once per video per rules version, and a title-only batch
          * must never overwrite it — see [Screener.screenBatch].
          */
-        val deep: Boolean = false
+        val deep: Boolean = false,
+        /**
+         * [AiScreener.noteHash] of the channel note this verdict was judged
+         * under (0 = none). An ALLOW/REVIEW under a different note is stale —
+         * the parent changed the channel's rules — and re-screens; a BLOCK
+         * never goes stale: notes exist to catch more junk, not to un-block.
+         */
+        val noteHash: Int = 0
     ) {
         fun verdictFor(profileId: String?): AiScreener.Verdict =
             profileId?.let { perProfile[it] } ?: verdict
@@ -87,7 +94,8 @@ class ScreeningStore(private val file: File) {
             rulesVersion = o.optInt("rv"),
             at = o.optLong("at"),
             perProfile = pp,
-            deep = o.optBoolean("dc")
+            deep = o.optBoolean("dc"),
+            noteHash = o.optInt("nh")
         )
     }
 
@@ -100,6 +108,7 @@ class ScreeningStore(private val file: File) {
         .put("rv", e.rulesVersion)
         .put("at", e.at)
         .apply { if (e.deep) put("dc", true) }
+        .apply { if (e.noteHash != 0) put("nh", e.noteHash) }
         .apply {
             if (e.perProfile.isNotEmpty()) {
                 put("pp", JSONObject().apply {
@@ -228,6 +237,8 @@ class Screener(val store: ScreeningStore) {
     @Volatile var config: AiConfig = AiConfig()
     /** Parent allow-overrides already resolved for the active kid (global + per-kid). */
     @Volatile var allowedOverrides: Set<String> = emptySet()
+    /** Channel name → the parents' channel-specific instructions (see WhitelistEntry.aiNote). */
+    @Volatile var channelNotes: Map<String, String> = emptyMap()
     /** The family's kids — screening judges all of them in one call. */
     @Volatile var profiles: List<Profile> = emptyList()
     /** Whose verdicts gate visibility right now; null = pre-profile behavior. */
@@ -257,8 +268,14 @@ class Screener(val store: ScreeningStore) {
         val id = video.videoId ?: return false
         if (id in allowedOverrides) return true
         val e = store.get(id) ?: return false
-        return e.rulesVersion == config.rulesVersion &&
-            e.verdictFor(activeProfileId) == AiScreener.Verdict.ALLOW
+        if (e.rulesVersion != config.rulesVersion) return false
+        if (e.verdictFor(activeProfileId) != AiScreener.Verdict.ALLOW) return false
+        // An ALLOW earned under a different channel note is unproven against
+        // the current one — fail closed until the re-screen lands. Entries
+        // whose strictest verdict is BLOCK are exempt (they never re-screen,
+        // so a per-kid ALLOW inside one must not go permanently dark).
+        return e.verdict == AiScreener.Verdict.BLOCK ||
+            e.noteHash == AiScreener.noteHash(channelNotes[video.channelName])
     }
 
     /**
@@ -271,7 +288,12 @@ class Screener(val store: ScreeningStore) {
         if (!cfg.enabled) return false
         val id = video.videoId ?: return false
         if (id in allowedOverrides) return false
-        return store.get(id)?.rulesVersion != cfg.rulesVersion
+        val e = store.get(id) ?: return true
+        if (e.rulesVersion != cfg.rulesVersion) return true
+        // Blocked stays blocked across note edits — the parent's ask was
+        // "filter more junk", not "re-litigate what's already out".
+        if (e.verdict == AiScreener.Verdict.BLOCK) return false
+        return e.noteHash != AiScreener.noteHash(channelNotes[video.channelName])
     }
 
     /**
@@ -289,9 +311,9 @@ class Screener(val store: ScreeningStore) {
             videos
                 .filter { v ->
                     val id = v.videoId ?: return@filter false
-                    id !in allowedOverrides &&
-                        id !in inFlight &&
-                        store.get(id)?.rulesVersion != cfg.rulesVersion
+                    // needsScreening owns the staleness rules (rules version,
+                    // channel-note hash, blocked-stays-blocked, overrides).
+                    id !in inFlight && needsScreening(v)
                 }
                 .distinctBy { it.videoId }
                 .also { list -> inFlight += list.mapNotNull { it.videoId } }
@@ -315,7 +337,9 @@ class Screener(val store: ScreeningStore) {
         var attempt = 0
         while (true) {
             val results = try {
-                aiCalls.withPermit { AiScreener.screen(cfg, batch, profiles) }
+                aiCalls.withPermit {
+                    AiScreener.screen(cfg, batch, profiles) { channelNotes[it.channelName] }
+                }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -329,9 +353,16 @@ class Screener(val store: ScreeningStore) {
             val byId = batch.associateBy { it.videoId }
             // A play-press deep check can land for one of these ids while the
             // batch was in flight; its verdict judged the actual content and
-            // must not be replaced by this title-only one.
+            // must not be replaced by this title-only one. A deep verdict made
+            // under an *outdated* channel note is the exception — overwriting
+            // it un-hides the video now, and the play gate re-runs its own
+            // deep pass (the entry loses the deep flag) at the next press.
             val fresh = results.filterNot { r ->
-                store.get(r.videoId)?.let { it.deep && it.rulesVersion == cfg.rulesVersion } == true
+                val existing = store.get(r.videoId) ?: return@filterNot false
+                val note = byId[r.videoId]?.channelName?.let { channelNotes[it] }
+                existing.deep && existing.rulesVersion == cfg.rulesVersion &&
+                    (existing.verdict == AiScreener.Verdict.BLOCK ||
+                        existing.noteHash == AiScreener.noteHash(note))
             }
             store.putAll(fresh.associate { r ->
                 val v = byId[r.videoId]
@@ -343,7 +374,8 @@ class Screener(val store: ScreeningStore) {
                     thumb = v?.thumbnailUrl,
                     rulesVersion = cfg.rulesVersion,
                     at = System.currentTimeMillis(),
-                    perProfile = r.perProfile
+                    perProfile = r.perProfile,
+                    noteHash = AiScreener.noteHash(v?.channelName?.let { channelNotes[it] })
                 )
             })
             onUpdated()

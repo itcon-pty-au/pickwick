@@ -29,6 +29,8 @@ object DownloadChecker {
         screeningStore: ScreeningStore,
         downloads: DownloadStore,
         yt: YouTubeRepository,
+        /** Resolves channel names for per-channel note lookup. */
+        sourceCache: SourceCache,
         /** Kid whose request this is — their per-kid verdict decides. */
         profileId: String?,
         /** A request was refused; the caller tells the kid and re-filters. */
@@ -54,7 +56,10 @@ object DownloadChecker {
                         continue
                     }
 
-                    val verdict = DeepCheck.cached(screeningStore, id, ai.rulesVersion)
+                    val note = DeepCheck.notesByChannelName(cfg.sources, sourceCache.load())[video.channelName]
+                    val verdict = DeepCheck.cached(
+                        screeningStore, id, ai.rulesVersion, AiScreener.noteHash(note)
+                    )
                         ?: run {
                             // The StreamInfo fetch (description/tags/captions);
                             // its failure — private video, no network — is the
@@ -64,7 +69,8 @@ object DownloadChecker {
                             pb?.let {
                                 DeepCheck.runAndStore(
                                     ai, cfg.profiles, screeningStore, id,
-                                    video.title, video.channelName, it, TIMEOUT_MS
+                                    video.title, video.channelName, it, TIMEOUT_MS,
+                                    channelNote = note
                                 )
                             }
                         }
