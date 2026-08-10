@@ -5,7 +5,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
@@ -15,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -134,21 +134,31 @@ internal fun PhoneDevicesSection(
     /** A device being renamed (modal with a text field). */
     var renaming by remember { mutableStateOf<PairedDevice?>(null) }
     var pullMessage by remember { mutableStateOf<String?>(null) }
+    /** device.key → what the last Push did. Push is otherwise mute: it used to
+     *  discard its own result, so a device that never got the config looked
+     *  exactly like one that did. */
+    var pushMessage by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     val myToken = remember { pairingStore.deviceToken() }
 
-    fun checkAll() {
-        devices.forEach { device ->
-            syncStates = syncStates + (device.key to DeviceSync.Checking)
-            scope.launch {
-                val status = LanClient.fullStatus(device)
-                syncStates = syncStates + (device.key to
-                    (status?.let { DeviceSync.Reachable(it.hash, it.updatedAt, it.deviceToken) }
-                        ?: DeviceSync.Offline))
-                pendingByDevice = pendingByDevice + (device.key to LanClient.pendingRequests(device))
-                adminsByDevice = adminsByDevice + (device.key to LanClient.admins(device))
-            }
-        }
+    /** Re-reads one device's sync state, returning it for the caller to judge. */
+    suspend fun refreshOne(device: PairedDevice): LanClient.DeviceStatus? {
+        syncStates = syncStates + (device.key to DeviceSync.Checking)
+        val status = LanClient.fullStatus(device)
+        syncStates = syncStates + (device.key to
+            (status?.let { DeviceSync.Reachable(it.hash, it.updatedAt, it.deviceToken) }
+                ?: DeviceSync.Offline))
+        pendingByDevice = pendingByDevice + (device.key to LanClient.pendingRequests(device))
+        adminsByDevice = adminsByDevice + (device.key to LanClient.admins(device))
+        return status
     }
+
+    fun checkAll() {
+        devices.forEach { device -> scope.launch { refreshOne(device) } }
+    }
+
+    // A fresh edit makes any previous "Pushed ✓" a lie — drop the notes the
+    // moment the form diverges again.
+    LaunchedEffect(localHash) { pushMessage = emptyMap() }
 
     /** "Watching as" chips: Shared or one kid — for this phone and each device. */
     @Composable
@@ -370,11 +380,34 @@ internal fun PhoneDevicesSection(
                             // Push = "make the device match this screen": saves the
                             // form (unsaved edits included), then overwrites the device.
                             scope.launch {
+                                pushMessage = pushMessage + (device.key to "Pushing…")
                                 val json = withContext(kotlinx.coroutines.Dispatchers.IO) {
                                     saveCurrent()
                                 }
-                                LanClient.pushConfig(device, json)
-                                checkAll()
+                                val sent = LanClient.pushConfig(device, json)
+                                // Re-read the device rather than trusting the 200:
+                                // "it saved and now matches" and "it saved but still
+                                // reports something else" are different problems and
+                                // only the second one needs explaining.
+                                val after = refreshOne(device)
+                                pushMessage = pushMessage + (device.key to when {
+                                    !sent ->
+                                        "Push failed — ${device.name} didn't answer. " +
+                                            "Is it awake and on this Wi-Fi?"
+                                    after == null ->
+                                        "Sent, but ${device.name} stopped answering — " +
+                                            "check it arrived."
+                                    after.hash == localHash -> "Pushed ✓"
+                                    // The device took the config and still disagrees:
+                                    // almost always an older build that can't see a
+                                    // setting this phone knows about (it stores the
+                                    // raw config, so updating it settles this without
+                                    // another push).
+                                    else ->
+                                        "${device.name} saved it but still reports " +
+                                            "different settings — it's probably on an " +
+                                            "older version. Update it and this clears."
+                                })
                             }
                         }) { Text("Push") }
                         Spacer(Modifier.width(4.dp))
@@ -389,6 +422,15 @@ internal fun PhoneDevicesSection(
                         pairingStore.removePaired(device.key)
                         devices = pairingStore.paired()
                     }) { Text("Unpair") }
+                }
+                pushMessage[device.key]?.let { msg ->
+                    Text(
+                        msg,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (msg.startsWith("Pushed")) {
+                            androidx.compose.ui.graphics.Color(0xFF81C784)
+                        } else MaterialTheme.colorScheme.primary
+                    )
                 }
                 assignmentRow("Watching:", (sync as? DeviceSync.Reachable)?.deviceToken)
                 // Admin phones approved on this device (revocable, except this phone).
@@ -537,9 +579,10 @@ internal fun UpdateSection(tv: Boolean = false, onUpdateFound: () -> Unit = {}) 
                     .focusRequester(installFocus)
                     .tvFocusHighlight { focused = it }
                     .then(
-                        if (tv && focused) Modifier.border(3.dp, Color.White, CircleShape)
+                        if (tv && focused) Modifier.border(3.dp, Color.White, RectangleShape)
                         else Modifier
                     ),
+                shape = if (tv) RectangleShape else ButtonDefaults.shape,
                 enabled = !busy,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = UpdateDot,
