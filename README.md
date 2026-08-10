@@ -105,17 +105,23 @@ Open settings (fingerprint-gated, with a 4-digit parent PIN as fallback) on the 
 - **Pause for today** — one tap stops watching on every device until midnight.
 - **AI content screening** *(optional, off by default)* — screen new videos against
   your own house rules ("no horror, no unboxing, no fake challenges") using any
-  OpenAI-compatible endpoint: Anthropic, OpenRouter, or a local server. Verdicts are
-  allow / block / **review** — unsure ones queue for you to rule on, and decisions
-  sync to the kid's devices. With kid profiles, **one call returns a verdict per
-  kid by age** ("fine for the 12-year-old, held for the 4-year-old"); in the
-  queue, tap rules for everyone and hold picks kids. Only titles, channel names
-  and durations are sent — never watch history — and each video is screened once
-  per rules version, so the catalog isn't re-screened (or re-billed) on every
-  launch. A connection test is built in.
+  OpenAI-compatible endpoint: Anthropic, OpenRouter, or a local server. Two
+  passes: a cheap **title pass** decides what appears in the feeds, and a
+  **deep check** — description, tags and the English transcript — runs once on
+  the first press of a video ("Checking this one…", a few seconds) before it
+  plays. Verdicts are allow / block / **review** — unsure ones queue under
+  *Waiting for your OK*, hard blocks collect in a collapsed *Blocked videos*
+  list where **Allow overrules the AI everywhere**; a blocked video shows the
+  kid a gentle, reason-free message (the AI's actual reason is for your phone).
+  With kid profiles, **one call returns a verdict per kid by age** ("fine for
+  the 12-year-old, held for the 4-year-old"); in the queue, tap rules for
+  everyone and hold picks kids. Watch history is never sent, and each video is
+  screened once per rules version, so the catalog isn't re-screened (or
+  re-billed) on every launch. A connection test is built in.
 - **Offline downloads** — approve (or decline) the kid's requests, pick download
-  quality, watch progress, cancel or delete. Files live in the app's private
-  storage and survive reboots.
+  quality, watch progress, cancel or delete. With screening on, each request is
+  deep-checked first and reaches your approval list only if it passes. Files
+  live in the app's private storage and survive reboots.
 - **Kid devices** — sync status per device (settings are content-fingerprinted:
   matching `#hash` = provably in sync), push settings, per-device **stats**:
   what's playing right now — with a **pause/resume** button for "come to dinner"
@@ -191,9 +197,10 @@ come from inside the app (parent settings → Check for updates).
 - No accounts, no analytics, no cloud: history, stats and settings live on your
   devices; phone↔TV traffic never leaves the LAN (token-authenticated).
 - The one opt-in exception is **AI screening**, which is off unless you turn it
-  on and supply your own endpoint/key. Even then it sends only video titles,
-  channel names and durations — never watch history — and pointing it at a local
-  server keeps everything in the house.
+  on and supply your own endpoint/key. The title pass sends video titles,
+  channel names and durations; the pre-play deep check additionally sends that
+  video's public description, tags and captions. **Watch history is never
+  sent**, and pointing it at a local server keeps everything in the house.
 - **Sponsor skipping** queries SponsorBlock's public database using only a
   4-character hash prefix of the video ID, so the service can't tell which
   video is actually being watched.

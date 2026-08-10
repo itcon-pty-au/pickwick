@@ -120,8 +120,11 @@ Do these in order; each pushes to the TV automatically when you press
    show on the TV) — so a younger sibling can't pick an older kid's profile.
 5. **Optional — AI screening**: under *AI content screening*, pick a
    provider, paste an API key, write your house rules in plain words. New
-   videos are checked per kid's age before kids can see them; anything the
-   AI is unsure about waits for your OK under *Waiting for your OK*.
+   videos are checked per kid's age before kids can see them, and the first
+   time a video is pressed it gets a **deep check** of its description, tags
+   and transcript before it plays. Anything the AI is unsure about waits for
+   your OK under *Waiting for your OK*; anything it blocks is listed under
+   *Blocked videos*, where Allow overrules it.
 
    Don't have a key yet? Pick one provider and get a key from it — you only
    need one:
