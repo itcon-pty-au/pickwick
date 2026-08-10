@@ -118,6 +118,11 @@ Open settings (fingerprint-gated, with a 4-digit parent PIN as fallback) on the 
   everyone and hold picks kids. Watch history is never sent, and each video is
   screened once per rules version, so the catalog isn't re-screened (or
   re-billed) on every launch. A connection test is built in.
+- **Per-channel AI instructions** — the 📝 button on any channel opens a note
+  the AI applies to that channel alone, on top of the family rules and winning
+  where they clash: *"only the engineering builds — no prank or stunt videos"*,
+  *"mild cartoon slapstick is fine here"*. Editing a note re-checks just that
+  channel's videos; anything already blocked stays blocked.
 - **Offline downloads** — approve (or decline) the kid's requests, pick download
   quality, watch progress, cancel or delete. With screening on, each request is
   deep-checked first and reaches your approval list only if it passes. Files

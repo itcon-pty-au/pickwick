@@ -126,6 +126,10 @@ Do these in order; each pushes to the TV automatically when you press
    your OK under *Waiting for your OK*; anything it blocks is listed under
    *Blocked videos*, where Allow overrules it.
 
+   Need different rules for one channel? Tap 📝 next to it under *Channels &
+   playlists* and write them there ("only the engineering builds — no prank
+   videos"). They apply to that channel only, on top of the family rules.
+
    Don't have a key yet? Pick one provider and get a key from it — you only
    need one:
 
