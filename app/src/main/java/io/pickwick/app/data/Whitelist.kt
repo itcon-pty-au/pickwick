@@ -91,7 +91,20 @@ data class TimeWindow(
      * tonight must not also unlock tomorrow morning's school hours. Set to the
      * moment the occurrence would have ended, so it lapses on its own.
      */
-    val passUntilMillis: Long? = null
+    val passUntilMillis: Long? = null,
+    /**
+     * "Allow listening": this window blocks *watching* only — sound-only
+     * playback goes on through it. Bedtime is the case that asks for it, since
+     * a bedtime story is the main thing listening is for, and the alternative
+     * is a window that either cuts the story off mid-sentence or has to be
+     * skipped by hand every night. Per-window and off by default: school hours
+     * usually want the plain block, and no window a parent already configured
+     * quietly loosens on upgrade.
+     *
+     * Phones only, like listening itself — a TV can't play with its panel off,
+     * so a TV enforces every window outright whatever this says.
+     */
+    val allowListening: Boolean = false
 )
 
 /** Screen-time rules, set in the parent settings UI. All optional. */
@@ -373,7 +386,11 @@ object WhitelistExporter {
             l.weekendSessions?.let { add("weekend sessions: $it") }
             l.breakMinutes?.let { add("break between sessions: $it min") }
             l.windows.forEach { w ->
-                add("${w.label.lowercase()}: ${clock(w.startMin)}–${clock(w.endMin)} (${dayNames(w.days)})")
+                add(
+                    "${w.label.lowercase()}: ${clock(w.startMin)}–${clock(w.endMin)} " +
+                        "(${dayNames(w.days)})" +
+                        if (w.allowListening) ", listening still allowed" else ""
+                )
             }
         }
         if (lines.isEmpty()) return null

@@ -1,6 +1,7 @@
 package io.pickwick.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -206,6 +207,7 @@ private fun TimeWindowCard(
             onChanged = { onChanged(window.copy(endMin = it ?: window.endMin)) }
         )
         DayChips(window.days) { onChanged(window.copy(days = it)) }
+        AllowListeningRow(window, onChanged)
         SkipOnceRow(window, onPassCommitted, onChanged)
     }
 }
@@ -228,6 +230,38 @@ private fun SkipBreakRow(passUntil: Long?, onChanged: (Long?) -> Unit) {
         CompactButton(
             onClick = { onChanged(if (skipped) null else endOfToday()) }
         ) { Text(if (skipped) "Undo" else "Skip") }
+    }
+}
+
+/**
+ * Bedtime's exception: the window still stops watching, but a story the kid is
+ * listening to plays on. Shown on every window because the parent's own window
+ * names are the only thing that says which one is bedtime; off by default, so
+ * a window that already exists keeps blocking exactly as it did.
+ */
+@Composable
+private fun AllowListeningRow(window: TimeWindow, onChanged: (TimeWindow) -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onChanged(window.copy(allowListening = !window.allowListening)) }
+    ) {
+        Checkbox(
+            modifier = Modifier.tvFocusHighlight(),
+            checked = window.allowListening,
+            onCheckedChange = { onChanged(window.copy(allowListening = it)) }
+        )
+        Column(Modifier.weight(1f)) {
+            Text("Allow listening", style = MaterialTheme.typography.bodyMedium)
+            Text(
+                // Says what the kid gets, not what the setting does: the screen
+                // is the thing a parent is trying to keep off at bedtime.
+                "Audio keeps playing — the screen stays off.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 

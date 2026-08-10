@@ -322,8 +322,12 @@ class ConfigStore(context: Context) {
          * the hash would never reach a device that slept through the push.
          */
         private fun limitsCanon(l: Limits): String {
+            // "Allow listening" is outside what the legacy pair can say, so a
+            // window carrying it takes the long form — otherwise ticking the
+            // box on an ordinary every-day bedtime wouldn't move the hash and
+            // would never reach the kid's phone.
             val legacy = l.windows.singleOrNull()
-                ?.takeIf { it.days == ALL_DAYS && it.passUntilMillis == null }
+                ?.takeIf { it.days == ALL_DAYS && it.passUntilMillis == null && !it.allowListening }
             val base = listOf(
                 l.sessionMinutes, l.weekdaySessions, l.weekendSessions, l.breakMinutes,
                 legacy?.startMin, legacy?.endMin
@@ -339,7 +343,8 @@ class ConfigStore(context: Context) {
                 // Parent-typed text is scrubbed of this format's separators so
                 // two different window lists can't canonicalize identically.
                 "${w.id},${w.label.replace(Regex("[,;]"), " ")},${w.startMin},${w.endMin}," +
-                    "${w.days.sorted().joinToString(".")},${w.passUntilMillis ?: 0}"
+                    "${w.days.sorted().joinToString(".")},${w.passUntilMillis ?: 0}," +
+                    if (w.allowListening) "1" else "0"
             } + breakPass
         }
 
@@ -353,7 +358,10 @@ class ConfigStore(context: Context) {
             // bedtime, so keep writing their keys for it: a family whose phone
             // updates before its TV keeps an enforced bedtime in the meantime.
             // Anything richer has no legacy equivalent and is left out rather
-            // than flattened into a wrong one. While a pass is active the keys
+            // than flattened into a wrong one. "Allow listening" is the one
+            // thing still written flat: a build that can't express it enforces
+            // the window outright, which errs toward the stricter rule and is
+            // what a TV does anyway. While a pass is active the keys
             // are omitted too — absent bedtime IS the pass, as far as an old
             // build can express it; they come back via the fingerprint change
             // when the lapsed pass is scrubbed on load.
@@ -377,6 +385,9 @@ class ConfigStore(context: Context) {
                         // Omitted when it applies every day, the common case.
                         if (w.days != ALL_DAYS) put("days", JSONArray(w.days.sorted()))
                         w.passUntilMillis?.let { put("passUntil", it) }
+                        // Written only when set: absent means the plain block,
+                        // which is what every pre-listening config meant.
+                        if (w.allowListening) put("allowListening", true)
                     })
                 }
             }.toString()
@@ -409,7 +420,8 @@ class ConfigStore(context: Context) {
                         startMin = start,
                         endMin = end,
                         days = days,
-                        passUntilMillis = if (w.has("passUntil")) w.getLong("passUntil") else null
+                        passUntilMillis = if (w.has("passUntil")) w.getLong("passUntil") else null,
+                        allowListening = w.optBoolean("allowListening", false)
                     )
                 }.getOrNull()
             }

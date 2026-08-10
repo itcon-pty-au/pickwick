@@ -94,8 +94,10 @@ Open settings (fingerprint-gated, with a 4-digit parent PIN as fallback) on the 
   educational channels can cost less (or nothing) and junk can cost extra.
 - **Screen time** — session length, sessions per weekday/weekend, break length,
   and **blocked windows**: any number of named no-watching spans (bedtime,
-  school hours, dinner), each with its own days of the week and a one-time
-  **Skip tonight** pass for special occasions. The daily budget is
+  school hours, dinner), each with its own days of the week, an **Allow
+  listening** box (the window blocks watching but a bedtime story plays on,
+  sound only, with the screen off), and a one-time **Skip tonight** pass for
+  special occasions. The daily budget is
   `session × sessions`; only actual watching counts, and stopping early never
   forfeits time. An optional **listening rate** turns on kid-side listen mode
   (screen-off audio) at that drain multiplier — leave it unset and the feature
@@ -167,10 +169,12 @@ them manually per device (settings → Kid devices → **Pull**).
 budget/day  = session × sessions (weekday or weekend)
 sitting cap = session          — after that: a break of «break» minutes
 blocked     = named no-watching windows (bedtime, school…), per days of week,
-              may cross midnight; each grants one parent-issued Skip pass
+              may cross midnight; each grants one parent-issued Skip pass,
+              and may allow listening through (sound only, phones)
 grants      = parent adds minutes today; clears breaks; waives bedtime briefly
 multiplier  = per-channel drain rate (FREE, 0.25x–1.5x): scales budget & sitting
               use only — bedtime and breaks always apply, even on FREE channels
+              (a bedtime with "Allow listening" still stops the picture)
 ```
 
 Only actual playback consumes time. An idle gap of a break-length starts a fresh

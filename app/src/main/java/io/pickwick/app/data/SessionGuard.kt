@@ -19,7 +19,9 @@ import java.util.Locale
  *    budget and the blocked windows still apply.
  *  - A gap of the break length since last watching starts a fresh sitting.
  *  - Each [TimeWindow] (bedtime, school hours) blocks its clock stretch
- *    outright, whatever budget is left.
+ *    outright, whatever budget is left — unless it is marked "Allow
+ *    listening", which blocks watching only and lets sound-only playback
+ *    through (the minutes still draw the daily budget down).
  *  - Rules left unset simply don't apply — no rule has a hidden default; the
  *    parent's settings screen is the whole truth.
  */
@@ -126,15 +128,18 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
      * Null if playback may start; otherwise a kid-friendly reason.
      * [multiplierPercent] is the source's screen-time drain rate: at 0 (FREE)
      * an exhausted budget doesn't block — but bedtime and break locks still do.
+     * [listening] means sound-only with the screen off, which windows marked
+     * "Allow listening" let through; everything else (the pause, the budget,
+     * break locks, every other window) applies exactly as it does to watching.
      */
-    fun checkStart(multiplierPercent: Int = 100): String? =
-        checkStartInner(multiplierPercent).also { reason ->
+    fun checkStart(multiplierPercent: Int = 100, listening: Boolean = false): String? =
+        checkStartInner(multiplierPercent, listening).also { reason ->
             // The enforced store + the rule state behind the verdict. Pairs with
             // the saveLimits line: matching suffixes and values = config applied;
             // anything else points straight at the broken link.
             android.util.Log.i(
                 "Pickwick",
-                "checkStart[$profileSuffix] -> ${reason ?: "ok"} " +
+                "checkStart[$profileSuffix listening=$listening] -> ${reason ?: "ok"} " +
                     "(break=${prefs.getInt("l_break", -1)} " +
                     "lockUntil=${prefs.getLong("lockUntil", 0)} " +
                     "sitting=${prefs.getLong("sittingWatchedMs", 0) / 60_000}m " +
@@ -142,13 +147,13 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
             )
         }
 
-    private fun checkStartInner(multiplierPercent: Int): String? {
+    private fun checkStartInner(multiplierPercent: Int, listening: Boolean): String? {
         rolloverIfNewDay()
         val l = limits()
         val now = System.currentTimeMillis()
 
         if (isPaused(l)) return PAUSED_MESSAGE
-        activeWindow(l)?.let { return windowMessage(l, it) }
+        activeWindow(l, listening)?.let { return windowMessage(l, it, listening) }
 
         val lockUntil = prefs.getLong("lockUntil", 0)
         if (l.breakMinutes == null) {
@@ -182,9 +187,11 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
 
     /**
      * Called every few seconds while playback is actually running. Null to
-     * continue; otherwise a kid-friendly reason to stop now.
+     * continue; otherwise a kid-friendly reason to stop now. [listening] is
+     * the caller's current mode, so a window marked "Allow listening" arriving
+     * mid-story doesn't stop it — the player switches to sound-only instead.
      */
-    fun tick(deltaMs: Long): String? {
+    fun tick(deltaMs: Long, listening: Boolean = false): String? {
         rolloverIfNewDay()
         val l = limits()
         val now = System.currentTimeMillis()
@@ -192,7 +199,7 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
 
         // Mid-playback too: the pushed config lands, the next tick stops the video.
         if (isPaused(l)) return PAUSED_MESSAGE
-        activeWindow(l)?.let { return windowMessage(l, it) }
+        activeWindow(l, listening)?.let { return windowMessage(l, it, listening) }
 
         val daily = prefs.getLong("dailyWatchedMs", 0) + deltaMs
         val sitting = prefs.getLong("sittingWatchedMs", 0) + deltaMs
@@ -229,7 +236,7 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
      * "5 minutes left" warning, so it must never say more time than tick() will
      * actually allow.
      */
-    fun remainingMs(multiplierPercent: Int = 100): Long? {
+    fun remainingMs(multiplierPercent: Int = 100, listening: Boolean = false): Long? {
         rolloverIfNewDay()
         val l = limits()
         if (isPaused(l)) return 0
@@ -246,13 +253,13 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
                     .coerceAtLeast(0) * 100 / multiplierPercent
             }
         }
-        msUntilWindow(l)?.let { candidates += it }
+        msUntilWindow(l, listening)?.let { candidates += it }
         return candidates.minOrNull()?.coerceAtLeast(0)
     }
 
     /** Clock ms until the next window closes playback, or null when there are none. */
-    private fun msUntilWindow(l: Limits): Long? {
-        val windows = liveWindows(l)
+    private fun msUntilWindow(l: Limits, listening: Boolean): Long? {
+        val windows = liveWindows(l, listening)
         if (windows.isEmpty()) return null
         val now = System.currentTimeMillis()
         val cal = Calendar.getInstance()
@@ -353,7 +360,11 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
         val blocking = activeWindow(l)
         val state = when {
             isPaused(l) -> "Paused by parent"
-            blocking != null -> blocking.label
+            // The parent's stats screen shows this next to what's playing, so a
+            // bedtime that lets a story through has to say so — otherwise it
+            // reads as "Bedtime" while the kid is audibly still listening.
+            blocking != null ->
+                if (blocking.allowListening) "${blocking.label} (listening)" else blocking.label
             budget != null && watched >= budget -> "Daily limit reached"
             now < lockUntil -> "On a break"
             else -> "Can watch"
@@ -374,20 +385,44 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
         return day == Calendar.SATURDAY || day == Calendar.SUNDAY
     }
 
-    /** Windows still in force: a parent's pass takes one out for its occurrence. */
-    private fun liveWindows(l: Limits): List<TimeWindow> {
+    /**
+     * Windows still in force: a parent's pass takes one out for its occurrence,
+     * and while [listening] (sound only, screen off) the ones marked "Allow
+     * listening" don't apply — see [TimeWindow.allowListening].
+     */
+    private fun liveWindows(l: Limits, listening: Boolean = false): List<TimeWindow> {
         val now = System.currentTimeMillis()
-        return l.windows.filter { now >= (it.passUntilMillis ?: 0L) }
+        return l.windows.filter {
+            now >= (it.passUntilMillis ?: 0L) && !(listening && it.allowListening)
+        }
+    }
+
+    /**
+     * A window that blocks watching right now but lets sound-only playback
+     * through, or null — either nothing is blocking, or what blocks isn't
+     * waivable this way. An overlapping strict window wins: the stricter rule
+     * is the one a parent means when two cover the same minute.
+     *
+     * Drives the player's switch into listening: what this returns non-null
+     * for is exactly what [checkStart] refuses at 100% but allows while
+     * listening.
+     */
+    fun listenOnlyWindow(): TimeWindow? {
+        rolloverIfNewDay()
+        val l = limits()
+        if (isPaused(l)) return null
+        val blocking = activeWindow(l) ?: return null
+        return blocking.takeIf { activeWindow(l, listening = true) == null }
     }
 
     /** The window blocking playback right now, or null. */
-    private fun activeWindow(l: Limits): TimeWindow? {
+    private fun activeWindow(l: Limits, listening: Boolean = false): TimeWindow? {
         // A grant waives every window for the minutes it bought — a parent
         // handing out 20 more minutes at 19:40 means them, not "except bedtime".
         if (System.currentTimeMillis() < prefs.getLong("windowPassUntil", 0)) return null
         val cal = Calendar.getInstance()
         return TimeWindows.activeAt(
-            liveWindows(l),
+            liveWindows(l, listening),
             cal.get(Calendar.DAY_OF_WEEK),
             cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
         )
@@ -398,10 +433,10 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
      * question a blocked kid actually has, and the reopening time answers it
      * even when the label ("School hours") wouldn't.
      */
-    private fun windowMessage(l: Limits, w: TimeWindow): String {
+    private fun windowMessage(l: Limits, w: TimeWindow, listening: Boolean = false): String {
         val cal = Calendar.getInstance()
         val mins = TimeWindows.blockedForMin(
-            liveWindows(l),
+            liveWindows(l, listening),
             cal.get(Calendar.DAY_OF_WEEK),
             cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
         )

@@ -10,6 +10,7 @@ import io.pickwick.app.data.WEEKDAYS
 import io.pickwick.app.data.Whitelist
 import io.pickwick.app.data.WhitelistEntry
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -166,6 +167,31 @@ class TimeWindowsTest {
             1_800_000_000_000L,
             parsed.limits.breakPassUntilMillis
         )
+    }
+
+    @Test
+    fun `allow-listening round-trips and moves the fingerprint`() {
+        // Same reason as a pass: the reconcile only re-pushes on a mismatch, so
+        // ticking the box has to move the hash or the kid's phone never hears
+        // that bedtime got its exception.
+        val plain = config(Limits(windows = listOf(bedtime)))
+        val listening = config(Limits(windows = listOf(bedtime.copy(allowListening = true))))
+        assertTrue(ConfigStore.fingerprint(plain) != ConfigStore.fingerprint(listening))
+        val parsed = ConfigStore.fromJson(ConfigStore.toJson(listening))
+        assertTrue(parsed.limits.windows.single().allowListening)
+    }
+
+    @Test
+    fun `a window without the box keeps blocking everything after an upgrade`() {
+        // The field is new, so every config already out there lacks it: absent
+        // must read as the plain block, never as a loosened bedtime.
+        val old = ConfigStore.fromJson(
+            """
+            {"entries":[],"blocked":[],
+             "limits":{"windows":[{"id":"w1","label":"Bedtime","start":1170,"end":420}]}}
+            """.trimIndent()
+        )
+        assertFalse(old.limits.windows.single().allowListening)
     }
 
     @Test

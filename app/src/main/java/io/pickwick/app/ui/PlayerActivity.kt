@@ -165,8 +165,21 @@ class PlayerActivity : ComponentActivity() {
      * phones only.
      */
     private var listenPercent: Int? = null
-    /** True from "screen went dark while playing" until the player is back in front. */
+    /**
+     * True while playback is sound-only: the screen went dark, the kid switched
+     * apps, or a "Allow listening" window is on ([listenOnlyWindow]). Drives the
+     * audio-only stream swap and the listening drain rate.
+     */
     private var listenActive = false
+    /**
+     * True while a window marked "Allow listening" is blocking watching. Unlike
+     * the screen-off kind, coming back to the player must NOT restore the
+     * picture — bedtime is still on — so this pins listening on until the
+     * window ends.
+     */
+    private var listenOnlyWindow = false
+    /** Kid-facing line while a window has playback down to sound only. */
+    private val listenOnlyMessage = mutableStateOf<String?>(null)
 
     private fun pokeControls() {
         controlsVisibleUntil.value = System.currentTimeMillis() + 3_000
@@ -218,17 +231,37 @@ class PlayerActivity : ComponentActivity() {
 
         // Screen-time rules: blocked before we even build the player.
         sessionGuard.checkStart(timePercent)?.let { reason ->
-            showBlockedScreen(reason)
-            return
+            // A window marked "Allow listening" refuses the picture, not the
+            // story — start sound-only instead of showing the block screen.
+            // Only when listening clears *every* rule: an exhausted budget or a
+            // break lock still stops the story. TVs are out (no playing with
+            // the panel off) and so is an unset family rate, which means the
+            // feature doesn't exist for this family. The config read is on the
+            // main thread here, but only on this path, and its answer decides
+            // what to show next — same read the profile fallback above does.
+            val listenThrough = !isTv &&
+                sessionGuard.checkStart(timePercent, listening = true) == null &&
+                io.pickwick.app.data.ConfigStore(this).load().listenPercent
+                    ?.also { listenPercent = it } != null
+            if (!listenThrough) {
+                showBlockedScreen(reason)
+                return
+            }
+            // Flags now, service once the player exists (see below): the whole
+            // startup path from here on reads listenActive to stay audio-only.
+            listenActive = true
+            listenOnlyWindow = true
+            listenOnlyMessage.value = reason
         }
 
         captionsOn = getSharedPreferences("player", MODE_PRIVATE).getBoolean("captions", false)
 
-        if (!isTv) {
+        if (!isTv && listenPercent == null) {
             // Listen mode is a phone feature; off-main because ConfigStore is a
             // file read + JSON parse. Racing the first power-button press is
             // theoretical (this finishes in ms), and losing the race just means
-            // that one lock pauses like the feature was off.
+            // that one lock pauses like the feature was off. Skipped when the
+            // gate above already read it.
             lifecycleScope.launch(Dispatchers.IO) {
                 listenPercent = io.pickwick.app.data.ConfigStore(this@PlayerActivity)
                     .load().listenPercent
@@ -305,6 +338,10 @@ class PlayerActivity : ComponentActivity() {
                 })
             }
 
+        // Launched into an "Allow listening" window: the player exists now, so
+        // the notification and the screen-off handover can be armed.
+        if (listenOnlyWindow) armListenOnly()
+
         // Parent's phone can pause/resume via the LAN server ("come to dinner").
         RemotePlayerControl.handler = handler@{ cmd ->
             if (player == null || timeUpMessage.value != null) return@handler false
@@ -357,6 +394,11 @@ class PlayerActivity : ComponentActivity() {
                         exo.currentPosition, exo.duration, exo.isPlaying
                     )
                 }
+                // A window can open or close mid-story: bedtime arriving drops
+                // the picture instead of stopping the video, and morning gives
+                // it back. Checked whether or not playback is running, so a
+                // paused story is in the right mode when it resumes.
+                syncListenOnlyWindow()
                 if (exo.isPlaying && timeUpMessage.value == null) {
                     // Stats record real watch time; the budget drains at the
                     // source's multiplier (exact integer ms — 25% of 5s = 1250ms),
@@ -366,7 +408,7 @@ class PlayerActivity : ComponentActivity() {
                         if (listenActive) listenDrainPercent(timePercent, listenPercent)
                         else timePercent
                     channelUsage.addSeconds(currentChannel, 5)
-                    sessionGuard.tick(5_000L * drain / 100)?.let { reason ->
+                    sessionGuard.tick(5_000L * drain / 100, listenActive)?.let { reason ->
                         exo.pause()
                         timeUpMessage.value = reason
                         delay(6_000)
@@ -377,7 +419,7 @@ class PlayerActivity : ComponentActivity() {
                     // sources only an approaching bedtime counts down). A parent
                     // grant that lifts the countdown re-arms the warnings.
                     if (timeUpMessage.value == null)
-                        sessionGuard.remainingMs(drain)?.let { left ->
+                        sessionGuard.remainingMs(drain, listenActive)?.let { left ->
                         val threshold = when {
                             left <= 60_000L -> 1
                             left <= 5 * 60_000L -> 5
@@ -403,6 +445,7 @@ class PlayerActivity : ComponentActivity() {
                 val timeUp by timeUpMessage
                 val blocked by blockedGently
                 val checking by deepChecking
+                val listenOnly by listenOnlyMessage
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     when {
                         timeUp != null -> Text(
@@ -418,6 +461,26 @@ class PlayerActivity : ComponentActivity() {
                             style = MaterialTheme.typography.headlineMedium
                         )
                         error != null -> Text("Could not play video: $error", color = Color.White)
+                        // Sound only, by the parent's window: no video view at
+                        // all, and the screen is no longer held awake, so this
+                        // is what the kid sees for the few seconds before it
+                        // goes dark — and again if they wake the phone.
+                        listenOnly != null -> Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.padding(24.dp)
+                        ) {
+                            Text(
+                                listenOnly!!,
+                                color = Color.White,
+                                style = MaterialTheme.typography.headlineSmall
+                            )
+                            Spacer(Modifier.height(16.dp))
+                            Text(
+                                playback?.title.orEmpty(),
+                                color = Color.White.copy(alpha = 0.7f),
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                        }
                         // Before the first resolved video there is no frame to
                         // hold, so a bare spinner is honest. The label appears
                         // only while the deep check runs — stream resolution is
@@ -453,7 +516,8 @@ class PlayerActivity : ComponentActivity() {
                     }
                     // Spinner over the held frame: resolving the next video's
                     // streams, initial buffer, seek, or a mid-video stall.
-                    if (timeUp == null && error == null && blocked == null && played &&
+                    if (timeUp == null && error == null && blocked == null &&
+                        listenOnly == null && played &&
                         (playback == null || buffering.value)
                     ) {
                         CircularProgressIndicator()
@@ -762,9 +826,68 @@ class PlayerActivity : ComponentActivity() {
         ListenService.start(this)
     }
 
+    /**
+     * Follows a "Allow listening" window opening or closing under a story
+     * that is already playing. Bedtime arriving must not cut the story off
+     * mid-sentence — that is the whole reason the checkbox exists — so the
+     * picture goes and the sound stays; when the window ends, the picture is
+     * available again.
+     */
+    private fun syncListenOnlyWindow() {
+        if (isTv || listenPercent == null) return
+        val blocking = sessionGuard.listenOnlyWindow() != null
+        if (blocking == listenOnlyWindow) return
+        if (blocking) {
+            listenOnlyWindow = true
+            // The reason line, phrased by the guard exactly as the kid would
+            // otherwise have been stopped with.
+            listenOnlyMessage.value = sessionGuard.checkStart(timePercent)
+            armListenOnly()
+        } else {
+            listenOnlyWindow = false
+            listenOnlyMessage.value = null
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            // Only the pin is gone. Backgrounded or screen-off, this is
+            // ordinary listen mode and stays exactly as it is; in front of the
+            // kid, the picture comes back.
+            if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
+                exitListenMode()
+            }
+        }
+    }
+
+    /**
+     * Sound-only because a window says so: the audio swap and the notification
+     * that ordinary listen mode gets from [enterListenMode], plus dropping the
+     * keep-awake so the screen goes dark by itself. Nothing here turns the
+     * screen off — the system's own timeout does, once we stop holding it on.
+     */
+    private fun armListenOnly() {
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        listenActive = true
+        val exo = player ?: return
+        // Same mid-advance guard as enterListenMode: the in-flight resolve
+        // attaches audio-only on its own (it reads listenActive).
+        if (resolveJob?.isActive != true) {
+            currentPlayback?.let { pb ->
+                if (pb.audioUrl != null) {
+                    attachSources(pb, audioOnly = true, resumeMs = exo.currentPosition)
+                }
+            }
+        }
+        ListenService.title = currentTitle
+        ListenService.channelName = currentChannel
+        ListenService.player = exo
+        ListenService.start(this)
+    }
+
     /** Back in front (unlock, or lock screen never engaged): video + normal rate. */
     private fun exitListenMode() {
         if (!listenActive) return
+        // A window still has watching blocked — being back in front of the
+        // player doesn't lift bedtime, it just means the kid is looking at the
+        // "listening only" card.
+        if (listenOnlyWindow) return
         listenActive = false
         ListenService.stop(this)
         val exo = player ?: return
