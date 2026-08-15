@@ -27,7 +27,7 @@ class WatchedSplitTest {
             item("a", 1f), item("b", null), item("c", 1f), item("d", 0.3f), item("e", null)
         )
         val finished = setOf("https://youtu.be/a", "https://youtu.be/c")
-        val (fresh, watched) = splitWatched(items) { it in finished }
+        val (fresh, watched) = splitWatched(items) { it.video.url in finished }
         // b, d, e keep the order the channel handed us — nothing is re-ranked,
         // only moved down.
         assertEquals(listOf("b", "d", "e"), urls(fresh))
@@ -67,7 +67,7 @@ class WatchedSplitTest {
     fun `nothing is dropped`() {
         val items = (1..20).map { item("v$it", if (it % 3 == 0) 1f else null) }
         val finished = items.filter { it.progress == 1f }.map { it.video.url }.toSet()
-        val (fresh, watched) = splitWatched(items) { it in finished }
+        val (fresh, watched) = splitWatched(items) { it.video.url in finished }
         assertEquals(items.size, fresh.size + watched.size)
         assertEquals(items.toSet(), (fresh + watched).toSet())
     }

@@ -89,9 +89,9 @@ data class UiState(
  */
 internal fun splitWatched(
     items: List<VideoItem>,
-    wasFinished: (String) -> Boolean
+    wasFinished: (VideoItem) -> Boolean
 ): Pair<List<VideoItem>, List<VideoItem>> =
-    items.partition { !wasFinished(it.video.url) }
+    items.partition { !wasFinished(it) }
 
 /**
  * Search hits handed to the AI screener in the current window. [done]/[total]

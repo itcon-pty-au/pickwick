@@ -742,8 +742,11 @@ class MainViewModel(
             )
             return
         }
-        val (unwatched, watched) = splitWatched(items) { url ->
-            finishedOnArrival.getOrPut(url) { history.progress(url)?.isFinished == true }
+        val (unwatched, watched) = splitWatched(items) { item ->
+            // annotated() already read this video's progress — reuse it rather
+            // than hitting the history store a second time per tile, on main,
+            // on every publish.
+            finishedOnArrival.getOrPut(item.video.url) { (item.progress ?: 0f) >= 0.98f }
         }
         val onShelf = _state.value.screen is Screen.WatchedVideos
         _state.value = _state.value.copy(
@@ -876,7 +879,8 @@ class MainViewModel(
         // A fresh visit is where the sort catches up with what was watched last
         // time — see [finishedOnArrival].
         finishedOnArrival.clear()
-        topUps = 0
+        gridTarget = SCREENFUL
+        pagesThisPump = 0
 
         // Paint instantly from the last visit; refresh silently underneath.
         val cachedVideos = withContext(Dispatchers.IO) { videoCache.load(source.id) }
@@ -919,21 +923,21 @@ class MainViewModel(
                     kotlinx.coroutines.delay(1_500)
                     prefetchThumbs(page.videos.mapNotNull { it.thumbnailUrl })
                 }
-                // Page 1 is the "first set" the Watched tile pins to.
-                publishChannel(source, pin = true)
+                publishChannel(source)
                 kickScreening(rawVideos)
                 // Opening a channel fetches its fresh page 1 — harvest it.
                 crawler?.harvestPage1(source, page.videos)
-                topUpIfSparse()
+                // First fill: page 1 alone can be all watched videos.
+                pumpUntilFilled()
             }
             .onFailure {
                 android.util.Log.w("Pickwick", "open ${source.id} failed", it)
                 if (cachedVideos.isEmpty()) {
                     _state.value = _state.value.copy(loading = false, error = it.message ?: it.javaClass.simpleName)
                 } else {
-                    // Offline, browsing the cache: no page 1 is coming, so pin
-                    // the tile to what we have or it would never appear.
-                    publishChannel(source, pin = true)
+                    // Offline, browsing the cache: no page is coming, so settle
+                    // on what we have or the tile would never appear at all.
+                    pumpUntilFilled()
                 }
             }
     }
@@ -976,8 +980,29 @@ class MainViewModel(
             }
     }
 
-    /** Called when the kid scrolls near the end of a source's grid. */
+    /**
+     * The kid is near the end of the grid and wants more.
+     *
+     * One upload page is no longer one screenful: the grid carries only
+     * unwatched videos, so a page of thirty can add three tiles — or none at
+     * all on a channel they've been through. Scroll position alone can't drive
+     * that, because the grid barely moves and the "near the end" signal only
+     * fires when it does; the kid ends up swiping again and again for one row
+     * at a time. So a nudge sets a target instead, and [pumpUntilFilled] keeps
+     * fetching until the grid has actually grown by a screenful.
+     */
     fun loadMoreUploads() {
+        if (_state.value.screen !is Screen.ChannelVideos) return
+        if (uploadsNextPage == null) return
+        // Fresh demand: aim a screenful past what's showing and restore the
+        // page budget, including while a fetch is already in flight — that one
+        // will pick the raised target up when it lands.
+        gridTarget = maxOf(gridTarget, _state.value.videos.size + SCREENFUL)
+        pagesThisPump = 0
+        fetchNextPage()
+    }
+
+    private fun fetchNextPage() {
         if (loadingMore) return
         val handle = feedHandle ?: return
         val next = uploadsNextPage ?: return
@@ -1006,32 +1031,49 @@ class MainViewModel(
                 .onFailure { android.util.Log.w("Pickwick", "load more failed", it) }
             loadingMore = false
             _state.value = _state.value.copy(loadingMore = false)
-            topUpIfSparse()
+            pumpUntilFilled()
         }
     }
 
     /**
-     * Hiding watched videos can leave a nearly-empty first screen even though older
-     * pages exist — keep fetching until there's enough to fill the grid or pages run out.
+     * Keep paging until the grid reaches [gridTarget] — a page that yielded
+     * nothing the kid can see hasn't answered their scroll, so the next one
+     * goes straight out rather than waiting for another swipe.
      *
-     * Capped, because the grid now counts only unwatched: a channel the kid has
-     * seen right through would otherwise page its entire history on open, one
-     * network round trip at a time, to find twelve videos that aren't there.
-     * Past the cap the shelf and ordinary scrolling take over.
+     * Budgeted per nudge, not per visit: a channel watched right through would
+     * otherwise page its whole history in one go, but a kid genuinely scrolling
+     * deep gets a fresh allowance every time they ask.
      */
-    private fun topUpIfSparse() {
-        if (_state.value.screen !is Screen.ChannelVideos) return
-        if (_state.value.videos.size >= 12 || uploadsNextPage == null) return
-        if (topUps >= MAX_TOP_UPS) return
-        topUps++
-        loadMoreUploads()
+    private fun pumpUntilFilled() {
+        val source = (_state.value.screen as? Screen.ChannelVideos)?.source ?: return
+        if (_state.value.videos.size < gridTarget &&
+            uploadsNextPage != null &&
+            pagesThisPump < MAX_PAGES_PER_PUMP
+        ) {
+            pagesThisPump++
+            fetchNextPage()
+            return
+        }
+        // Nothing more coming: what's loaded now is "the first set", and the
+        // Watched tile pins to the end of it. Pinning at page 1 instead would
+        // strand the tile two tiles from the top of a channel whose recent
+        // uploads have all been watched.
+        if (_state.value.watchedTileAt == null) publishChannel(source, pin = true)
     }
 
-    /** Automatic page fetches spent on the open channel; reset per visit. */
-    private var topUps = 0
+    /** How much new grid one scroll nudge (or a channel opening) should buy. */
+    private var gridTarget = 0
 
-    /** ~5 pages ≈ 150 videos looked at before we stop hunting for unwatched ones. */
-    private val MAX_TOP_UPS = 5
+    /** Pages spent since the last nudge — see [pumpUntilFilled]. */
+    private var pagesThisPump = 0
+
+    private companion object {
+        /** Roughly a grid's worth of tiles on the biggest layout we render. */
+        const val SCREENFUL = 12
+
+        /** ~5 upload pages ≈ 150 videos sifted per nudge before we give up. */
+        const val MAX_PAGES_PER_PUMP = 5
+    }
 
     /** Hold-to-save: toggles a video in the kid's saved-for-later list. */
     fun toggleWatchlist(item: VideoItem) {
@@ -1331,6 +1373,8 @@ class MainViewModel(
         feedHandle = null
         uploadsNextPage = null
         finishedOnArrival.clear()
+        gridTarget = 0
+        pagesThisPump = 0
         _state.value = _state.value.copy(
             screen = Screen.Home, videos = emptyList(), held = 0, loading = false, error = null,
             channelWatched = emptyList(), watchedTileAt = null, scrollTo = null,
