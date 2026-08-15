@@ -381,6 +381,15 @@ class PlayerActivity : ComponentActivity() {
             }
         }
 
+        // A parent's grant or rules edit landing mid-video. Worth interrupting
+        // for: extra minutes arriving silently look like the countdown warning
+        // was wrong, and a rules change here is what stops the film.
+        lifecycleScope.launch {
+            io.pickwick.app.data.KidNotices.messages.collect {
+                notice.value = Notice(it.text)
+            }
+        }
+
         // Persist progress and enforce screen-time rules every 5s while playing.
         lifecycleScope.launch {
             while (isActive) {

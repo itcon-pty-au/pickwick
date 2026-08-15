@@ -80,6 +80,15 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             it.profiles = initialConfig.profiles
             it.allowedOverrides = initialConfig.aiAllowedVideoIds
         }
+        // Whose device this is: its dedicated assignment, else the last pick
+        // that still names a real kid. A remembered pick can outlive its kid
+        // (deleted on the phone, picker not used since) and suffixFor would
+        // auto-register an orphan namespace, so it's validated against the
+        // config it came with.
+        fun kidHere(f: Whitelist): String? =
+            if (f.profiles.isEmpty()) null
+            else f.deviceProfiles[pairingStore.deviceToken()]
+                ?: activeProfiles.activeId()?.takeIf { f.profile(it) != null }
         // Every device runs the LAN server now, not just TVs: a kid's phone or
         // tablet is pairable too (config pushes, grants, index sync). Same
         // token-gated listener as before, just no longer gated on form factor.
@@ -89,21 +98,16 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 grantHandler = { minutes, profileId ->
                     // Route the grant to the named kid's guard; unnamed grants
                     // (older admin phones) land on whoever this device shows.
-                    val target = profileId ?: run {
-                        val f = ConfigStore(appContext).load()
-                        if (f.profiles.isEmpty()) null
-                        else f.deviceProfiles[PairingStore(appContext).deviceToken()]
-                            // A remembered pick can outlive its kid (deleted on
-                            // the phone, picker not used since): suffixFor would
-                            // auto-register an orphan namespace and the grant
-                            // would vanish into it. Explicit ids stay unvalidated
-                            // on purpose — a grant can arrive moments before the
-                            // config push that introduces its (new) kid.
-                            ?: ActiveProfileStore(appContext).activeId()
-                                ?.takeIf { f.profile(it) != null }
-                    }
-                    SessionGuard(appContext, ProfileNamespace(appContext).suffixFor(target))
+                    // An explicit id stays unvalidated on purpose — a grant can
+                    // arrive moments before the config push that introduces its
+                    // (new) kid.
+                    val here = kidHere(ConfigStore(appContext).load())
+                    val target = profileId ?: here
+                    SessionGuard(appContext, profileNs.suffixFor(target))
                         .grantExtraMinutes(minutes)
+                    // Only the kid the minutes belong to hears about them —
+                    // a grant aimed at their sibling is not their news.
+                    if (target == here) KidNotices.post(KidNotices.grant(minutes))
                 },
                 pairingStore,
                 statsProvider = { io.pickwick.app.data.Stats.build(appContext) },
@@ -132,6 +136,18 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 },
                 indexMerger = { sourceId, body ->
                     io.pickwick.app.data.ChannelIndex(appContext).importSourceWithState(sourceId, body)
+                },
+                onConfigApplied = { before, after ->
+                    // The pill is the only thing that says a rule moved;
+                    // otherwise the kid finds out by hitting it. Judged on this
+                    // device's own kid, so a change to their sibling's rules
+                    // stays quiet here.
+                    val kid = kidHere(after)
+                    val fresh = after.limitsFor(kid)
+                    KidNotices.configChange(
+                        before.limitsFor(kid), fresh,
+                        SessionGuard(appContext, profileNs.suffixFor(kid)).remainingTodayMin(fresh)
+                    )?.let { KidNotices.post(it) }
                 }
             ).also { it.start() }
         }

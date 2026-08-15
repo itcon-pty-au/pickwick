@@ -260,7 +260,14 @@ class LanServer(
     /** Search-index sync: per-source status, one source's payload, and a merger. */
     private val indexStatusProvider: () -> String = { "{}" },
     private val indexSourceProvider: (String) -> String? = { null },
-    private val indexMerger: (sourceId: String, body: String) -> Unit = { _, _ -> }
+    private val indexMerger: (sourceId: String, body: String) -> Unit = { _, _ -> },
+    /**
+     * An accepted config push, with what this device held a moment before it.
+     * The diff is what decides whether the kid hears about it — see
+     * [KidNotices.configChange]; which kid's rules those are is the caller's
+     * to resolve, so both configs travel whole.
+     */
+    private val onConfigApplied: (before: Whitelist, after: Whitelist) -> Unit = { _, _ -> }
 ) {
     @Volatile
     var port: Int = 0
@@ -550,8 +557,14 @@ class LanServer(
             // one re-pair, not the curation history.
             method == "GET" && path == "/config" -> respond(200, configStore.rawJson())
             method == "POST" && path == "/config" -> {
-                if (configStore.saveRaw(readBody())) {
+                val body = readBody()
+                // Snapshot first: the reconcile sweep re-pushes a config a
+                // device already has, so only a real difference may reach the
+                // kid. Both loads are a file read and a parse — a push is rare.
+                val before = configStore.load()
+                if (configStore.saveRaw(body)) {
                     ConfigEvents.onConfigChanged?.invoke()
+                    onConfigApplied(before, configStore.load())
                     respond(200, "saved")
                 } else respond(400, "bad config")
             }

@@ -122,6 +122,14 @@ class MainViewModel(
         viewModelScope.launch {
             DownloadEvents.changes.collect { refreshDownloadState() }
         }
+        // A parent's phone just granted time or changed the rules. Keyed
+        // per-kid ViewModels all hear it; only the home actually on screen
+        // says so, or the kid gets a pill from their sibling's screen.
+        viewModelScope.launch {
+            io.pickwick.app.data.KidNotices.messages.collect {
+                if (uiActive) showNotice(it.text)
+            }
+        }
         // A TV can sit on the home screen for hours — poll for whitelist edits.
         viewModelScope.launch {
             while (true) {

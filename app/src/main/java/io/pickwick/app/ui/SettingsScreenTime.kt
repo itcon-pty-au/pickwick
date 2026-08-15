@@ -430,7 +430,7 @@ internal fun GrantTimeSection(
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
     var minutes by remember { mutableIntStateOf(15) }
-    var granted by remember { mutableStateOf<String?>(null) }
+    var granted by remember { mutableStateOf<GrantReceipt?>(null) }
     var targetKidId by remember(profiles.map { it.id }) {
         mutableStateOf(profiles.firstOrNull()?.id)
     }
@@ -469,22 +469,34 @@ internal fun GrantTimeSection(
                 val devices = pairingStore.paired()
                 val who = kidName?.let { " for $it" } ?: ""
                 if (devices.isEmpty()) {
-                    granted = "Granted $amount extra minutes$who 🎉"
+                    granted = GrantReceipt("Granted $amount extra minutes$who 🎉")
                 } else {
                     scope.launch {
                         var ok = 0
                         devices.forEach { if (LanClient.grant(it, amount, kidId)) ok++ }
-                        granted = "Granted $amount min$who here + $ok device(s) 🎉"
+                        granted = GrantReceipt("Granted $amount min$who here + $ok device(s) 🎉")
                     }
                 }
             }
         ) { Text("Grant") }
     }
-    granted?.let {
-        Text(it, style = MaterialTheme.typography.bodySmall,
+    granted?.let { receipt ->
+        Text(receipt.text, style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // A receipt, not a status line: it was true when it appeared and says
+        // nothing about now, so it goes rather than sitting under the row until
+        // the app is next restarted. Keyed on the receipt (`at` gives two
+        // identical grants separate identities) so a second Grant gets its own
+        // full five seconds.
+        LaunchedEffect(receipt) {
+            kotlinx.coroutines.delay(5_000)
+            if (granted == receipt) granted = null
+        }
     }
 }
+
+/** One Grant tap's confirmation; `at` keeps repeats distinguishable. */
+private data class GrantReceipt(val text: String, val at: Long = System.currentTimeMillis())
 
 /**
  * Parent timeout: one tap turns all watching off until midnight, on every
