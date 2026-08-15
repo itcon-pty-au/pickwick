@@ -679,32 +679,110 @@ class MainViewModel(
             val (tiles, keepWatching) = withContext(Dispatchers.IO) {
                 sortByUsage(visibleSources(sources.distinctBy { it.id })) to keepWatchingRow()
             }
+            // A channel re-splits instead: writing the flat list here first
+            // would flash every watched video back into the grid for a frame.
+            val channel = channelSource()
+            val untouched = onHome || onSearch || channel != null
             _state.value = _state.value.copy(
                 // Verdicts can clear (or fully hold) a source — tiles follow along.
                 channels = tiles,
                 keepWatching = keepWatching,
-                videos = if (onHome || onSearch) _state.value.videos
+                videos = if (untouched) _state.value.videos
                 else annotated(includeFinished = includeFinished),
-                held = if (onHome || onSearch) _state.value.held
-                else heldByScreening()
+                held = if (untouched) _state.value.held else heldByScreening()
             )
+            channel?.let { publishChannel(it) }
             if (onSearch) onSearchVerdicts()
         }
     }
 
     /**
-     * Channel browsing keeps fully-watched videos visible (kids rewatch!) — they
-     * render dimmed with a full red bar. Up next does too: an item there was put
-     * there on purpose, so hiding it would look like the add silently failed.
-     * Surprise excludes them: it's the discovery mix, and clutter there would
-     * defeat its purpose.
+     * Channel browsing keeps fully-watched videos (kids rewatch!) — [publishChannel]
+     * then sorts them onto the Watched shelf rather than dropping them. Up next
+     * keeps them too: an item there was put there on purpose, so hiding it would
+     * look like the add silently failed. Surprise excludes them: it's the
+     * discovery mix, and clutter there would defeat its purpose.
      */
     private fun includeFinishedNow(): Boolean =
-        _state.value.screen is Screen.ChannelVideos || _state.value.screen == Screen.Queue
+        channelSource() != null || _state.value.screen == Screen.Queue
 
     /** Raw videos on the current screen hidden by the screener (no verdict yet or held for review). */
     private fun heldByScreening(): Int = rawVideos.count { v ->
         v.videoId !in blockedVideoIds && screener?.isVisible(v) == false
+    }
+
+    /**
+     * Which of this channel's videos were already finished when it opened —
+     * the frozen half of [splitWatched]. Filled in the first time each video
+     * is classified (so a page arriving later is judged on arrival) and never
+     * revised while the channel is open, which is what keeps a just-finished
+     * video from sliding out from under the kid.
+     */
+    private val finishedOnArrival = mutableMapOf<String, Boolean>()
+
+    /**
+     * Channel grids only. A playlist is a curated sequence — its order *is*
+     * the content, and the "▶ Continue" chip already finds the next unwatched
+     * one — so sinking watched videos there would scramble what a parent
+     * deliberately lined up.
+     */
+    private fun sinksWatched(source: Source): Boolean = source.kind == SourceKind.CHANNEL
+
+    /**
+     * Publishes the channel screen (or its Watched shelf) from [rawVideos].
+     * [pin] fixes the "Watched" tile to the end of what's loaded now; it is
+     * passed only once per channel, when the first page lands, and later pages
+     * append below the tile so nothing already scrolled past moves.
+     */
+    private fun publishChannel(source: Source, pin: Boolean = false) {
+        val items = annotated(includeFinished = true)
+        if (!sinksWatched(source)) {
+            _state.value = _state.value.copy(
+                loading = false, videos = items, held = heldByScreening()
+            )
+            return
+        }
+        val (unwatched, watched) = splitWatched(items) { url ->
+            finishedOnArrival.getOrPut(url) { history.progress(url)?.isFinished == true }
+        }
+        val onShelf = _state.value.screen is Screen.WatchedVideos
+        _state.value = _state.value.copy(
+            loading = false,
+            videos = if (onShelf) watched else unwatched,
+            channelWatched = watched,
+            // Held videos are unscreened, never watched — the count belongs to
+            // the grid they're missing from, not to the shelf.
+            held = if (onShelf) 0 else heldByScreening(),
+            watchedTileAt = _state.value.watchedTileAt ?: unwatched.size.takeIf { pin }
+        )
+    }
+
+    /** The channel's finished videos, on their own screen. */
+    fun openChannelWatched() {
+        val source = (_state.value.screen as? Screen.ChannelVideos)?.source ?: return
+        _state.value = _state.value.copy(
+            screen = Screen.WatchedVideos(source),
+            videos = _state.value.channelWatched,
+            held = 0,
+            // Shared grid: without this the shelf would open at the depth the
+            // channel was scrolled to.
+            scrollTo = 0
+        )
+    }
+
+    /** Back out of the Watched shelf. The channel's pages are still loaded. */
+    fun backToChannel() {
+        val source = (_state.value.screen as? Screen.WatchedVideos)?.source ?: return
+        _state.value = _state.value.copy(screen = Screen.ChannelVideos(source), held = 0)
+        publishChannel(source)
+        // Land back on the tile they left through, rather than at the top of a
+        // grid they had already scrolled a long way down.
+        _state.value = _state.value.copy(scrollTo = _state.value.watchedTileAt ?: 0)
+    }
+
+    /** The grid obeyed [UiState.scrollTo]; don't make it jump again. */
+    fun scrollHandled() {
+        if (_state.value.scrollTo != null) _state.value = _state.value.copy(scrollTo = null)
     }
 
     private fun annotated(includeFinished: Boolean): List<VideoItem> =
@@ -754,11 +832,25 @@ class MainViewModel(
             if (_state.value.screen == Screen.Queue) {
                 rawVideos = withContext(Dispatchers.IO) { queueStore.load() }
             }
+            val channel = channelSource()
+            if (channel != null) {
+                // A video finished in the player stays put on the grid behind
+                // it — the snapshot froze at open — so this only refreshes bars.
+                publishChannel(channel)
+                return@launch
+            }
             _state.value = _state.value.copy(
                 videos = annotated(includeFinished = includeFinishedNow()),
                 held = heldByScreening()
             )
         }
+    }
+
+    /** The channel behind whichever of its two screens is showing, else null. */
+    private fun channelSource(): Source? = when (val s = _state.value.screen) {
+        is Screen.ChannelVideos -> s.source
+        is Screen.WatchedVideos -> s.source
+        else -> null
     }
 
     /**
@@ -774,16 +866,24 @@ class MainViewModel(
 
     fun openChannel(source: Source) = viewModelScope.launch {
         usage.bump(source.id)
-        _state.value = _state.value.copy(screen = Screen.ChannelVideos(source), loading = true, videos = emptyList(), held = 0, error = null)
+        _state.value = _state.value.copy(
+            screen = Screen.ChannelVideos(source), loading = true, videos = emptyList(),
+            held = 0, error = null, channelWatched = emptyList(), watchedTileAt = null,
+            scrollTo = 0
+        )
         feedHandle = null
         uploadsNextPage = null
+        // A fresh visit is where the sort catches up with what was watched last
+        // time — see [finishedOnArrival].
+        finishedOnArrival.clear()
+        topUps = 0
 
         // Paint instantly from the last visit; refresh silently underneath.
         val cachedVideos = withContext(Dispatchers.IO) { videoCache.load(source.id) }
         if (cachedVideos.isNotEmpty()) {
             rawVideos = cachedVideos
             usage.setLastSeenLatest(source.id, cachedVideos.first().url)
-            _state.value = _state.value.copy(loading = false, videos = annotated(includeFinished = true), held = heldByScreening())
+            publishChannel(source)
             kickScreening(cachedVideos)
         } else if (source.kind == SourceKind.CHANNEL && source.id.startsWith("UC")) {
             // Cold channel: race a tiny RSS fetch for a fast first paint. The full
@@ -796,7 +896,7 @@ class MainViewModel(
                     current is Screen.ChannelVideos && current.source.id == source.id
                 ) {
                     rawVideos = quick
-                    _state.value = _state.value.copy(loading = false, videos = annotated(includeFinished = true), held = heldByScreening())
+                    publishChannel(source)
                     kickScreening(quick)
                 }
             }
@@ -819,7 +919,8 @@ class MainViewModel(
                     kotlinx.coroutines.delay(1_500)
                     prefetchThumbs(page.videos.mapNotNull { it.thumbnailUrl })
                 }
-                _state.value = _state.value.copy(loading = false, videos = annotated(includeFinished = true), held = heldByScreening())
+                // Page 1 is the "first set" the Watched tile pins to.
+                publishChannel(source, pin = true)
                 kickScreening(rawVideos)
                 // Opening a channel fetches its fresh page 1 — harvest it.
                 crawler?.harvestPage1(source, page.videos)
@@ -829,6 +930,10 @@ class MainViewModel(
                 android.util.Log.w("Pickwick", "open ${source.id} failed", it)
                 if (cachedVideos.isEmpty()) {
                     _state.value = _state.value.copy(loading = false, error = it.message ?: it.javaClass.simpleName)
+                } else {
+                    // Offline, browsing the cache: no page 1 is coming, so pin
+                    // the tile to what we have or it would never appear.
+                    publishChannel(source, pin = true)
                 }
             }
     }
@@ -894,7 +999,8 @@ class MainViewModel(
                         crawler?.harvestHistory(s.source, page.videos)
                     }
                     launch { prefetchThumbs(page.videos.mapNotNull { it.thumbnailUrl }) }
-                    _state.value = _state.value.copy(videos = annotated(includeFinished = true), held = heldByScreening())
+                    // No pin: later pages join below the tile, never above it.
+                    (_state.value.screen as? Screen.ChannelVideos)?.let { publishChannel(it.source) }
                     kickScreening(page.videos)
                 }
                 .onFailure { android.util.Log.w("Pickwick", "load more failed", it) }
@@ -907,14 +1013,25 @@ class MainViewModel(
     /**
      * Hiding watched videos can leave a nearly-empty first screen even though older
      * pages exist — keep fetching until there's enough to fill the grid or pages run out.
+     *
+     * Capped, because the grid now counts only unwatched: a channel the kid has
+     * seen right through would otherwise page its entire history on open, one
+     * network round trip at a time, to find twelve videos that aren't there.
+     * Past the cap the shelf and ordinary scrolling take over.
      */
     private fun topUpIfSparse() {
-        if (_state.value.screen is Screen.ChannelVideos &&
-            _state.value.videos.size < 12 && uploadsNextPage != null
-        ) {
-            loadMoreUploads()
-        }
+        if (_state.value.screen !is Screen.ChannelVideos) return
+        if (_state.value.videos.size >= 12 || uploadsNextPage == null) return
+        if (topUps >= MAX_TOP_UPS) return
+        topUps++
+        loadMoreUploads()
     }
+
+    /** Automatic page fetches spent on the open channel; reset per visit. */
+    private var topUps = 0
+
+    /** ~5 pages ≈ 150 videos looked at before we stop hunting for unwatched ones. */
+    private val MAX_TOP_UPS = 5
 
     /** Hold-to-save: toggles a video in the kid's saved-for-later list. */
     fun toggleWatchlist(item: VideoItem) {
@@ -1167,12 +1284,56 @@ class MainViewModel(
         }
     }
 
+    /**
+     * Hold menu: mark a video watched, or put it back. Unlike finishing one in
+     * the player, this moves the tile to the Watched shelf straight away — the
+     * kid asked for it, and a tile that stayed put would read as the tap having
+     * missed.
+     */
+    fun toggleWatched(item: VideoItem) {
+        val url = item.video.url
+        viewModelScope.launch {
+            // history.save commits (fsync) — off-main like every store write.
+            val nowWatched = withContext(Dispatchers.IO) {
+                val existing = history.progress(url)
+                // save() ignores a zero duration, and a video that was never
+                // opened has no stored one; the feed's own length covers that,
+                // and a nominal second covers a live or unknown-length entry.
+                val duration = existing?.durationMs?.takeIf { it > 0 }
+                    ?: (item.video.durationSeconds * 1000).takeIf { it > 0 }
+                    ?: 1_000L
+                val watched = existing?.isFinished == true
+                // Rewound, not deleted: a removal loses the next sync to any
+                // device that still holds the entry, while 0/duration carries a
+                // fresh timestamp and wins the merge everywhere.
+                history.save(url, if (watched) 0L else duration, duration)
+                !watched
+            }
+            finishedOnArrival[url] = nowWatched
+            val channel = channelSource()
+            if (channel != null) {
+                publishChannel(channel)
+                _state.value = _state.value.copy(
+                    keepWatching = withContext(Dispatchers.IO) { keepWatchingRow() }
+                )
+            } else {
+                // Every other shelf: same rebuild as returning from the player,
+                // so the red bar (and Surprise's hiding of finished videos)
+                // follows immediately.
+                refreshProgress()
+            }
+            syncWatchState() // it propagates like any other watch progress
+        }
+    }
+
     fun goHome() {
         rawVideos = emptyList()
         feedHandle = null
         uploadsNextPage = null
+        finishedOnArrival.clear()
         _state.value = _state.value.copy(
             screen = Screen.Home, videos = emptyList(), held = 0, loading = false, error = null,
+            channelWatched = emptyList(), watchedTileAt = null, scrollTo = null,
             // Re-rank right away so a freshly opened channel climbs immediately.
             channels = sortByUsage(_state.value.channels)
         )

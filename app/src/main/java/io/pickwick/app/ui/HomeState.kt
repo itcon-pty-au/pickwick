@@ -5,6 +5,11 @@ import io.pickwick.app.data.*
 sealed interface Screen {
     data object Home : Screen
     data class ChannelVideos(val source: Source) : Screen
+    /**
+     * One channel's finished videos, off the main grid. The only two-level
+     * screen in the app — back returns to the channel, not home.
+     */
+    data class WatchedVideos(val source: Source) : Screen
     /** Random mix across all whitelisted sources. */
     data object Surprise : Screen
     /** The kid's saved-for-later videos. */
@@ -51,8 +56,42 @@ data class UiState(
     val searchScreening: SearchScreening? = null,
     /** Transient kid-facing pill (e.g. a save request the deep check refused);
      *  cleared by the ViewModel after a few seconds. */
-    val notice: String? = null
+    val notice: String? = null,
+    /**
+     * This channel's finished videos, held out of [videos] so the unwatched
+     * ones are the whole grid. Feeds the "Watched" tile and the screen behind
+     * it; empty on every other screen.
+     */
+    val channelWatched: List<VideoItem> = emptyList(),
+    /**
+     * Where the "Watched" tile sits in [videos] — pinned to the end of the
+     * first page rather than the end of the list, so it stays a screenful from
+     * the top instead of drifting behind hundreds of older videos as more
+     * pages load. Null until the first page has landed.
+     */
+    val watchedTileAt: Int? = null,
+    /**
+     * A one-shot instruction to put the grid at this item. The channel and its
+     * Watched shelf share one grid, so without it the shelf would open at
+     * whatever depth the channel was scrolled to. Cleared once obeyed.
+     */
+    val scrollTo: Int? = null
 )
+
+/**
+ * Unwatched first, finished last — the split behind the channel grid.
+ *
+ * [wasFinished] is deliberately a snapshot taken when the channel opened, not
+ * a live lookup: a video the kid finishes and comes straight back from must
+ * stay under their thumb, dimmed where they left it, and move on the next
+ * visit. Half-watched videos count as unwatched — they're something to carry
+ * on with, which is what the home screen's "Keep watching" row assumes too.
+ */
+internal fun splitWatched(
+    items: List<VideoItem>,
+    wasFinished: (String) -> Boolean
+): Pair<List<VideoItem>, List<VideoItem>> =
+    items.partition { !wasFinished(it.video.url) }
 
 /**
  * Search hits handed to the AI screener in the current window. [done]/[total]

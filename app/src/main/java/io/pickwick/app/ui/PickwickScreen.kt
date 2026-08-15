@@ -79,7 +79,11 @@ fun PickwickScreen(
             .currentModeType == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
     }
 
-    BackHandler(enabled = state.screen != Screen.Home) { vm.goHome() }
+    // The Watched shelf is the app's only second level: back there means back
+    // to the channel it belongs to, not all the way out to home.
+    BackHandler(enabled = state.screen != Screen.Home) {
+        if (state.screen is Screen.WatchedVideos) vm.backToChannel() else vm.goHome()
+    }
 
     // Coming back from the player: re-read progress so bars/filters update.
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -176,6 +180,7 @@ fun PickwickScreen(
                 else -> Column(Modifier.fillMaxSize()) {
                     val title = when (val s = state.screen) {
                         is Screen.ChannelVideos -> s.source.name
+                        is Screen.WatchedVideos -> "✔ Watched · ${s.source.name}"
                         is Screen.Surprise -> "🎲 Surprise!"
                         is Screen.Watchlist -> "❤️ My list"
                         is Screen.Downloads -> "⬇️ Downloads"
@@ -265,6 +270,8 @@ fun PickwickScreen(
                                 "${state.held} video(s) here are waiting for a parent's OK.\n" +
                                     "A parent can allow them from the app on their phone\n" +
                                     "(the kid device's page, under \"AI screening\")."
+                            state.screen is Screen.WatchedVideos ->
+                                "Nothing watched here yet."
                             else -> "Nothing here yet."
                         },
                         loadingMore = state.loadingMore,
@@ -276,6 +283,7 @@ fun PickwickScreen(
                         onToggleDownload = if (isTv) null else vm::toggleDownload,
                         queued = state.queued,
                         onToggleQueue = vm::toggleQueue,
+                        onToggleWatched = vm::toggleWatched,
                         grabFocus = isTv,
                         onNearEnd = when (state.screen) {
                             is Screen.ChannelVideos -> vm::loadMoreUploads
@@ -283,7 +291,27 @@ fun PickwickScreen(
                             // AI bill follows what's actually being looked at.
                             is Screen.SearchResults -> vm::screenMoreSearch
                             else -> null
-                        }
+                        },
+                        // Only on the channel itself, and only once there is
+                        // something behind it — an empty shelf is a dead end.
+                        extraTileAt = state.watchedTileAt
+                            ?.takeIf {
+                                state.screen is Screen.ChannelVideos &&
+                                    state.channelWatched.isNotEmpty()
+                            },
+                        extraTile = if (state.screen is Screen.ChannelVideos &&
+                            state.channelWatched.isNotEmpty() && state.watchedTileAt != null
+                        ) {
+                            { focus ->
+                                WatchedShelfTile(
+                                    count = state.channelWatched.size,
+                                    focusRequester = focus,
+                                    onOpen = vm::openChannelWatched
+                                )
+                            }
+                        } else null,
+                        scrollTo = state.scrollTo,
+                        onScrolled = vm::scrollHandled
                     )
                     }
                 }
