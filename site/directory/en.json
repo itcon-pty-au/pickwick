@@ -678,12 +678,13 @@
       "kind": "channel",
       "channelId": "UCoxcjq-8xIDTYp3uz647V5A",
       "ages": [
-        "11+"
+        "11+",
+        "8-10"
       ],
       "topics": [
         "Math"
       ],
-      "note": "",
+      "note": "Mathematicians share puzzles, proofs and surprising number facts with pen-and-paper explanations that make big ideas feel approachable.",
       "added": "2026-08-16"
     }
   ]
