@@ -678,13 +678,13 @@
       "kind": "channel",
       "channelId": "UCY-ywrKyfsSFF1tILNH1pNA",
       "ages": [
-        "8-10",
-        "11+"
+        "11+",
+        "8-10"
       ],
       "topics": [
         "Math"
       ],
-      "note": "",
+      "note": "Clear, step-by-step math lessons — fractions, integers, elapsed time and more — with practice problems kids can follow along at home.",
       "added": "2026-08-16"
     }
   ]
