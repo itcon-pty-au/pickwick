@@ -686,6 +686,22 @@
       ],
       "note": "Mathematicians share puzzles, proofs and surprising number facts with pen-and-paper explanations that make big ideas feel approachable.",
       "added": "2026-08-16"
+    },
+    {
+      "url": "https://www.youtube.com/@MathwithMrJ",
+      "name": "Math with Mr. J",
+      "kind": "channel",
+      "channelId": "UCY-ywrKyfsSFF1tILNH1pNA",
+      "ages": [
+        "11+",
+        "5-7",
+        "8-10"
+      ],
+      "topics": [
+        "Math"
+      ],
+      "note": "Clear, step-by-step math lessons — fractions, integers, elapsed time and more — with practice problems kids can follow along at home.",
+      "added": "2026-08-16"
     }
   ]
 }
