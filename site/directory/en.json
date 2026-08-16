@@ -1,6 +1,6 @@
 {
   "language": "en",
-  "updated": "2026-08-09",
+  "updated": "2026-08-16",
   "entries": [
     {
       "url": "https://www.youtube.com/user/scishowkids",
@@ -671,6 +671,20 @@
       ],
       "note": "Deep dives into strange and extreme animals — evolution, prehistoric beasts and wild cats — for older kids who love real zoology.",
       "added": "2026-08-09"
+    },
+    {
+      "url": "https://www.youtube.com/@numberphile",
+      "name": "Numberphile",
+      "kind": "channel",
+      "channelId": "UCoxcjq-8xIDTYp3uz647V5A",
+      "ages": [
+        "11+"
+      ],
+      "topics": [
+        "Math"
+      ],
+      "note": "",
+      "added": "2026-08-16"
     }
   ]
 }
