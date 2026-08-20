@@ -84,6 +84,8 @@ internal fun ChannelGrid(
     onOpen: (Source) -> Unit,
     onSurprise: () -> Unit,
     onOpenWatchlist: () -> Unit,
+    hasWatchLater: Boolean = false,
+    onOpenWatchLater: () -> Unit = {},
     hasQueue: Boolean = false,
     onOpenQueue: () -> Unit = {},
     hasDownloads: Boolean = false,
@@ -133,9 +135,16 @@ internal fun ChannelGrid(
                 QueueTile(onClick = onOpenQueue)
             }
         }
-        // Second tile: the kid's saved-for-later list.
+        // Second tile: the kid's hearted videos.
         item(key = "watchlist-tile") {
             WatchlistTile(onClick = onOpenWatchlist)
+        }
+        // Watch later earns its tile only once something is in it — an empty
+        // shelf is a dead end for the kid, same reasoning as the queue tile.
+        if (hasWatchLater) {
+            item(key = "watch-later-tile") {
+                WatchLaterTile(onClick = onOpenWatchLater)
+            }
         }
         // The offline shelf appears once the first download lands.
         if (hasDownloads) {
@@ -370,6 +379,8 @@ internal fun TvHomeRows(
     onOpen: (Source) -> Unit,
     onSurprise: () -> Unit,
     onOpenWatchlist: () -> Unit,
+    hasWatchLater: Boolean = false,
+    onOpenWatchLater: () -> Unit = {},
     hasQueue: Boolean = false,
     onOpenQueue: () -> Unit = {},
     onOpenSettings: () -> Unit,
@@ -452,6 +463,11 @@ internal fun TvHomeRows(
                         item(key = "watchlist") {
                             WatchlistTile(Modifier.width(150.dp), onOpenWatchlist)
                         }
+                        if (hasWatchLater) {
+                            item(key = "watch-later") {
+                                WatchLaterTile(Modifier.width(150.dp), onOpenWatchLater)
+                            }
+                        }
                     }
                 }
             }
@@ -460,7 +476,7 @@ internal fun TvHomeRows(
 }
 
 // One spelling per special tile: the phone grid and the TV row draw the same
-// three, and a repaint of one layout must not drift from the other.
+// ones, and a repaint of one layout must not drift from the other.
 @Composable
 private fun SurpriseTile(modifier: Modifier = Modifier, onClick: () -> Unit) =
     SpecialTile("🎲", "Surprise me!", SurpriseTileCyan, modifier = modifier, onClick = onClick)
@@ -471,7 +487,11 @@ private fun QueueTile(modifier: Modifier = Modifier, onClick: () -> Unit) =
 
 @Composable
 private fun WatchlistTile(modifier: Modifier = Modifier, onClick: () -> Unit) =
-    SpecialTile("❤️", "My list", WatchlistTileTeal, modifier = modifier, onClick = onClick)
+    SpecialTile("❤️", "Favorites", WatchlistTileTeal, modifier = modifier, onClick = onClick)
+
+@Composable
+private fun WatchLaterTile(modifier: Modifier = Modifier, onClick: () -> Unit) =
+    SpecialTile("🕒", "Watch later", WatchLaterTileTeal, modifier = modifier, onClick = onClick)
 
 @Composable
 private fun TvRowTitle(text: String) {

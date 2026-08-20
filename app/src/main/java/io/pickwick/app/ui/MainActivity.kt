@@ -245,7 +245,10 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         VideoCache(applicationContext),
                         UsageStore(applicationContext, profileSuffix),
                         SessionGuard(applicationContext, profileSuffix),
-                        WatchlistStore(applicationContext, profileSuffix),
+                        SavedListStore(applicationContext, profileSuffix),
+                        SavedListStore(
+                            applicationContext, profileSuffix, SavedListStore.WATCH_LATER
+                        ),
                         QueueStore(applicationContext, profileSuffix),
                         pairingStore,
                         configStore = configStore,
@@ -544,7 +547,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         intent.putExtra(PlayerActivity.EXTRA_PROFILE_SUFFIX, profileSuffix)
                         intent.putExtra(PlayerActivity.EXTRA_PROFILE_ID, activeProfileId)
                         // Screen-time drain rate: exact from the open source; for
-                        // mixed rows (Surprise, My list, Keep watching) resolved by
+                        // mixed rows (Surprise, Favorites, Keep watching) resolved by
                         // the video's channel name, defaulting to normal speed.
                         val timePercent = when (screen) {
                             is Screen.ChannelVideos -> screen.source.timeMultiplierPercent

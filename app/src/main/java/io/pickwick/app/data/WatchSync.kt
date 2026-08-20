@@ -5,8 +5,9 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Cross-device sync of watch progress and the saved-for-later list.
- * Merge is symmetric last-write-wins, so any exchange order converges.
+ * Cross-device sync of watch progress and the kid's saved lists (Favorites
+ * and Watch later). Merge is symmetric last-write-wins, so any exchange order
+ * converges.
  *
  * With kid profiles, each kid's state travels keyed by profile id under
  * "profilesState" — device-local store suffixes differ per device (the first
@@ -39,20 +40,26 @@ object WatchSync {
                 put(url, JSONArray().put(p.positionMs).put(p.durationMs).put(p.lastWatchedAt))
             }
         })
-        root.put("watchlist", JSONArray().apply {
-            WatchlistStore(app, suffix).loadEntries().forEach { e ->
-                put(JSONObject()
-                    .put("u", e.video.url)
-                    .put("t", e.video.title)
-                    .put("c", e.video.channelName)
-                    .put("th", e.video.thumbnailUrl.orEmpty())
-                    .put("d", e.video.durationSeconds)
-                    .put("a", e.addedAt))
-            }
-        })
-        root.put("removed", JSONObject().apply {
-            WatchlistStore(app, suffix).removedMap().forEach { (url, ts) -> put(url, ts) }
-        })
+        // Favorites keeps the original key names so a device on an older
+        // build still exchanges hearts with a device on this one; Watch later
+        // simply goes missing there, which merges as "nothing to add".
+        SAVED_LISTS.forEach { (listName, keys) ->
+            val store = SavedListStore(app, suffix, listName)
+            root.put(keys.first, JSONArray().apply {
+                store.loadEntries().forEach { e ->
+                    put(JSONObject()
+                        .put("u", e.video.url)
+                        .put("t", e.video.title)
+                        .put("c", e.video.channelName)
+                        .put("th", e.video.thumbnailUrl.orEmpty())
+                        .put("d", e.video.durationSeconds)
+                        .put("a", e.addedAt))
+                }
+            })
+            root.put(keys.second, JSONObject().apply {
+                store.removedMap().forEach { (url, ts) -> put(url, ts) }
+            })
+        }
         return root
     }
 
@@ -83,23 +90,31 @@ object WatchSync {
         }.toMap()
         WatchHistoryStore(app, suffix).mergeAll(history)
 
-        val listArr = root.optJSONArray("watchlist") ?: JSONArray()
-        val entries = (0 until listArr.length()).map { i ->
-            val o = listArr.getJSONObject(i)
-            WatchlistStore.Entry(
-                Video(
-                    url = o.getString("u"),
-                    title = o.getString("t"),
-                    channelName = o.optString("c"),
-                    thumbnailUrl = o.optString("th").ifEmpty { null },
-                    durationSeconds = o.optLong("d")
-                ),
-                addedAt = o.optLong("a", 1L)
-            )
+        SAVED_LISTS.forEach { (listName, keys) ->
+            val listArr = root.optJSONArray(keys.first) ?: JSONArray()
+            val entries = (0 until listArr.length()).map { i ->
+                val o = listArr.getJSONObject(i)
+                SavedListStore.Entry(
+                    Video(
+                        url = o.getString("u"),
+                        title = o.getString("t"),
+                        channelName = o.optString("c"),
+                        thumbnailUrl = o.optString("th").ifEmpty { null },
+                        durationSeconds = o.optLong("d")
+                    ),
+                    addedAt = o.optLong("a", 1L)
+                )
+            }
+            val removedObj = root.optJSONObject(keys.second) ?: JSONObject()
+            val removed = removedObj.keys().asSequence()
+                .associateWith { removedObj.optLong(it) }
+            SavedListStore(app, suffix, listName).merge(entries, removed)
         }
-        val removedObj = root.optJSONObject("removed") ?: JSONObject()
-        val removed = removedObj.keys().asSequence()
-            .associateWith { removedObj.optLong(it) }
-        WatchlistStore(app, suffix).merge(entries, removed)
     }
+
+    /** list name → (entries key, tombstones key) in the payload. */
+    private val SAVED_LISTS = listOf(
+        SavedListStore.FAVORITES to ("watchlist" to "removed"),
+        SavedListStore.WATCH_LATER to ("watchLater" to "watchLaterRemoved")
+    )
 }

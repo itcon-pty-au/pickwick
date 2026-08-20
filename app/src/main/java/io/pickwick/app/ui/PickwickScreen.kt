@@ -143,6 +143,8 @@ fun PickwickScreen(
                             onOpen = vm::openChannel,
                             onSurprise = vm::surpriseMe,
                             onOpenWatchlist = vm::openWatchlist,
+                            hasWatchLater = state.watchLater.isNotEmpty(),
+                            onOpenWatchLater = vm::openWatchLater,
                             hasQueue = state.queued.isNotEmpty(),
                             onOpenQueue = vm::openQueue,
                             onOpenSettings = onOpenSettings,
@@ -165,6 +167,8 @@ fun PickwickScreen(
                                 onOpen = vm::openChannel,
                                 onSurprise = vm::surpriseMe,
                                 onOpenWatchlist = vm::openWatchlist,
+                                hasWatchLater = state.watchLater.isNotEmpty(),
+                                onOpenWatchLater = vm::openWatchLater,
                                 hasQueue = state.queued.isNotEmpty(),
                                 onOpenQueue = vm::openQueue,
                                 hasDownloads = state.downloaded.isNotEmpty(),
@@ -182,7 +186,8 @@ fun PickwickScreen(
                         is Screen.ChannelVideos -> s.source.name
                         is Screen.WatchedVideos -> "✔ Watched · ${s.source.name}"
                         is Screen.Surprise -> "🎲 Surprise!"
-                        is Screen.Watchlist -> "❤️ My list"
+                        is Screen.Watchlist -> "❤️ Favorites"
+                        is Screen.WatchLater -> "🕒 Watch later"
                         is Screen.Downloads -> "⬇️ Downloads"
                         is Screen.Queue -> "📚 Up next"
                         is Screen.SearchResults -> "🔍 “${s.query}”"
@@ -277,6 +282,8 @@ fun PickwickScreen(
                         loadingMore = state.loadingMore,
                         watchlisted = state.watchlisted,
                         onToggleWatchlist = vm::toggleWatchlist,
+                        watchLater = state.watchLater,
+                        onToggleWatchLater = vm::toggleWatchLater,
                         downloadPending = state.downloadPending,
                         downloaded = state.downloaded,
                         // Downloads are phone-only: the TV stays on home Wi-Fi.

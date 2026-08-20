@@ -30,8 +30,8 @@ android {
         applicationId = "io.pickwick.app"
         minSdk = 26 // adaptive icons; every realistic target device is far above this
         targetSdk = 34
-        versionCode = 25
-        versionName = "0.7.5-beta"
+        versionCode = 26
+        versionName = "0.7.6-beta"
 
         // Self-update manifest: JSON with versionCode/versionName/apkUrl.
         buildConfigField(

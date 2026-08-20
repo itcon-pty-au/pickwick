@@ -23,7 +23,8 @@ class MainViewModel(
     private val videoCache: VideoCache,
     private val usage: UsageStore,
     private val sessionGuard: SessionGuard,
-    private val watchlistStore: WatchlistStore,
+    private val watchlistStore: SavedListStore,
+    private val watchLaterStore: SavedListStore,
     private val queueStore: QueueStore,
     private val pairingStore: PairingStore? = null,
     /** Phone role: lets the periodic sync re-push config a device missed while off. */
@@ -94,15 +95,16 @@ class MainViewModel(
 
     init {
         viewModelScope.launch {
-            // All four sets are file reads — off-main like everything else
+            // All five sets are file reads — off-main like everything else
             // here; the home rows render immediately, badges land a beat later.
             val (saved, dl) = withContext(Dispatchers.IO) {
-                (watchlistStore.urls() to queueStore.urls()) to
+                Triple(watchlistStore.urls(), watchLaterStore.urls(), queueStore.urls()) to
                     (downloadStore?.pendingUrls().orEmpty() to visibleDownloadUrls())
             }
             _state.value = _state.value.copy(
                 watchlisted = saved.first,
-                queued = saved.second,
+                watchLater = saved.second,
+                queued = saved.third,
                 downloadPending = dl.first,
                 // Sideloaded local files count as "downloaded": one set drives
                 // the ✅ badges, the home tile and the offline auto-open alike.
@@ -803,13 +805,13 @@ class MainViewModel(
     /** Re-read watch progress (called when returning from the player). */
     fun refreshProgress() {
         viewModelScope.launch {
-            // Watchlist pruning and the row rebuilds are all file reads — off-main.
-            val (watchlisted, queued) = withContext(Dispatchers.IO) {
-                pruneFinishedWatchlist()
+            // Saved-list pruning and the row rebuilds are all file reads — off-main.
+            val (watchlisted, watchLater, queued) = withContext(Dispatchers.IO) {
+                pruneFinishedSavedLists()
                 // Also drains the queue when the finish happened outside a
                 // queue launch (kid watched the same video from its channel).
                 pruneFinishedQueue()
-                watchlistStore.urls() to queueStore.urls()
+                Triple(watchlistStore.urls(), watchLaterStore.urls(), queueStore.urls())
             }
             if (_state.value.screen == Screen.Home) {
                 val (keepWatching, badges) = withContext(Dispatchers.IO) {
@@ -819,11 +821,14 @@ class MainViewModel(
                     keepWatching = keepWatching,
                     newBadges = badges,
                     watchlisted = watchlisted,
+                    watchLater = watchLater,
                     queued = queued
                 )
                 return@launch
             }
-            _state.value = _state.value.copy(watchlisted = watchlisted, queued = queued)
+            _state.value = _state.value.copy(
+                watchlisted = watchlisted, watchLater = watchLater, queued = queued
+            )
             if (_state.value.screen == Screen.Downloads) {
                 // Offline shelf: fresh red bars, but no screener/blocklist re-filtering.
                 _state.value = _state.value.copy(videos = downloadItems())
@@ -831,6 +836,9 @@ class MainViewModel(
             }
             if (_state.value.screen == Screen.Watchlist) {
                 rawVideos = withContext(Dispatchers.IO) { watchlistStore.load() }
+            }
+            if (_state.value.screen == Screen.WatchLater) {
+                rawVideos = withContext(Dispatchers.IO) { watchLaterStore.load() }
             }
             if (_state.value.screen == Screen.Queue) {
                 rawVideos = withContext(Dispatchers.IO) { queueStore.load() }
@@ -1075,54 +1083,73 @@ class MainViewModel(
         const val MAX_PAGES_PER_PUMP = 5
     }
 
-    /** Hold-to-save: toggles a video in the kid's saved-for-later list. */
-    fun toggleWatchlist(item: VideoItem) {
+    /** Hold-to-save: toggles a video in the kid's Favorites. */
+    fun toggleWatchlist(item: VideoItem) = toggleSaved(item, watchlistStore, Screen.Watchlist)
+
+    /** Hold-to-save: toggles a video in the kid's Watch later list. */
+    fun toggleWatchLater(item: VideoItem) = toggleSaved(item, watchLaterStore, Screen.WatchLater)
+
+    /**
+     * Favorites and Watch later behave identically — only the store and the
+     * screen mirroring it differ. [ownScreen] is that screen: standing on it,
+     * an un-save has to drop the video out of the grid underfoot.
+     */
+    private fun toggleSaved(item: VideoItem, store: SavedListStore, ownScreen: Screen) {
         val url = item.video.url
         viewModelScope.launch {
             // Store round-trips are file I/O — off-main, per refreshProgress.
-            val (watchlisted, listVideos) = withContext(Dispatchers.IO) {
-                if (url in _state.value.watchlisted) {
-                    watchlistStore.remove(url)
-                } else {
-                    watchlistStore.add(item.video)
-                }
-                watchlistStore.urls() to
-                    if (_state.value.screen == Screen.Watchlist) watchlistStore.load() else null
+            val (urls, listVideos) = withContext(Dispatchers.IO) {
+                if (url in savedUrls(ownScreen)) store.remove(url) else store.add(item.video)
+                store.urls() to
+                    if (_state.value.screen == ownScreen) store.load() else null
             }
-            _state.value = _state.value.copy(watchlisted = watchlisted)
+            _state.value = _state.value.withSaved(ownScreen, urls)
             if (listVideos != null) {
                 rawVideos = listVideos
                 _state.value = _state.value.copy(videos = annotated(includeFinished = false), held = heldByScreening())
             }
-            syncWatchState() // hearts propagate promptly
+            syncWatchState() // saves propagate promptly
         }
     }
 
-    /** Watched-to-the-end videos leave the saved list automatically. */
-    private fun pruneFinishedWatchlist() {
-        watchlistStore.load()
-            .filter { history.progress(it.url)?.isFinished == true }
-            .forEach { watchlistStore.remove(it.url) }
+    private fun savedUrls(ownScreen: Screen): Set<String> =
+        if (ownScreen == Screen.WatchLater) _state.value.watchLater else _state.value.watchlisted
+
+    private fun UiState.withSaved(ownScreen: Screen, urls: Set<String>): UiState =
+        if (ownScreen == Screen.WatchLater) copy(watchLater = urls) else copy(watchlisted = urls)
+
+    /** Watched-to-the-end videos leave both saved lists automatically. */
+    private fun pruneFinishedSavedLists() {
+        listOf(watchlistStore, watchLaterStore).forEach { store ->
+            store.load()
+                .filter { history.progress(it.url)?.isFinished == true }
+                .forEach { store.remove(it.url) }
+        }
     }
 
-    fun openWatchlist() {
+    fun openWatchlist() = openSaved(watchlistStore, Screen.Watchlist)
+
+    fun openWatchLater() = openSaved(watchLaterStore, Screen.WatchLater)
+
+    private fun openSaved(store: SavedListStore, ownScreen: Screen) {
         viewModelScope.launch {
             val videos = withContext(Dispatchers.IO) {
                 // Fully-watched entries have served their purpose — drop them silently.
-                pruneFinishedWatchlist()
-                watchlistStore.load()
+                pruneFinishedSavedLists()
+                store.load()
             }
             rawVideos = videos
             feedHandle = null
             uploadsNextPage = null
-            _state.value = _state.value.copy(
-                screen = Screen.Watchlist,
-                loading = false,
-                error = null,
-                watchlisted = videos.map { it.url }.toSet(),
-                videos = annotated(includeFinished = false),
-                held = heldByScreening()
-            )
+            _state.value = _state.value
+                .withSaved(ownScreen, videos.map { it.url }.toSet())
+                .copy(
+                    screen = ownScreen,
+                    loading = false,
+                    error = null,
+                    videos = annotated(includeFinished = false),
+                    held = heldByScreening()
+                )
         }
     }
 

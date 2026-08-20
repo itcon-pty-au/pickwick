@@ -76,6 +76,7 @@ val StatusFailRed = Color(0xFFE57373)
 val SurpriseTileCyan = Color(0xFF00ACC1)
 val QueueTilePurple = Color(0xFF6A4FA3)
 val WatchlistTileTeal = Color(0xFF00897B)
+val WatchLaterTileTeal = Color(0xFF4DB6AC)
 val DownloadsTileTeal = Color(0xFF00636E)
 
 /** "1.5x" / "0.5x" / "FREE" — one shared spelling of a screen-time multiplier. */

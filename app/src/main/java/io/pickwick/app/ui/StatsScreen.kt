@@ -359,7 +359,7 @@ fun StatsScreen(
             }
 
             Text(
-                "Saved for later: ${data.watchlistCount} video(s)",
+                "Favorites: ${data.watchlistCount} video(s)",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 12.dp)

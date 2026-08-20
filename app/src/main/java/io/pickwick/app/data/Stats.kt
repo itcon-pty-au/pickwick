@@ -147,7 +147,7 @@ object Stats {
             .put("sittingCapMin", snap.sittingCapMin ?: JSONObject.NULL)
             .put("state", snap.state)
             .put("breakUntil", snap.breakUntil ?: JSONObject.NULL)
-            .put("watchlistCount", WatchlistStore(app, suffix).load().size)
+            .put("watchlistCount", SavedListStore(app, suffix).load().size)
         activeProfile?.let { root.put("profileName", it.name) }
 
         NowPlaying.current()?.let { np ->

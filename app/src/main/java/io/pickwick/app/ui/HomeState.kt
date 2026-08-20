@@ -12,8 +12,10 @@ sealed interface Screen {
     data class WatchedVideos(val source: Source) : Screen
     /** Random mix across all whitelisted sources. */
     data object Surprise : Screen
-    /** The kid's saved-for-later videos. */
+    /** The kid's hearted videos ("Favorites" on screen). */
     data object Watchlist : Screen
+    /** Videos the kid lined up for another day. */
+    data object WatchLater : Screen
     /** Parent-approved videos stored on the device — the offline shelf. */
     data object Downloads : Screen
     /** The kid's lined-up videos for one sitting, in play order. */
@@ -44,8 +46,10 @@ data class UiState(
     val keepWatching: List<VideoItem> = emptyList(),
     /** Source ids with uploads the kid hasn't seen yet. */
     val newBadges: Set<String> = emptySet(),
-    /** Video URLs the kid has saved for later (drives the hold-menu row label). */
+    /** Video URLs the kid has hearted (drives the hold-menu row label). */
     val watchlisted: Set<String> = emptySet(),
+    /** Video URLs saved for another day (drives the hold-menu row label and the Watch later tile). */
+    val watchLater: Set<String> = emptySet(),
     /** Video URLs lined up to play next (drives the hold-menu row label and the Up next tile). */
     val queued: Set<String> = emptySet(),
     /** Video URLs requested/approved/fetching — not yet playable offline (⏳). */

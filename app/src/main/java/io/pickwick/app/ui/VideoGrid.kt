@@ -153,6 +153,8 @@ internal fun VideoGrid(
     loadingMore: Boolean = false,
     watchlisted: Set<String> = emptySet(),
     onToggleWatchlist: ((VideoItem) -> Unit)? = null,
+    watchLater: Set<String> = emptySet(),
+    onToggleWatchLater: ((VideoItem) -> Unit)? = null,
     downloadPending: Set<String> = emptySet(),
     downloaded: Set<String> = emptySet(),
     /** Non-null on phones: adds the download row to the hold menu and the
@@ -227,8 +229,17 @@ internal fun VideoGrid(
                         modifier = Modifier.fillMaxWidth().tvFocusHighlight()
                     ) {
                         Text(
-                            if (item.video.url in watchlisted) "💔  Remove from My list"
-                            else "❤️  Add to My list"
+                            if (item.video.url in watchlisted) "💔  Remove from Favorites"
+                            else "❤️  Add to Favorites"
+                        )
+                    }
+                    TextButton(
+                        onClick = { onToggleWatchLater?.invoke(item); menuFor = null },
+                        modifier = Modifier.fillMaxWidth().tvFocusHighlight()
+                    ) {
+                        Text(
+                            if (item.video.url in watchLater) "➖  Remove from Watch later"
+                            else "🕒  Add to Watch later"
                         )
                     }
                     if (onToggleWatched != null) {

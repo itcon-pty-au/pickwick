@@ -118,7 +118,7 @@ fun QueuedVideo.finishedSinceQueued(progress: WatchProgress?): Boolean =
 /**
  * Screen-time drain rate per queue item: the video's own channel's multiplier,
  * normal speed when the channel is unknown — the same resolution mixed rows
- * (Surprise, My list) already use for single launches. A cross-channel queue
+ * (Surprise, Favorites) already use for single launches. A cross-channel queue
  * billed at one flat rate would over- or under-charge every other item.
  */
 fun queuePercents(videos: List<Video>, channels: List<Source>): List<Int> =

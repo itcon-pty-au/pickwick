@@ -4,16 +4,24 @@ import android.content.Context
 import java.io.File
 
 /**
- * The kid's saved-for-later videos, newest first. Adds and removals are
- * timestamped so devices can merge (latest event per video wins) without
- * removals resurrecting on the next sync.
+ * One of the kid's saved video lists — Favorites or Watch later — newest
+ * first. Adds and removals are timestamped so devices can merge (latest event
+ * per video wins) without removals resurrecting on the next sync.
+ *
+ * [listName] picks the backing files. Favorites keeps the historical
+ * "watchlist" spelling: renaming it would orphan every installed family's
+ * saved videos, and the list is only called Favorites on screen.
  */
-class WatchlistStore(context: Context, profileSuffix: String = "") {
+class SavedListStore(
+    context: Context,
+    profileSuffix: String = "",
+    listName: String = FAVORITES
+) {
 
     data class Entry(val video: Video, val addedAt: Long)
 
-    private val file = File(context.filesDir, "watchlist$profileSuffix.tsv")
-    private val removedFile = File(context.filesDir, "watchlist_removed$profileSuffix.tsv")
+    private val file = File(context.filesDir, "$listName$profileSuffix.tsv")
+    private val removedFile = File(context.filesDir, "${listName}_removed$profileSuffix.tsv")
 
     fun loadEntries(): List<Entry> = synchronized(LOCK) {
         if (!file.exists()) return emptyList()
@@ -109,8 +117,15 @@ class WatchlistStore(context: Context, profileSuffix: String = "") {
     }
 
     companion object {
+        /** On-disk name of the hearted list (see the class doc). */
+        const val FAVORITES = "watchlist"
+
+        /** On-disk name of the queue-for-another-day list. */
+        const val WATCH_LATER = "watchlater"
+
         /** Written from the UI (kid taps) and LAN sync workers over one file —
-         *  an unsynchronized read-modify-write would drop one of the two. */
+         *  an unsynchronized read-modify-write would drop one of the two.
+         *  Coarse across both lists: the taps are seconds apart, not contended. */
         private val LOCK = Any()
     }
 }
