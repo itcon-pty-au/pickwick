@@ -16,13 +16,14 @@ import java.io.File
  * manifest of per-source state. Per-source files so a removed whitelist entry
  * is one delete, and a pushed delta replaces one file, not a monolith.
  */
-class ChannelIndex(context: Context) {
+class ChannelIndex(private val dir: File) {
 
     // No disk work here: construction happens on the main thread (activity
     // setup, remember{} in settings). mkdirs runs lazily on the write paths,
     // and the manifest loads on first state access — callers of anything
     // file-backed are already on Dispatchers.IO.
-    private val dir = File(context.filesDir, "search-index")
+    constructor(context: Context) : this(File(context.filesDir, "search-index"))
+
     private val manifestFile = File(dir, "manifest.json")
 
     /** Per-source crawl state, persisted so a crawl survives process death. */
@@ -121,19 +122,8 @@ class ChannelIndex(context: Context) {
     fun dropSource(sourceId: String) {
         sourceFile(sourceId).delete()
         dropCursor(sourceId)
+        dropProbeCount(sourceId)
         states = states - sourceId
-        saveManifest()
-    }
-
-    /**
-     * Revive a source that was prematurely marked complete (an old build
-     * trusted a full first page with no continuation as "exhausted"). The
-     * videos already indexed stay; the crawler just gets to keep going.
-     */
-    fun unmarkComplete(sourceId: String) {
-        val s = states[sourceId] ?: return
-        if (!s.complete) return
-        states = states + (sourceId to s.copy(complete = false))
         saveManifest()
     }
 
@@ -157,10 +147,24 @@ class ChannelIndex(context: Context) {
         val merged = if (append) existing + fresh else fresh + existing
         saveSource(sourceId, merged)
         val prev = states[sourceId]
+        // A harvest append (complete unset — the crawler always passes it
+        // explicitly) that finds videos we didn't know, on a source marked
+        // complete, is proof the backward crawl stopped early: unknown videos
+        // in the middle of history can't be forward growth, and the kid whose
+        // scrolling surfaced them already paid the network cost. Clear the
+        // flag so the crawler resumes. The prepend path is exempt — a new
+        // upload at the top is normal and says nothing about the back catalog.
+        // This recovery is what makes accepting a possibly-wrong "complete"
+        // after repeated exhaustion probes safe (see IndexCrawler.crawlOnce).
+        val resolvedComplete = when {
+            complete != null -> complete
+            append && fresh.isNotEmpty() && prev?.complete == true -> false
+            else -> prev?.complete ?: false
+        }
         states = states + (sourceId to SourceState(
             count = merged.size,
             newestVideoId = merged.firstOrNull()?.videoId ?: prev?.newestVideoId,
-            complete = complete ?: prev?.complete ?: false
+            complete = resolvedComplete
         ))
         saveManifest()
     }
@@ -332,6 +336,37 @@ class ChannelIndex(context: Context) {
             mutate(o)
             dir.mkdirs()
             cursorsFile.writeText(o.toString())
+        }
+    }
+
+    // ---- exhaustion probes --------------------------------------------------
+
+    private val probesFile = File(dir, "probes.json")
+
+    /**
+     * Consecutive "full first page, no continuation" probes per source (see
+     * IndexCrawler.crawlOnce), persisted so the count survives process death
+     * between 15-minute worker runs. Its own file, not part of the manifest:
+     * this is master-only crawl bookkeeping and must not leak into
+     * contentHash, statusJson or the LAN wire format. Not in cursors.json
+     * either — the park branch that increments this also forgets the cursor,
+     * and the counter must survive exactly that call.
+     */
+    fun loadProbeCount(sourceId: String): Int = runCatching {
+        if (!probesFile.exists()) return 0
+        JSONObject(probesFile.readText()).optInt(sourceId, 0)
+    }.getOrDefault(0)
+
+    fun saveProbeCount(sourceId: String, count: Int) = updateProbes { it.put(sourceId, count) }
+
+    fun dropProbeCount(sourceId: String) = updateProbes { it.remove(sourceId) }
+
+    private fun updateProbes(mutate: (JSONObject) -> Unit) {
+        runCatching {
+            val o = if (probesFile.exists()) JSONObject(probesFile.readText()) else JSONObject()
+            mutate(o)
+            dir.mkdirs()
+            probesFile.writeText(o.toString())
         }
     }
 

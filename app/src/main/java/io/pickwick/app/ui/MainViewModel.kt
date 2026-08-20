@@ -313,8 +313,18 @@ class MainViewModel(
                     val remote = runCatching { org.json.JSONObject(remoteStatus) }
                         .getOrNull() ?: return@forEach
                     index.allStates().forEach { (sourceId, state) ->
-                        val remoteHash = remote.optJSONObject(sourceId)?.optInt("hash")
-                        if (remoteHash != state.contentHash()) {
+                        // contentHash is count:newest only, so a completeness
+                        // flip with no new videos (exhaustion accepted after
+                        // repeated probes, or a harvest un-completing) would
+                        // never ship on the hash alone — compare the flag too.
+                        // Deliberately not folded into the hash: the formula is
+                        // wire format shared with old builds. A source the
+                        // remote lacks entirely yields null for both reads and
+                        // still pushes, as before.
+                        val remoteEntry = remote.optJSONObject(sourceId)
+                        if (remoteEntry?.optInt("hash") != state.contentHash() ||
+                            remoteEntry?.optBoolean("complete") != state.complete
+                        ) {
                             val body = index.exportSourceWithState(sourceId) ?: return@forEach
                             LanClient.pushIndexSource(device, sourceId, body)
                         }

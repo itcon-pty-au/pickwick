@@ -49,19 +49,6 @@ class IndexCrawlWorker(
         // Master-only past here: a kid device or co-parent must never crawl.
         if (config.masterDeviceToken != me) return Result.success()
 
-        // Repair: builds before the exhaustion fix marked channels complete
-        // after a single full page (the NewPipe no-continuation quirk). A
-        // "complete" source sitting at roughly one page is suspect — unstick it
-        // so the crawl resumes. Deliberately conservative: only channels, and
-        // only when the count is at/below a couple of pages.
-        sources.forEach { s ->
-            val st = index.state(s.id)
-            if (st != null && st.complete && st.count in 1..(2 * IndexCrawler.FULL_PAGE)) {
-                android.util.Log.i("Pickwick", "un-sticking suspect source ${s.id} (${st.count} videos)")
-                index.unmarkComplete(s.id)
-            }
-        }
-
         val incomplete = sources.filter { index.state(it.id)?.complete != true }
         if (incomplete.isEmpty()) {
             // Still stamp the diagnostics line: a fully-crawled catalog should
@@ -74,12 +61,18 @@ class IndexCrawlWorker(
         // first incomplete source. ~17 pages per 500-video channel, so one
         // 15-minute run finishes a channel and starts the next.
         var pages = 0
+        var attempts = 0
         var failures = 0
         for (source in incomplete) {
             while (pages < PAGES_PER_RUN) {
                 // Spread the budget out instead of firing it as one burst —
-                // see CRAWL_DELAY_MS. First page of the run goes immediately.
-                if (pages > 0) kotlinx.coroutines.delay(IndexCrawler.CRAWL_DELAY_MS)
+                // see CRAWL_DELAY_MS. Paced per fetch ATTEMPT, not per stored
+                // page: a parked source's probe returns false without counting
+                // a page, and N parked sources would otherwise fire N
+                // back-to-back page-1 fetches at the head of every run. First
+                // attempt of the run goes immediately.
+                if (attempts > 0) kotlinx.coroutines.delay(IndexCrawler.CRAWL_DELAY_MS)
+                attempts++
                 val more = runCatching { crawler.crawlOnce(source) }
                     .getOrElse {
                         android.util.Log.w("Pickwick", "index crawl failed", it)

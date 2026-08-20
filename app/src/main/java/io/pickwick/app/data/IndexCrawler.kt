@@ -67,16 +67,24 @@ class IndexCrawler(
         val handle = page.handle
         val next = page.nextPage
         return if (!exhausted && handle != null && next != null) {
+            // The quirk didn't fire (or stopped firing): this source paginates.
+            index.dropProbeCount(source.id)
             cursors[source.id] = handle to next
             serializeCursor(handle, next)?.let { index.saveCursor(source.id, it) }
             true
         } else if (!exhausted && isFirstPage && handle != null) {
             // Full page but no usable continuation: park it for another run
             // rather than declaring completion — the next run re-fetches page 1
-            // (dedup absorbs it) and often gets a real continuation.
-            false.also { forgetCursor(source.id) }
+            // (dedup absorbs it) and often gets a real continuation. But not
+            // forever: recordParkedProbe accepts exhaustion after the third
+            // consecutive probe, or an exactly-one-page channel would be
+            // re-probed unpaced every run for the rest of its life.
+            forgetCursor(source.id)
+            recordParkedProbe(index, source.id)
+            false
         } else {
             forgetCursor(source.id)
+            index.dropProbeCount(source.id)
             index.addVideos(source.id, emptyList(), complete = true)
             false
         }
@@ -210,5 +218,37 @@ class IndexCrawler(
          *  exhausted channel — see crawlOnce. NewPipe's channel tab pages ~30.
          */
         const val FULL_PAGE = 20
+
+        /**
+         * Consecutive parked probes before a full-first-page-no-continuation
+         * source is accepted as genuinely exhausted. Three probes are three
+         * independent network hits ~15 minutes apart (the repository's
+         * 10-minute memo TTL guarantees each worker run re-fetches for real) —
+         * if the quirk were transient it would have yielded a continuation by
+         * then. Accepting a possibly-wrong "complete" is safe because a
+         * history harvest that finds unknown videos clears the flag again
+         * (see ChannelIndex.addVideos).
+         */
+        const val MAX_FULL_PAGE_PROBES = 3
+
+        /**
+         * Bookkeeping for one parked probe: bump the persisted counter and, on
+         * the [MAX_FULL_PAGE_PROBES]th consecutive probe, accept exhaustion —
+         * mark the source complete and clear the counter. A probe that yields
+         * a real continuation resets the count instead (crawlOnce drops it),
+         * so only an unbroken streak completes. Static so tests can drive the
+         * decision against a real index without a network-backed crawler.
+         */
+        fun recordParkedProbe(index: ChannelIndex, sourceId: String): Boolean {
+            val probes = index.loadProbeCount(sourceId) + 1
+            return if (probes >= MAX_FULL_PAGE_PROBES) {
+                index.dropProbeCount(sourceId)
+                index.addVideos(sourceId, emptyList(), complete = true)
+                true
+            } else {
+                index.saveProbeCount(sourceId, probes)
+                false
+            }
+        }
     }
 }
