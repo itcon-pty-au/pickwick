@@ -401,7 +401,9 @@ fun WhoForDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            Column {
+            // Reachable from a hold in the screening log, so the tail of that
+            // hold must not tick a kid on the way in.
+            Column(modifier = Modifier.ignoreSelectUntilRelease()) {
                 profiles.forEach { profile ->
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -428,7 +430,10 @@ fun WhoForDialog(
                 enabled = checked.isNotEmpty(),
                 onClick = {
                     onConfirm(if (checked.size == profiles.size) emptySet() else checked)
-                }
+                },
+                // Sits outside the column above, and a ruling confirmed by a
+                // stray release is the worst thing this dialog could do.
+                modifier = Modifier.ignoreSelectUntilRelease()
             ) { Text(confirmLabel) }
         },
         dismissButton = {

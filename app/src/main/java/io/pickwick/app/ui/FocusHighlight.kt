@@ -113,9 +113,50 @@ internal fun Modifier.dpadHeldScrollThrottle(
 }
 
 /**
+ * Guards a menu that a *hold* just opened against the tail of that same hold.
+ *
+ * Firing the long-press while OK is still down means the rest of the key
+ * stream — the remaining auto-repeats and the release — lands on whatever the
+ * new window focuses, and Compose's `clickable` reads that repeat-plus-release
+ * as a deliberate press: the menu appears and instantly picks its first row.
+ * Swallowing the release at the tile can't help, because by then the tile is no
+ * longer the focus owner and never sees it.
+ *
+ * So the menu ignores select entirely until the remote has been let go. A
+ * fresh press — [android.view.KeyEvent.getRepeatCount] back at 0, which the
+ * tail of an in-flight hold can never produce — opens the gate and passes
+ * through, so the first *intentional* press still works with no dead period.
+ * Put this on an ancestor of whatever the menu focuses: previews run from the
+ * root down, so it sees the event before the button does.
+ */
+@Composable
+internal fun Modifier.ignoreSelectUntilRelease(): Modifier {
+    var open by remember { mutableStateOf(false) }
+    return this.onPreviewKeyEvent { event ->
+        if (open) return@onPreviewKeyEvent false
+        val isSelect = event.key == Key.DirectionCenter ||
+            event.key == Key.Enter || event.key == Key.NumPadEnter
+        if (!isSelect) return@onPreviewKeyEvent false
+        if (event.type == KeyEventType.KeyDown && event.nativeKeyEvent.repeatCount == 0) {
+            open = true
+            return@onPreviewKeyEvent false
+        }
+        if (event.type == KeyEventType.KeyUp) open = true
+        true
+    }
+}
+
+/**
  * TV remote hold-to-act: holding the OK/select button fires [onLongPress] once
  * (and swallows the release so the normal click doesn't also fire). Short
  * presses pass through to the regular clickable.
+ *
+ * It fires on the *first auto-repeat* — the OS's own hold threshold — while the
+ * button is still down, matching touch long-press, where the menu appears under
+ * a finger that hasn't lifted yet. Waiting for the release instead reads as a
+ * delayed click and leaves the hold with no feedback. The release is then
+ * swallowed; even if focus has already moved into the menu by then, a KeyUp
+ * with no matching KeyDown can't activate anything.
  */
 @Composable
 internal fun Modifier.dpadLongPress(onLongPress: () -> Unit): Modifier {
@@ -127,12 +168,12 @@ internal fun Modifier.dpadLongPress(onLongPress: () -> Unit): Modifier {
         when {
             event.type == KeyEventType.KeyDown && event.nativeKeyEvent.repeatCount == 1 -> {
                 fired = true
+                onLongPress()
                 true
             }
             event.type == KeyEventType.KeyDown && event.nativeKeyEvent.repeatCount > 1 -> true
             event.type == KeyEventType.KeyUp && fired -> {
                 fired = false
-                onLongPress()
                 true
             }
             else -> false

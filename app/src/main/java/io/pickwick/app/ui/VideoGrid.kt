@@ -209,9 +209,18 @@ internal fun VideoGrid(
         LaunchedEffect(item) { runCatching { firstAction.requestFocus() } }
         AlertDialog(
             onDismissRequest = { menuFor = null },
+            // Square, like every tile and card in the app: the focus ring is a
+            // hard rectangle, and a rounded container leaves it cutting the
+            // corner of the top row.
+            shape = androidx.compose.ui.graphics.RectangleShape,
             title = { MarqueeTitle(item.video.title, focused = false) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    // The hold that opened this menu is still in flight; its
+                    // release belongs to nothing here.
+                    modifier = Modifier.ignoreSelectUntilRelease()
+                ) {
                     TextButton(
                         onClick = { onToggleQueue?.invoke(item); menuFor = null },
                         modifier = Modifier
