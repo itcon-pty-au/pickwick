@@ -127,6 +127,14 @@ data class Limits(
      */
     val windows: List<TimeWindow> = emptyList(),
     /**
+     * Hide videos shorter than this many minutes, everywhere a video can be
+     * listed — channel grids, Surprise, search, saved lists. Null = no rule.
+     * Shorts never reach the app at all (only a channel's Videos tab is
+     * fetched), so this is for the clip-length uploads that live alongside
+     * real episodes. A video with an unknown (0) duration is never hidden.
+     */
+    val minVideoMinutes: Int? = null,
+    /**
      * Parent timeout: all watching is off until this wall-clock moment (normally
      * the next midnight). A transient override, kept apart from the recurring
      * rules above so pausing never disturbs the configured schedule. Overrides
@@ -204,15 +212,16 @@ data class Whitelist(
     fun profile(id: String?): Profile? = profiles.firstOrNull { it.id == id }
 
     /**
-     * Effective screen-time rules for one kid. The family-wide pause ("pause
-     * for today") always applies on top of a kid's own rules — a per-kid
-     * bedtime shouldn't undo a whole-family timeout.
+     * Effective screen-time rules for one kid. Two pauses can apply: the
+     * kid's own ("pause today" on their page) and the family-wide "pause
+     * everyone". Whichever runs later wins — a per-kid Resume must not undo a
+     * whole-family timeout, and vice versa.
      */
     fun limitsFor(profileId: String?): Limits {
         val p = profile(profileId) ?: return limits
-        return if (limits.pausedUntilMillis != null) {
-            p.limits.copy(pausedUntilMillis = limits.pausedUntilMillis)
-        } else p.limits
+        val family = limits.pausedUntilMillis ?: return p.limits
+        val own = p.limits.pausedUntilMillis ?: 0L
+        return p.limits.copy(pausedUntilMillis = maxOf(family, own))
     }
 
     fun isBlockedFor(videoId: String?, profileId: String?): Boolean {
@@ -385,6 +394,7 @@ object WhitelistExporter {
             l.weekdaySessions?.let { add("weekday sessions: $it") }
             l.weekendSessions?.let { add("weekend sessions: $it") }
             l.breakMinutes?.let { add("break between sessions: $it min") }
+            l.minVideoMinutes?.let { add("hide videos shorter than: $it min") }
             l.windows.forEach { w ->
                 add(
                     "${w.label.lowercase()}: ${clock(w.startMin)}–${clock(w.endMin)} " +

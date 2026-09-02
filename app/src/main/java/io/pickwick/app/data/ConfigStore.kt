@@ -192,6 +192,10 @@ class ConfigStore(context: Context) {
                                 limitsCanon(p.limits)
                             ).joinToString("|")
                         )
+                        // A kid's own pause, append-only-when-set like the
+                        // family one above: it has to move the hash or the
+                        // offline reconcile would never carry it to the TV.
+                        p.limits.pausedUntilMillis?.let { append(";P:"); append(it) }
                         append('\n')
                     }
                 }
@@ -338,14 +342,17 @@ class ConfigStore(context: Context) {
             // here rather than at the Whitelist level, so a per-kid skip moves
             // that kid's part of the hash too.
             val breakPass = l.breakPassUntilMillis?.let { ";BP:$it" } ?: ""
-            if (legacy != null || l.windows.isEmpty()) return base + breakPass
+            // Same shape as the break pass: only present when set, so families
+            // without the rule keep their hash across the build that added it.
+            val minVideo = l.minVideoMinutes?.let { ";MV:$it" } ?: ""
+            if (legacy != null || l.windows.isEmpty()) return base + breakPass + minVideo
             return base + l.windows.joinToString(";", prefix = ";W:") { w ->
                 // Parent-typed text is scrubbed of this format's separators so
                 // two different window lists can't canonicalize identically.
                 "${w.id},${w.label.replace(Regex("[,;]"), " ")},${w.startMin},${w.endMin}," +
                     "${w.days.sorted().joinToString(".")},${w.passUntilMillis ?: 0}," +
                     if (w.allowListening) "1" else "0"
-            } + breakPass
+            } + breakPass + minVideo
         }
 
         private fun limitsToJson(l: Limits) = JSONObject().apply {
@@ -353,6 +360,7 @@ class ConfigStore(context: Context) {
             l.weekdaySessions?.let { put("weekdaySessions", it) }
             l.weekendSessions?.let { put("weekendSessions", it) }
             l.breakMinutes?.let { put("breakMinutes", it) }
+            l.minVideoMinutes?.let { put("minVideoMinutes", it) }
             if (l.windows.isNotEmpty()) put("windows", JSONArray(windowsToJson(l.windows)))
             // A single every-day window is exactly what pre-windows builds called
             // bedtime, so keep writing their keys for it: a family whose phone
@@ -446,6 +454,7 @@ class ConfigStore(context: Context) {
                 weekdaySessions = opt("weekdaySessions"),
                 weekendSessions = opt("weekendSessions"),
                 breakMinutes = opt("breakMinutes"),
+                minVideoMinutes = opt("minVideoMinutes"),
                 windows = windows,
                 pausedUntilMillis = if (lo.has("pausedUntil")) lo.getLong("pausedUntil") else null,
                 breakPassUntilMillis = if (lo.has("breakPassUntil")) lo.getLong("breakPassUntil") else null

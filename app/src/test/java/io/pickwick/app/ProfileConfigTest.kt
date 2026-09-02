@@ -121,7 +121,7 @@ class ProfileConfigTest {
     }
 
     @Test
-    fun `limitsFor returns the kid's rules with the family pause on top`() {
+    fun `limitsFor returns the kid's rules with the later pause on top`() {
         val config = Whitelist(
             sources = emptyList(), blockedVideoIds = emptySet(),
             limits = Limits(sessionMinutes = 99, pausedUntilMillis = 1_785_800_000_000L),
@@ -129,7 +129,23 @@ class ProfileConfigTest {
         )
         val effective = config.limitsFor(dave.id)
         assertEquals(20, effective.sessionMinutes) // Dave's own, not the legacy 99
-        assertEquals(1_785_800_000_000L, effective.pausedUntilMillis) // family pause wins
+        assertEquals(1_785_800_000_000L, effective.pausedUntilMillis) // family pause applies
+
+        // The kid's own pause stands on its own, and the later of the two wins.
+        val own = dave.copy(limits = dave.limits.copy(pausedUntilMillis = 1_785_900_000_000L))
+        assertEquals(
+            1_785_900_000_000L,
+            config.copy(profiles = listOf(own)).limitsFor(dave.id).pausedUntilMillis
+        )
+        assertEquals(
+            1_785_900_000_000L,
+            config.copy(limits = Limits(), profiles = listOf(own)).limitsFor(dave.id).pausedUntilMillis
+        )
+        // …and a kid's pause moves the fingerprint, so it reaches the TV.
+        assertNotEquals(
+            ConfigStore.fingerprint(config),
+            ConfigStore.fingerprint(config.copy(profiles = listOf(own)))
+        )
 
         // Unknown/absent profile falls back to the family-wide limits.
         assertEquals(99, config.limitsFor(null).sessionMinutes)

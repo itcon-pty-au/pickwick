@@ -319,7 +319,36 @@ private fun AdminScreen(
     // Off-main read (file + JSON): opening settings shows a beat of spinner
     // instead of freezing the tap that opened them.
     val loadedConfig by produceState<Whitelist?>(initialValue = null, configEpoch) {
-        value = withContext(kotlinx.coroutines.Dispatchers.IO) { configStore.load() }
+        value = withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val c = configStore.load()
+            if (c.profiles.isNotEmpty()) c
+            else {
+                // Every family has a kid: rules, grants and pauses all live on
+                // the kid's page now, so a kid-less config would have nowhere
+                // to edit them. The family's existing setup becomes "Kid" —
+                // the upgrade story stays "what you had, now with a name".
+                // Done here, on the admin phone only, so the id is minted once
+                // and reaches every device by the usual push; a TV inventing
+                // its own would never agree with the phone's fingerprint.
+                val kid = io.pickwick.app.data.Profile(
+                    id = io.pickwick.app.data.Profile.newId(),
+                    name = "Kid",
+                    age = c.ai.childAge,
+                    limits = c.limits.copy(pausedUntilMillis = null)
+                )
+                val migrated = c.copy(
+                    profiles = listOf(kid),
+                    // The rules moved to the kid; only "pause everyone" stays.
+                    limits = Limits(pausedUntilMillis = c.limits.pausedUntilMillis)
+                )
+                configStore.save(migrated)
+                val json = ConfigStore.toJson(migrated)
+                io.pickwick.app.data.LanPushScope.scope.launch {
+                    pairingStore.paired().forEach { LanClient.pushConfig(it, json) }
+                }
+                migrated
+            }
+        }
     }
     val initial = loadedConfig ?: run {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -339,6 +368,7 @@ private fun AdminScreen(
     var masterToken by remember(initial) { mutableStateOf(initial.masterDeviceToken) }
     var sponsorSkip by remember(initial) { mutableStateOf(initial.sponsorSkip) }
     var listenPercent by remember(initial) { mutableStateOf(initial.listenPercent) }
+    var baseline by remember(initial) { mutableStateOf(initial) }
     /** Entries added by this session's URL import — shown with a NEW tag for review. */
     var newIds by remember { mutableStateOf(setOf<String>()) }
 
@@ -367,28 +397,10 @@ private fun AdminScreen(
     var statsDevice by remember { mutableStateOf<PairedDevice?>(null) }
     var digestOpen by remember { mutableStateOf(false) }
 
-    /**
-     * Review-queue decisions commit the moment they're tapped — a parent who ruled
-     * on a batch and walked back without Save & close was asked the same questions
-     * again next time. Only the two id sets are written to disk; other unsaved form
-     * edits stay unsaved (same rule as PauseTodayRow). The LAN push is debounced,
-     * because ruling on a queue is a burst of taps and every push to a sleeping TV
-     * costs a connect timeout. Runs on LanPushScope, not the composition scope, so
-     * closing settings right after the last tap doesn't cancel the sync.
-     */
+    // Pushes chase each other: the newest cancels the one in flight, so a
+    // retry never delivers a config the parent has since edited past.
     val pushJob = remember {
         java.util.concurrent.atomic.AtomicReference<kotlinx.coroutines.Job?>()
-    }
-    fun resolveFlagged(mutate: (Whitelist) -> Whitelist) {
-        io.pickwick.app.data.LanPushScope.scope.launch {
-            val updated = mutate(configStore.load())
-            configStore.save(updated)
-            val json = ConfigStore.toJson(updated)
-            pushJob.getAndSet(launch {
-                delay(2_000)
-                pairingStore.paired().forEach { LanClient.pushConfig(it, json) }
-            })?.cancel()
-        }
     }
 
     // Stats takes over the screen while open.
@@ -401,18 +413,23 @@ private fun AdminScreen(
         return
     }
 
-    /** The form as a config: what Save & close and Push both deliver. */
+    /**
+     * The form as a config: what the auto-apply below and Push both deliver.
+     * `baseline` is what disk holds as far as this form knows — the open-time
+     * snapshot until the first auto-save, then whatever was last written — so
+     * a second judging change after an auto-save gets its own version bump.
+     */
     fun buildCurrentConfig(): Whitelist {
         // Changed rules/age/model mean old verdicts no longer apply — bumping the
         // version makes every device re-screen its catalog against the new rules.
-        // The bump is computed against `initial` (disk state when the form opened),
-        // so building twice in one session yields the same version, not two bumps.
-        val judgingChanged = ai.rules != initial.ai.rules ||
-            ai.childAge != initial.ai.childAge ||
-            ai.model != initial.ai.model ||
-            ai.baseUrl != initial.ai.baseUrl ||
-            io.pickwick.app.data.screeningJudgmentChanged(initial.profiles, profiles)
-        val finalAi = if (judgingChanged) ai.copy(rulesVersion = initial.ai.rulesVersion + 1) else ai
+        // Measured against the baseline, so building twice between saves yields
+        // the same version, not two bumps.
+        val judgingChanged = ai.rules != baseline.ai.rules ||
+            ai.childAge != baseline.ai.childAge ||
+            ai.model != baseline.ai.model ||
+            ai.baseUrl != baseline.ai.baseUrl ||
+            io.pickwick.app.data.screeningJudgmentChanged(baseline.profiles, profiles)
+        val finalAi = if (judgingChanged) ai.copy(rulesVersion = baseline.ai.rulesVersion + 1) else ai
         // A removed kid must not linger: entries owned only by them fall back
         // to everyone, their per-video rulings and device assignment are dropped.
         val validIds = profiles.map { it.id }.toSet()
@@ -433,89 +450,246 @@ private fun AdminScreen(
         )
     }
 
-    fun saveAndSync() {
-        val config = buildCurrentConfig()
-        scope.launch {
-            // The save must land before onDone: closing settings makes
-            // MainActivity re-read the file, and it has to see this write.
-            val (devices, json) = withContext(kotlinx.coroutines.Dispatchers.IO) {
-                configStore.save(config)
-                pairingStore.paired() to ConfigStore.toJson(config)
-            }
-            // Close as soon as the save is on disk. Blocking the button on the
-            // LAN round-trip read as "Save & close does nothing" whenever the TV
-            // was asleep (a standby Chromecast drops off Wi-Fi, so the push sits
-            // in connect-timeout for seconds with no feedback).
-            onDone(true)
+    /**
+     * Apply on change. There is no Save button: every edit lands on disk and
+     * on the devices by itself, the way Android settings behave. Debounced,
+     * because a stepper tap is rarely alone and every push to a sleeping TV
+     * costs a connect timeout. Each push cancels the one before it, so a
+     * superseded config never lands on a late retry.
+     */
+    fun pushAll(config: Whitelist) {
+        val json = ConfigStore.toJson(config)
+        pushJob.getAndSet(io.pickwick.app.data.LanPushScope.scope.launch {
+            val devices = pairingStore.paired()
             if (devices.isEmpty()) return@launch
-            val appContext = context.applicationContext
-            io.pickwick.app.data.LanPushScope.scope.launch {
-                // Logged per device, like the reconcile's line: "did the save
-                // reach the TV" was undiagnosable when the only witness was a
-                // toast nobody was looking at.
-                suspend fun push(targets: List<PairedDevice>): List<PairedDevice> =
-                    targets.filterNot { d ->
-                        LanClient.pushConfig(d, json).also { sent ->
-                            android.util.Log.i(
-                                "Pickwick",
-                                "save push → ${d.name}: ${if (sent) "accepted" else "unreachable"}"
+            // Logged per device, like the reconcile's line: "did the edit
+            // reach the TV" is undiagnosable otherwise.
+            suspend fun push(targets: List<PairedDevice>): List<PairedDevice> =
+                targets.filterNot { d ->
+                    LanClient.pushConfig(d, json).also { sent ->
+                        android.util.Log.i(
+                            "Pickwick",
+                            "settings push → ${d.name}: ${if (sent) "accepted" else "unreachable"}"
+                        )
+                    }
+                }
+            var missed = push(devices)
+            // A standby Chromecast rejoins Wi-Fi seconds after waking, and a
+            // just-(re)installed app has no server until its next launch —
+            // both miss the push by moments. Two quiet retries beat leaving
+            // it to the 5-minute reconcile.
+            repeat(2) {
+                if (missed.isEmpty()) return@launch
+                delay(20_000)
+                missed = push(missed)
+            }
+        })?.cancel()
+    }
+    val current = buildCurrentConfig()
+    val currentHash = ConfigStore.fingerprint(current)
+    val baselineHash = ConfigStore.fingerprint(baseline)
+    LaunchedEffect(currentHash) {
+        if (currentHash == baselineHash) return@LaunchedEffect
+        delay(1_500)
+        withContext(kotlinx.coroutines.Dispatchers.IO) { configStore.save(current) }
+        baseline = current
+        pushAll(current)
+    }
+    // Leaving mid-debounce must not lose the last tap: flush on the way out.
+    // The save lands before onDone, because closing makes MainActivity
+    // re-read the file and it has to see this write.
+    fun close() {
+        if (currentHash == baselineHash) { onDone(true); return }
+        scope.launch {
+            withContext(kotlinx.coroutines.Dispatchers.IO) { configStore.save(current) }
+            baseline = current
+            pushAll(current)
+            onDone(true)
+        }
+    }
+    BackHandler { close() }
+
+    // The kid page takes over the screen while open (profile, rules, today).
+    // It edits the form's profile list directly; the auto-apply above does
+    // the rest, so a pause tapped there is on the TV a moment later.
+    var openKid by remember { mutableStateOf<Pair<io.pickwick.app.data.Profile, Boolean>?>(null) }
+    openKid?.let { (kid, isNew) ->
+        KidPage(
+            profile = profiles.firstOrNull { it.id == kid.id } ?: kid,
+            isNew = isNew,
+            siblings = profiles.filter { it.id != kid.id },
+            pairingStore = pairingStore,
+            onBack = { openKid = null },
+            onChanged = { p ->
+                profiles = if (profiles.any { it.id == p.id }) profiles.map { if (it.id == p.id) p else it }
+                    else profiles + p
+            },
+            onRemove = {
+                profiles = profiles.filter { it.id != kid.id }
+                openKid = null
+            }
+        )
+        return
+    }
+
+    // --- Hub -------------------------------------------------------------------
+    // The root is a short list; each row opens its own page (stock Android
+    // settings shape). Everything below the header used to be one scroll of
+    // eighteen sections, and "where is X" was the first support question.
+    var page by remember { mutableStateOf<HubPage?>(null) }
+    page?.let { p ->
+        BackHandler { page = null }
+        SubPage(title = p.title, onBack = { page = null }) {
+            when (p) {
+                HubPage.Kids -> {
+                    SectionTitle("Kids")
+                    SettingsCard {
+                        KidsSection(profiles, onOpen = { kid, isNew -> openKid = kid to isNew })
+                    }
+                }
+                HubPage.Channels -> {
+                    SectionTitle("Channels & playlists")
+                    SettingsCard {
+                        ChannelsSection(entries, newIds, yt, resolvedNames, profiles, onChanged = { entries = it })
+                    }
+                    SectionTitle("Suggested channels")
+                    SettingsCard {
+                        DirectorySection(entries) { e ->
+                            entries = (entries + e).distinctBy { it.id }
+                            newIds = newIds + e.id
+                        }
+                    }
+                }
+                HubPage.Screening -> {
+                    SectionTitle("AI content screening")
+                    SettingsCard { AiScreeningSection(ai, profiles, onChanged = { ai = it }) }
+                    if (ai.enabled) {
+                        SectionTitle("Waiting for your OK")
+                        SettingsCard {
+                            AiReviewSection(
+                                ai = ai,
+                                profiles = profiles,
+                                pairingStore = pairingStore,
+                                resolved = blocked + aiAllowed + blockedFor.keys + allowedFor.keys,
+                                onAllow = { id, forKids ->
+                                    if (forKids == null) aiAllowed = aiAllowed + id
+                                    else allowedFor = allowedFor + (id to forKids)
+                                },
+                                onBlock = { id, forKids ->
+                                    if (forKids == null) blocked = blocked + id
+                                    else blockedFor = blockedFor + (id to forKids)
+                                }
                             )
                         }
                     }
-                var missed = push(devices)
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                    android.widget.Toast.makeText(
-                        appContext,
-                        if (missed.isEmpty()) "Synced to ${devices.size} device(s) ✓"
-                        else "Saved — ${missed.size} device(s) unreachable; " +
-                            "they'll sync when back online",
-                        android.widget.Toast.LENGTH_LONG
-                    ).show()
+                    SectionTitle("Discover with AI")
+                    SettingsCard {
+                        AiDiscoverySection(ai, entries, yt) { e ->
+                            entries = (entries + e).distinctBy { it.id }
+                            newIds = newIds + e.id
+                        }
+                    }
                 }
-                // A standby Chromecast rejoins Wi-Fi seconds after waking, and a
-                // just-(re)installed app has no server until its next launch —
-                // both miss the save by moments. Two quiet retries beat leaving
-                // the parent to wonder until the 5-minute reconcile.
-                repeat(2) {
-                    if (missed.isEmpty()) return@launch
-                    kotlinx.coroutines.delay(20_000)
-                    missed = push(missed)
+                HubPage.Devices -> {
+                    SectionTitle("Kid devices")
+                    SettingsCard {
+                        PhoneDevicesSection(
+                            pairingStore, configStore,
+                            onBecameKidDevice = onBecameKidDevice,
+                            profiles = profiles,
+                            deviceProfiles = deviceProfiles,
+                            // The form's fingerprint, not the file's: between an
+                            // edit and its auto-save, "in sync ✓" measured against
+                            // disk would be a lie for a beat.
+                            localHash = currentHash,
+                            // Push must deliver what the parent is LOOKING AT.
+                            saveCurrent = {
+                                val config = buildCurrentConfig()
+                                configStore.save(config)
+                                ConfigStore.toJson(config)
+                            },
+                            onAssign = { token, profileId ->
+                                deviceProfiles =
+                                    if (profileId == null) deviceProfiles - token
+                                    else deviceProfiles + (token to profileId)
+                            },
+                            masterToken = masterToken,
+                            onMakeMaster = { token -> masterToken = token },
+                            onOpenStats = { statsDevice = it },
+                            onConfigReplaced = { configEpoch++ }
+                        )
+                        // Per-device Stats answers "what's happening today"; this
+                        // answers "how did the week go" across every device.
+                        CompactButton(onClick = { digestOpen = true }) { Text("📅 Weekly digest") }
+                    }
+                    // Search index: who's the master, and how far each channel's
+                    // crawl has got. Read-only — the master does the work.
+                    SectionTitle("Search index")
+                    SettingsCard { SearchIndexSection(entries, masterToken, pairingStore) }
+                    SectionTitle("Offline downloads")
+                    SettingsCard { DownloadsSection() }
+                    SectionTitle("Videos from this phone")
+                    SettingsCard { LocalVideosSection(profiles) }
+                }
+                HubPage.Playback -> {
+                    SectionTitle("Playback")
+                    SettingsCard {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Skip sponsors & intros", modifier = Modifier.weight(1f))
+                            Switch(
+                                modifier = Modifier.tvFocusHighlight(),
+                                checked = sponsorSkip,
+                                onCheckedChange = { sponsorSkip = it }
+                            )
+                        }
+                        Text(
+                            "Skips the parts of a video the SponsorBlock community has marked: " +
+                                "sponsor messages, merch plugs, intros/outros and \"like and " +
+                                "subscribe\" reminders. Marked parts show in green on the TV's " +
+                                "playback bar. Lookups send only an anonymous fingerprint of the " +
+                                "video, never what is being watched.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    SectionTitle("Listening")
+                    SettingsCard { ListenRateRow(listenPercent) { listenPercent = it } }
+                }
+                HubPage.Backup -> {
+                    SectionTitle("App")
+                    SettingsCard { UpdateSection(onUpdateFound = {}) }
+                    SectionTitle("Import, export & backup")
+                    SettingsCard {
+                        ExportSection(
+                            current = {
+                                // Fill resolved names in as labels so the receiving
+                                // parent sees "url | Name" lines, not bare urls.
+                                Whitelist(
+                                    entries.map { e ->
+                                        if (e.label == null) e.copy(label = resolvedNames[e.url]) else e
+                                    },
+                                    blocked, limits
+                                )
+                            },
+                            onImport = { parsed ->
+                                // Links only — screen-time rules are UI-managed, never file-driven.
+                                val fresh = parsed.sources.filter { p -> entries.none { it.id == p.id } }
+                                entries = entries + fresh
+                                newIds = newIds + fresh.map { it.id }
+                                fresh.size
+                            }
+                        )
+                    }
                 }
             }
         }
+        return
     }
 
-    // The update offer lives at the very bottom of a long form, so a parent who
-    // came here because of the gear dot would have to scroll past every section
-    // to find it. Only scroll when there is actually something to install —
-    // otherwise opening settings would dump everyone at the bottom.
-    val formScroll = rememberScrollState()
-    var scrolledToUpdate by remember { mutableStateOf(false) }
-    fun revealUpdate() {
-        if (scrolledToUpdate) return
-        scrolledToUpdate = true
-        scope.launch {
-            // Wait for the form's height to stop changing before moving. Channel
-            // names resolve in async, which regrows rows underneath us; animating
-            // to a maxValue that is still climbing lands short and then jumps.
-            var previous = -1
-            while (true) {
-                val extent = formScroll.maxValue
-                if (extent > 0 && extent != Int.MAX_VALUE && extent == previous) break
-                previous = extent
-                delay(150)
-            }
-            // Positioned, not animated: a scroll the parent didn't ask for reads
-            // as the screen moving on its own. Landing there is calmer.
-            formScroll.scrollTo(formScroll.maxValue)
-        }
-    }
-
-    Box(Modifier.fillMaxSize()) {
     Column(
         Modifier
             .fillMaxSize()
-            .verticalScroll(formScroll)
+            .verticalScroll(rememberScrollState())
             .padding(24.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -524,13 +698,15 @@ private fun AdminScreen(
                 style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
                 modifier = Modifier.weight(1f)
             )
-            Button(modifier = Modifier.tvFocusHighlight(), onClick = ::saveAndSync) {
-                Text("Save & close")
-            }
+            TextButton(modifier = Modifier.tvFocusHighlight(), onClick = ::close) { Text("Done") }
         }
+        Text(
+            "Changes apply as you make them and reach the kids' devices on their own.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         // Donations fund the re-shipping treadmill (YouTube breaks playback every
-        // few weeks). Deliberately above the fold: the bottom of this form is
-        // effectively unreachable, and the top slot is seen on every visit.
+        // few weeks). Deliberately at the top: the slot is seen on every visit.
         val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
         ElevatedCard(
             onClick = { uriHandler.openUri("https://pickwick.tv/donate.html") },
@@ -553,307 +729,137 @@ private fun AdminScreen(
             }
         }
 
-        SectionTitle("Kids")
-        KidsSection(
-            profiles = profiles,
-            legacyLimits = limits,
-            legacyAi = ai,
-            onChanged = { profiles = it }
-        )
+        Spacer(Modifier.height(20.dp))
+        SettingsCard(padded = false) {
+            val kidsLine = profiles.joinToString(", ") { it.name }.ifEmpty { "No kids yet" }
+            HubRow("🧒", "Kids", kidsLine) { page = HubPage.Kids }
+            SettingsDivider()
+            HubRow(
+                "📺", "Channels & playlists",
+                "${entries.size} source${if (entries.size == 1) "" else "s"} · suggestions"
+            ) { page = HubPage.Channels }
+            SettingsDivider()
+            HubRow(
+                "🛡️", "Content screening",
+                if (ai.enabled) "AI screening on · review queue, discover" else "AI screening off"
+            ) { page = HubPage.Screening }
+            SettingsDivider()
+            HubRow("📱", "Devices", "Kid devices, downloads, search index") { page = HubPage.Devices }
+            SettingsDivider()
+            HubRow("▶️", "Playback", "Sponsor skipping, listening") { page = HubPage.Playback }
+            SettingsDivider()
+            HubRow("💾", "Backup & app", "Import, export, updates") { page = HubPage.Backup }
+        }
 
-        SectionTitle("Screen time")
-        // Skip-pass write-through, PauseTodayRow-style: only the tapped
-        // window's pass changes on disk; other unsaved form edits stay unsaved
-        // until the parent commits them.
-        fun commitPass(kidId: String?, windowId: String, passUntil: Long?) {
-            io.pickwick.app.data.LanPushScope.scope.launch {
-                fun apply(l: Limits) = l.copy(windows = l.windows.map {
-                    if (it.id == windowId) it.copy(passUntilMillis = passUntil) else it
-                })
-                val updated = configStore.load().let { c ->
-                    if (kidId == null) c.copy(limits = apply(c.limits))
-                    else c.copy(profiles = c.profiles.map {
-                        if (it.id == kidId) it.copy(limits = apply(it.limits)) else it
-                    })
-                }
-                configStore.save(updated)
-                val json = ConfigStore.toJson(updated)
-                pairingStore.paired().forEach { LanClient.pushConfig(it, json) }
-            }
-        }
-        // Same write-through for the break skip — one field, straight to disk
-        // and the paired devices.
-        fun commitBreakPass(kidId: String?, passUntil: Long?) {
-            io.pickwick.app.data.LanPushScope.scope.launch {
-                val updated = configStore.load().let { c ->
-                    if (kidId == null) c.copy(limits = c.limits.copy(breakPassUntilMillis = passUntil))
-                    else c.copy(profiles = c.profiles.map {
-                        if (it.id == kidId) it.copy(limits = it.limits.copy(breakPassUntilMillis = passUntil)) else it
-                    })
-                }
-                configStore.save(updated)
-                val json = ConfigStore.toJson(updated)
-                pairingStore.paired().forEach { LanClient.pushConfig(it, json) }
-            }
-        }
-        if (profiles.isEmpty()) {
-            ScreenTimeSection(
-                limits,
-                onChanged = { limits = it },
-                onPassCommitted = { windowId, until -> commitPass(null, windowId, until) },
-                onBreakPassCommitted = { until -> commitBreakPass(null, until) }
+        SectionTitle("Pause everyone")
+        SettingsCard {
+            Text(
+                "Bonus minutes and a single kid's pause are on that kid's page. This " +
+                    "one stops every kid at once.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-        } else {
-            // Per-kid rules: pick a kid, edit their rules, or copy a sibling's.
-            var editingKidId by remember(profiles.map { it.id }) {
-                mutableStateOf(profiles.first().id)
-            }
-            val editingKid = profiles.firstOrNull { it.id == editingKidId } ?: profiles.first()
-            KidSelectorChips(profiles, editingKid.id, onSelect = { editingKidId = it })
-            Spacer(Modifier.height(8.dp))
-            ScreenTimeSection(
-                editingKid.limits,
-                onChanged = { newLimits ->
-                    profiles = profiles.map {
-                        if (it.id == editingKid.id) it.copy(limits = newLimits) else it
-                    }
-                },
-                onPassCommitted = { windowId, until -> commitPass(editingKid.id, windowId, until) },
-                onBreakPassCommitted = { until -> commitBreakPass(editingKid.id, until) }
-            )
-            val others = profiles.filter { it.id != editingKid.id }
-            if (others.isNotEmpty()) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        "Copy rules from:",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    others.forEach { sibling ->
-                        TextButton(
-                            modifier = Modifier.tvFocusHighlight(),
-                            onClick = {
-                                profiles = profiles.map {
-                                    if (it.id == editingKid.id) {
-                                        it.copy(limits = sibling.limits.copy(pausedUntilMillis = null))
-                                    } else it
-                                }
-                            }
-                        ) { Text(sibling.name) }
-                    }
-                }
-            }
-        }
-
-        SectionTitle("Listening")
-        ListenRateRow(listenPercent) { listenPercent = it }
-
-        SectionTitle("Screen time today")
-        GrantTimeSection(pairingStore, profiles)
-        PauseTodayRow(
-            pausedUntil = limits.pausedUntilMillis,
-            onChanged = { until ->
-                // Applied immediately — a timeout shouldn't wait for Save & close.
-                // Only the pause field changes on disk; other unsaved form edits
-                // stay unsaved until the parent commits them. Disk + push ride
-                // LanPushScope (IO), like the review-queue rulings above.
-                limits = limits.copy(pausedUntilMillis = until)
-                io.pickwick.app.data.LanPushScope.scope.launch {
-                    val updated = configStore.load().let { c ->
-                        c.copy(limits = c.limits.copy(pausedUntilMillis = until))
-                    }
-                    configStore.save(updated)
-                    val json = ConfigStore.toJson(updated)
-                    pairingStore.paired().forEach { LanClient.pushConfig(it, json) }
-                }
-            }
-        )
-
-        SectionTitle("Playback")
-        Text(
-            "Skips the parts of a video the SponsorBlock community has marked: " +
-                "sponsor messages, merch plugs, intros/outros and \"like and " +
-                "subscribe\" reminders. Marked parts show in green on the TV's " +
-                "playback bar. Lookups send only an anonymous fingerprint of the " +
-                "video, never what is being watched.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Skip sponsors & intros", modifier = Modifier.weight(1f))
-            Switch(
-                modifier = Modifier.tvFocusHighlight(),
-                checked = sponsorSkip,
-                onCheckedChange = { sponsorSkip = it }
+            PauseTodayRow(
+                pausedUntil = limits.pausedUntilMillis,
+                onChanged = { until -> limits = limits.copy(pausedUntilMillis = until) }
             )
         }
-
-        SectionTitle("Offline downloads")
-        DownloadsSection()
-
-        SectionTitle("Videos from this phone")
-        LocalVideosSection(profiles)
-
-        SectionTitle("Kid devices")
-        PhoneDevicesSection(
-            pairingStore, configStore,
-            onBecameKidDevice = onBecameKidDevice,
-            profiles = profiles,
-            deviceProfiles = deviceProfiles,
-            // The form's fingerprint, not the file's: "in sync ✓" measured against
-            // disk stays green while the parent edits, so a changed bedtime looks
-            // already delivered and the Push button (shown only when out of sync)
-            // never appears. Recomputed on every form edit — hashing a few KB is
-            // nothing next to the recomposition that triggered it.
-            localHash = ConfigStore.fingerprint(buildCurrentConfig()),
-            // Push must deliver what the parent is LOOKING AT, unsaved edits
-            // included — pushing the stale disk config while the form showed
-            // freshly-added kids read as "the button does nothing".
-            saveCurrent = {
-                val config = buildCurrentConfig()
-                configStore.save(config)
-                ConfigStore.toJson(config)
-            },
-            onAssign = { token, profileId ->
-                deviceProfiles =
-                    if (profileId == null) deviceProfiles - token
-                    else deviceProfiles + (token to profileId)
-                // Assignment applies immediately, like queue rulings — a parent
-                // dedicating the TV shouldn't have to remember Save & close.
-                resolveFlagged { c ->
-                    c.copy(
-                        deviceProfiles =
-                            if (profileId == null) c.deviceProfiles - token
-                            else c.deviceProfiles + (token to profileId)
-                    )
-                }
-            },
-            masterToken = masterToken,
-            onMakeMaster = { token ->
-                masterToken = token
-                // Applies immediately, same rule as device assignment: the new
-                // master starts crawling without waiting for a Save & close.
-                resolveFlagged { c -> c.copy(masterDeviceToken = token) }
-            },
-            onOpenStats = { statsDevice = it },
-            onConfigReplaced = { configEpoch++ }
-        )
-        // Per-device Stats answers "what's happening today"; this answers
-        // "how did the week go" across every device from the phone's own cache.
-        CompactButton(onClick = { digestOpen = true }) { Text("📅 Weekly digest") }
-
-        // Search index: who's the master, and how far each channel's crawl has
-        // got. Read-only — the master device does the work; this just reports.
-        SectionTitle("Search index")
-        SearchIndexSection(entries, masterToken, pairingStore)
-
-        SectionTitle("AI content screening")
-        AiScreeningSection(ai, profiles, onChanged = { ai = it })
-
-        if (ai.enabled) {
-            SectionTitle("Waiting for your OK")
-            AiReviewSection(
-                ai = ai,
-                profiles = profiles,
-                pairingStore = pairingStore,
-                resolved = blocked + aiAllowed + blockedFor.keys + allowedFor.keys,
-                onAllow = { id, forKids ->
-                    if (forKids == null) {
-                        aiAllowed = aiAllowed + id
-                        resolveFlagged { c -> c.copy(aiAllowedVideoIds = c.aiAllowedVideoIds + id) }
-                    } else {
-                        allowedFor = allowedFor + (id to forKids)
-                        resolveFlagged { c -> c.copy(allowedFor = c.allowedFor + (id to forKids)) }
-                    }
-                },
-                onBlock = { id, forKids ->
-                    if (forKids == null) {
-                        blocked = blocked + id
-                        resolveFlagged { c -> c.copy(blockedVideoIds = c.blockedVideoIds + id) }
-                    } else {
-                        blockedFor = blockedFor + (id to forKids)
-                        resolveFlagged { c -> c.copy(blockedFor = c.blockedFor + (id to forKids)) }
-                    }
-                }
-            )
-        }
-
-        SectionTitle("Discover with AI")
-        AiDiscoverySection(ai, entries, yt) { e ->
-            entries = (entries + e).distinctBy { it.id }
-            newIds = newIds + e.id
-        }
-
-        SectionTitle("Suggested channels")
-        DirectorySection(entries) { e ->
-            entries = (entries + e).distinctBy { it.id }
-            newIds = newIds + e.id
-        }
-
-        // The list can grow long; only the rarely-used sections sit below it.
-        SectionTitle("Channels & playlists")
-        ChannelsSection(entries, newIds, yt, resolvedNames, profiles, onChanged = { entries = it })
-
-        SectionTitle("Import, export & backup")
-        ExportSection(
-            current = {
-                // Fill resolved names in as labels so the receiving parent sees
-                // "url | Name" lines, not bare urls.
-                Whitelist(
-                    entries.map { e ->
-                        if (e.label == null) e.copy(label = resolvedNames[e.url]) else e
-                    },
-                    blocked, limits
-                )
-            },
-            onImport = { parsed ->
-                // Links only — screen-time rules are UI-managed, never file-driven.
-                val fresh = parsed.sources.filter { p -> entries.none { it.id == p.id } }
-                entries = entries + fresh
-                newIds = newIds + fresh.map { it.id }
-                fresh.size
-            }
-        )
-
-        SectionTitle("App")
-        UpdateSection(onUpdateFound = ::revealUpdate)
-
         Spacer(Modifier.height(24.dp))
     }
+}
 
-    // Dirty check: the form's fingerprint against the disk snapshot it opened
-    // from. Cheap (a few KB hashed on recomposition) and exact — any edit,
-    // including a reverted-then-redone one, shows the button only when the
-    // result would actually differ from what's saved.
-    val dirty = remember(
-        entries, limits, blocked, ai, aiAllowed, profiles, blockedFor,
-        allowedFor, deviceProfiles, masterToken, sponsorSkip, listenPercent
+/** The six pages behind the settings root. */
+private enum class HubPage(val title: String) {
+    Kids("Kids"),
+    Channels("Channels & playlists"),
+    Screening("Content screening"),
+    Devices("Devices"),
+    Playback("Playback"),
+    Backup("Backup & app")
+}
+
+/** One page of the hub: back + title, then the content in a scroll. */
+@Composable
+internal fun SubPage(title: String, onBack: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(24.dp)
     ) {
-        ConfigStore.fingerprint(buildCurrentConfig()) != ConfigStore.fingerprint(initial)
-    }
-    if (dirty) {
-        androidx.compose.material3.ExtendedFloatingActionButton(
-            onClick = ::saveAndSync,
-            modifier = Modifier
-                .align(androidx.compose.ui.Alignment.BottomEnd)
-                .padding(24.dp)
-                .tvFocusHighlight()
-        ) {
-            Text("Save changes")
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            TextButton(modifier = Modifier.tvFocusHighlight(), onClick = onBack) { Text("‹ Back") }
+            Text(
+                title,
+                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                modifier = Modifier.weight(1f).padding(start = 8.dp)
+            )
         }
+        content()
+        Spacer(Modifier.height(24.dp))
     }
+}
+
+/** A root row: icon, title, one-line summary, chevron. */
+@Composable
+private fun HubRow(icon: String, title: String, summary: String, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .tvFocusHighlight()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp)
+    ) {
+        Text(icon, style = MaterialTheme.typography.titleLarge)
+        Spacer(Modifier.width(16.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                summary,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            )
+        }
+        Text("›", style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/**
+ * The rounded, bordered group every related set of controls sits in, so a
+ * parent can tell at a glance which rows belong together. Children are
+ * spaced apart; [SettingsDivider] separates rows that need a firmer line.
+ */
+@Composable
+internal fun SettingsCard(padded: Boolean = true, content: @Composable ColumnScope.() -> Unit) {
+    OutlinedCard(
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = if (padded) Modifier.padding(16.dp) else Modifier.padding(vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(if (padded) 8.dp else 0.dp),
+            content = content
+        )
     }
 }
 
 @Composable
-internal fun SectionTitle(text: String) {
-    Spacer(Modifier.height(24.dp))
+internal fun SettingsDivider() {
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-    Spacer(Modifier.height(16.dp))
+}
+
+@Composable
+internal fun SectionTitle(text: String) {
+    Spacer(Modifier.height(20.dp))
     Text(
         text,
-        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-        color = MaterialTheme.colorScheme.primary
+        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(start = 4.dp)
     )
     Spacer(Modifier.height(8.dp))
 }

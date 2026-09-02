@@ -35,73 +35,89 @@ import kotlinx.coroutines.launch
 
 // --- Screen time ------------------------------------------------------------
 
+/**
+ * The kid's recurring rules — minute limits and the video-length floor — in
+ * one card under its own title, so the kid page reads Profile → Rules →
+ * Blocked times → Today. [trailing] is the page's own tail for the card
+ * (copy-from-sibling), kept inside the border because it acts on these rules.
+ */
 @Composable
-internal fun ScreenTimeSection(
+internal fun RulesSection(
     limits: Limits,
     onChanged: (Limits) -> Unit,
-    /**
-     * Skip-pass write-through: "skip tonight's bedtime" is a right-now action
-     * like Pause today, not a form edit — a parent who taps Skip and backs out
-     * without Save & close must still get tonight off. Null (tests/previews)
-     * leaves the pass as form state only.
-     */
-    onPassCommitted: ((windowId: String, passUntil: Long?) -> Unit)? = null,
-    /** Same write-through for the break skip below the break stepper. */
-    onBreakPassCommitted: ((passUntil: Long?) -> Unit)? = null
+    /** Break-skip write-through for callers that need one; null = form state only. */
+    onBreakPassCommitted: ((passUntil: Long?) -> Unit)? = null,
+    trailing: @Composable ColumnScope.() -> Unit = {}
 ) {
-    StepperRow(
-        label = "Time per session",
-        value = limits.sessionMinutes, step = 5, min = 5, max = 240,
-        format = { "$it min" }, picker = StepperPicker.Minutes,
-        onChanged = { onChanged(limits.copy(sessionMinutes = it)) }
-    )
-    StepperRow(
-        label = "Sessions on weekdays",
-        value = limits.weekdaySessions, step = 1, min = 1, max = 12,
-        format = { "$it" },
-        onChanged = { onChanged(limits.copy(weekdaySessions = it)) }
-    )
-    StepperRow(
-        label = "Sessions on weekends",
-        value = limits.weekendSessions, step = 1, min = 1, max = 12,
-        format = { "$it" },
-        onChanged = { onChanged(limits.copy(weekendSessions = it)) }
-    )
-    StepperRow(
-        label = "Break between sessions",
-        value = limits.breakMinutes, step = 15, min = 15, max = 240,
-        format = { "$it min" }, picker = StepperPicker.Minutes,
-        onChanged = { onChanged(limits.copy(breakMinutes = it)) }
-    )
-    // Only while there's a break rule to skip — no rule, no row.
-    if (limits.breakMinutes != null) {
-        SkipBreakRow(limits.breakPassUntilMillis) { until ->
-            onChanged(limits.copy(breakPassUntilMillis = until))
-            onBreakPassCommitted?.invoke(until)
+    SectionTitle("Rules")
+    SettingsCard {
+        StepperRow(
+            label = "Time per session",
+            value = limits.sessionMinutes, step = 5, min = 5, max = 240,
+            format = { "$it min" }, picker = StepperPicker.Minutes,
+            onChanged = { onChanged(limits.copy(sessionMinutes = it)) }
+        )
+        SettingsDivider()
+        StepperRow(
+            label = "Sessions on weekdays",
+            value = limits.weekdaySessions, step = 1, min = 1, max = 12,
+            format = { "$it" },
+            onChanged = { onChanged(limits.copy(weekdaySessions = it)) }
+        )
+        SettingsDivider()
+        StepperRow(
+            label = "Sessions on weekends",
+            value = limits.weekendSessions, step = 1, min = 1, max = 12,
+            format = { "$it" },
+            onChanged = { onChanged(limits.copy(weekendSessions = it)) }
+        )
+        SettingsDivider()
+        StepperRow(
+            label = "Break between sessions",
+            value = limits.breakMinutes, step = 15, min = 15, max = 240,
+            format = { "$it min" }, picker = StepperPicker.Minutes,
+            onChanged = { onChanged(limits.copy(breakMinutes = it)) }
+        )
+        // Only while there's a break rule to skip — no rule, no row.
+        if (limits.breakMinutes != null) {
+            SkipBreakRow(limits.breakPassUntilMillis) { until ->
+                onChanged(limits.copy(breakPassUntilMillis = until))
+                onBreakPassCommitted?.invoke(until)
+            }
         }
-    }
+        val summary = buildString {
+            val s = limits.sessionMinutes
+            val wd = limits.weekdaySessions
+            val we = limits.weekendSessions
+            if (s != null && wd != null) append("Weekdays: up to ${s * wd} min total. ")
+            if (s != null && we != null) append("Weekends: up to ${s * we} min total.")
+            if (isEmpty()) {
+                // A bedtime with all steppers Off is a real configuration — don't
+                // contradict the blocked-times card below this one.
+                append(
+                    if (limits.windows.isEmpty()) "No limits set — unlimited watching."
+                    else "No minute limits — the blocked times below still apply."
+                )
+            }
+        }
+        Text(summary, style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-    TimeWindowsSection(
-        limits.windows,
-        onPassCommitted = onPassCommitted
-    ) { onChanged(limits.copy(windows = it)) }
-    val summary = buildString {
-        val s = limits.sessionMinutes
-        val wd = limits.weekdaySessions
-        val we = limits.weekendSessions
-        if (s != null && wd != null) append("Weekdays: up to ${s * wd} min total. ")
-        if (s != null && we != null) append("Weekends: up to ${s * we} min total.")
-        if (isEmpty()) {
-            // A bedtime with all steppers Off is a real configuration — don't
-            // contradict the windows list sitting right above this line.
-            append(
-                if (limits.windows.isEmpty()) "No limits set — unlimited watching."
-                else "No minute limits — the blocked times above still apply."
-            )
-        }
+        SettingsDivider()
+        StepperRow(
+            label = "Hide videos shorter than",
+            value = limits.minVideoMinutes, step = 1, min = 1, max = 60,
+            format = { "$it min" }, picker = StepperPicker.Minutes,
+            onChanged = { onChanged(limits.copy(minVideoMinutes = it)) }
+        )
+        Text(
+            "YouTube Shorts are never shown regardless. This also hides the " +
+                "short clips a channel uploads as regular videos.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        trailing()
     }
-    Text(summary, style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 // Not named formatClock: Theme.kt's formatClock(Long) formats a *duration*,
@@ -114,66 +130,85 @@ internal fun formatMinuteOfDay(minOfDay: Int): String = "%d:%02d".format(minOfDa
  * than one window and need different days each. Empty is a real state — no
  * window at all — so there is nothing to switch "off" and no default schedule
  * for a parent who never added one.
+ *
+ * Rows are collapsed to one line each (alarm-list style) and only the tapped
+ * one opens: three windows fully expanded was three name fields, six clocks
+ * and three day rows on one screen.
  */
 @Composable
-private fun TimeWindowsSection(
+internal fun BlockedTimesSection(
     windows: List<TimeWindow>,
-    onPassCommitted: ((String, Long?) -> Unit)?,
+    /**
+     * Skip-pass write-through for callers that need one; null = form state
+     * only (the kid page, where the form's auto-save carries it).
+     */
+    onPassCommitted: ((windowId: String, passUntil: Long?) -> Unit)? = null,
     onChanged: (List<TimeWindow>) -> Unit
 ) {
-    Text("Blocked times", style = MaterialTheme.typography.titleSmall)
-    if (windows.isEmpty()) {
-        Text(
-            "No blocked times — screen time is limited by minutes only, not by clock.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-    windows.forEachIndexed { i, w ->
-        TimeWindowCard(
-            window = w,
-            onPassCommitted = onPassCommitted,
-            onChanged = { updated -> onChanged(windows.toMutableList().also { it[i] = updated }) },
-            onRemove = { onChanged(windows.filterIndexed { j, _ -> j != i }) }
-        )
-    }
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        // Two named starting points rather than one blank "Add": a window has
-        // to start with *some* times, and naming them is more honest than
-        // inventing a schedule behind a generic button.
-        CompactButton(
-            onClick = {
-                onChanged(
-                    windows + TimeWindow(
-                        id = newWindowId(windows), label = "Bedtime",
-                        startMin = 19 * 60 + 30, endMin = 7 * 60, days = ALL_DAYS
-                    )
+    SectionTitle("Blocked times")
+    SettingsCard {
+        var expandedId by remember { mutableStateOf<String?>(null) }
+        var adding by remember { mutableStateOf(false) }
+
+        if (windows.isEmpty()) {
+            Text(
+                "No blocked times — screen time is limited by minutes only, not by clock.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        windows.forEachIndexed { i, w ->
+            if (i > 0) SettingsDivider()
+            if (w.id == expandedId) {
+                TimeWindowEditor(
+                    window = w,
+                    onPassCommitted = onPassCommitted,
+                    onChanged = { updated -> onChanged(windows.toMutableList().also { it[i] = updated }) },
+                    onRemove = {
+                        expandedId = null
+                        onChanged(windows.filterIndexed { j, _ -> j != i })
+                    },
+                    onCollapse = { expandedId = null }
                 )
+            } else {
+                TimeWindowRow(w) { expandedId = w.id }
             }
-        ) { Text("+ Bedtime") }
-        CompactButton(
-            onClick = {
-                onChanged(
-                    windows + TimeWindow(
-                        id = newWindowId(windows), label = "School hours",
-                        startMin = 8 * 60 + 30, endMin = 15 * 60, days = WEEKDAYS
-                    )
+        }
+        if (windows.isNotEmpty()) SettingsDivider()
+
+        // One Add with three starting points behind it rather than three
+        // buttons: a window has to start with *some* times, and naming the
+        // presets is more honest than inventing a schedule behind a blank
+        // "Add" — but they don't need to sit on the screen until asked for.
+        Box {
+            CompactButton(onClick = { adding = true }) { Text("+ Add blocked time") }
+            androidx.compose.material3.DropdownMenu(
+                expanded = adding,
+                onDismissRequest = { adding = false }
+            ) {
+                fun add(label: String, startMin: Int, endMin: Int, days: Set<Int>) {
+                    adding = false
+                    val id = newWindowId(windows)
+                    onChanged(windows + TimeWindow(id = id, label = label, startMin = startMin, endMin = endMin, days = days))
+                    expandedId = id
+                }
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text("Bedtime") },
+                    onClick = { add("Bedtime", 19 * 60 + 30, 7 * 60, ALL_DAYS) }
                 )
-            }
-        ) { Text("+ School hours") }
-        CompactButton(
-            onClick = {
-                onChanged(
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text("School hours") },
+                    onClick = { add("School hours", 8 * 60 + 30, 15 * 60, WEEKDAYS) }
+                )
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text("Custom") },
                     // A deliberate placeholder — blank name, neutral midday
                     // span — that reads as "yours to fill in", not a schedule
                     // we invented.
-                    windows + TimeWindow(
-                        id = newWindowId(windows), label = "",
-                        startMin = 12 * 60, endMin = 14 * 60, days = ALL_DAYS
-                    )
+                    onClick = { add("", 12 * 60, 14 * 60, ALL_DAYS) }
                 )
             }
-        ) { Text("+ Custom") }
+        }
     }
 }
 
@@ -183,15 +218,54 @@ private fun newWindowId(existing: List<TimeWindow>): String {
     return generateSequence(1) { it + 1 }.map { "w$it" }.first { it !in taken }
 }
 
+/** Collapsed: name, hours, days — enough to answer "what's set" without opening it. */
 @Composable
-private fun TimeWindowCard(
+private fun TimeWindowRow(window: TimeWindow, onOpen: () -> Unit) {
+    val skipped = (window.passUntilMillis ?: 0L) > System.currentTimeMillis()
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .tvFocusHighlight()
+            .clickable(onClick = onOpen)
+            .heightIn(min = 44.dp)
+            .padding(vertical = 4.dp)
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(window.label.ifBlank { "Unnamed" })
+            Text(
+                listOfNotNull(
+                    "${formatMinuteOfDay(window.startMin)}–${formatMinuteOfDay(window.endMin)}",
+                    daySummary(window.days),
+                    if (window.allowListening) "listening allowed" else null,
+                    if (skipped) "skipped once" else null
+                ).joinToString(" · "),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Text("⌄", style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+private fun daySummary(days: Set<Int>): String = when (days) {
+    ALL_DAYS -> "every day"
+    WEEKDAYS -> "Mon–Fri"
+    io.pickwick.app.data.WEEKEND_DAYS -> "weekends"
+    else -> days.sorted().joinToString(", ") { DAY_LABELS[it - 1] }
+}
+
+@Composable
+private fun TimeWindowEditor(
     window: TimeWindow,
     onPassCommitted: ((String, Long?) -> Unit)?,
     onChanged: (TimeWindow) -> Unit,
-    onRemove: () -> Unit
+    onRemove: () -> Unit,
+    onCollapse: () -> Unit
 ) {
     Column(
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier.padding(vertical = 4.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -202,24 +276,26 @@ private fun TimeWindowCard(
                 label = { Text("Name") },
                 modifier = Modifier.weight(1f)
             )
-            CompactButton( onClick = onRemove) { Text("Remove") }
+            Spacer(Modifier.width(8.dp))
+            CompactButton(onClick = onCollapse) { Text("Done") }
         }
         // Max is 23:59, not 23:30: the clock picker can land on any minute, so
         // the half-hour grid is only what − and + snap to, not the set of
         // reachable times.
         StepperRow(
-            label = "  Starts", value = window.startMin, step = 30, min = 0, max = 24 * 60 - 1,
+            label = "Starts", value = window.startMin, step = 30, min = 0, max = 24 * 60 - 1,
             allowOff = false, format = ::formatMinuteOfDay, picker = StepperPicker.Clock,
             onChanged = { onChanged(window.copy(startMin = it ?: window.startMin)) }
         )
         StepperRow(
-            label = "  Ends", value = window.endMin, step = 30, min = 0, max = 24 * 60 - 1,
+            label = "Ends", value = window.endMin, step = 30, min = 0, max = 24 * 60 - 1,
             allowOff = false, format = ::formatMinuteOfDay, picker = StepperPicker.Clock,
             onChanged = { onChanged(window.copy(endMin = it ?: window.endMin)) }
         )
         DayChips(window.days) { onChanged(window.copy(days = it)) }
         AllowListeningRow(window, onChanged)
         SkipOnceRow(window, onPassCommitted, onChanged)
+        TextButton(onClick = onRemove) { Text("Remove this blocked time") }
     }
 }
 
@@ -425,7 +501,10 @@ internal fun StepperRow(
     picker: StepperPicker = StepperPicker.None,
     onChanged: (Int?) -> Unit
 ) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 2.dp)) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.heightIn(min = 44.dp).padding(vertical = 2.dp)
+    ) {
         Text(label, modifier = Modifier.weight(1f))
         CompactButton(
             onClick = {
@@ -674,24 +753,32 @@ internal fun GrantTimeSection(
 private data class GrantReceipt(val text: String, val at: Long = System.currentTimeMillis())
 
 /**
- * Parent timeout: one tap turns all watching off until midnight, on every
- * device, effective immediately (the guard's next tick stops a playing video).
+ * Parent timeout: one tap turns watching off until midnight, on every device,
+ * effective immediately (the guard's next tick stops a playing video).
  * Deliberately minimal — no durations, no multi-day bans; Resume is the undo.
+ * With a [kidName] it is that kid's own pause; without, the family-wide one
+ * that stops everyone.
  */
 @Composable
-internal fun PauseTodayRow(pausedUntil: Long?, onChanged: (Long?) -> Unit) {
+internal fun PauseTodayRow(pausedUntil: Long?, kidName: String? = null, onChanged: (Long?) -> Unit) {
     var confirming by remember { mutableStateOf(false) }
     val active = pausedUntil != null && pausedUntil > System.currentTimeMillis()
+    val whose = kidName?.let { "$it's" } ?: "all"
 
     if (confirming) {
         AlertDialog(
             onDismissRequest = { confirming = false },
-            title = { Text("Pause screen time for the rest of today?") },
+            title = {
+                Text(
+                    if (kidName == null) "Pause screen time for everyone for the rest of today?"
+                    else "Pause $kidName's screen time for the rest of today?"
+                )
+            },
             text = {
                 Text(
-                    "All watching stops right away on every device and stays off " +
-                        "until midnight. Normal limits return tomorrow. You can " +
-                        "resume any time."
+                    "${if (kidName == null) "All" else "$kidName's"} watching stops right " +
+                        "away on every device and stays off until midnight. Normal " +
+                        "limits return tomorrow. You can resume any time."
                 )
             },
             confirmButton = {
@@ -709,7 +796,8 @@ internal fun PauseTodayRow(pausedUntil: Long?, onChanged: (Long?) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 2.dp)) {
         if (active) {
             Text(
-                "⏸ Screen time is paused until tomorrow",
+                if (kidName == null) "⏸ Everyone's screen time is paused until tomorrow"
+                else "⏸ $kidName's screen time is paused until tomorrow",
                 modifier = Modifier.weight(1f),
                 color = MaterialTheme.colorScheme.primary
             )
@@ -718,7 +806,7 @@ internal fun PauseTodayRow(pausedUntil: Long?, onChanged: (Long?) -> Unit) {
                 onClick = { onChanged(null) }
             ) { Text("Resume") }
         } else {
-            Text("Turn off all watching until midnight", modifier = Modifier.weight(1f))
+            Text("Turn off $whose watching until midnight", modifier = Modifier.weight(1f))
             CompactButton(
                 onClick = { confirming = true }
             ) { Text("Pause for today") }

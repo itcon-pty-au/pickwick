@@ -70,6 +70,17 @@ class ConfigStoreJsonTest {
     }
 
     @Test
+    fun `minimum video length round-trips, is omitted when unset, and moves the fingerprint`() {
+        val plain = Whitelist(listOf(entry("UCa")), emptySet())
+        assertFalse(ConfigStore.toJson(plain).contains("minVideoMinutes"))
+        assertEquals(null, ConfigStore.fromJson(ConfigStore.toJson(plain)).limits.minVideoMinutes)
+
+        val ruled = plain.copy(limits = io.pickwick.app.data.Limits(minVideoMinutes = 5))
+        assertEquals(5, ConfigStore.fromJson(ConfigStore.toJson(ruled)).limits.minVideoMinutes)
+        assertNotEquals(ConfigStore.fingerprint(plain), ConfigStore.fingerprint(ruled))
+    }
+
+    @Test
     fun `pause changes the fingerprint so offline reconcile delivers it`() {
         val plain = Whitelist(listOf(entry("UCa")), emptySet())
         val paused = plain.copy(
