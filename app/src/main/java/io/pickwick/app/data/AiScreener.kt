@@ -81,6 +81,9 @@ object AiScreener {
             (a == 172 && b in 16..31)
     }
 
+    /** Required by api.anthropic.com on every call; harmless everywhere else. */
+    private const val ANTHROPIC_VERSION = "2023-06-01"
+
     private fun requireSafeEndpoint(cfg: AiConfig) {
         require(isEndpointSafe(cfg.baseUrl)) {
             "Refusing to send screening data in the clear to ${cfg.baseUrl} — " +
@@ -230,6 +233,9 @@ object AiScreener {
      * Model ids the endpoint offers, for the settings dropdown. All OpenAI-compatible
      * providers expose GET /models with the same {"data":[{"id":...}]} shape; Anthropic's
      * native endpoint wants x-api-key instead of Bearer, so 401s get one retry that way.
+     * Anthropic also rejects any call without its version header (400, even with a
+     * valid Bearer key), so the header rides on every request — other providers
+     * ignore a header they don't know.
      */
     suspend fun listModels(cfg: AiConfig): List<String> = withContext(Dispatchers.IO) {
         requireSafeEndpoint(cfg)
@@ -244,11 +250,12 @@ object AiScreener {
         }
 
         var (code, body) = fetch {
+            header("anthropic-version", ANTHROPIC_VERSION)
             if (cfg.apiKey.isNotBlank()) header("Authorization", "Bearer ${cfg.apiKey}") else this
         }
         if (code in listOf(401, 403) && cfg.apiKey.isNotBlank()) {
             val retry = fetch {
-                header("x-api-key", cfg.apiKey).header("anthropic-version", "2023-06-01")
+                header("x-api-key", cfg.apiKey).header("anthropic-version", ANTHROPIC_VERSION)
             }
             code = retry.first
             body = retry.second
@@ -292,6 +299,7 @@ object AiScreener {
             val request = Request.Builder()
                 .url(cfg.baseUrl.trimEnd('/') + "/chat/completions")
                 .header("X-Title", "Pickwick")
+                .header("anthropic-version", ANTHROPIC_VERSION)
                 .apply { if (cfg.apiKey.isNotBlank()) header("Authorization", "Bearer ${cfg.apiKey}") }
                 .post(body.toRequestBody("application/json".toMediaType()))
                 .build()

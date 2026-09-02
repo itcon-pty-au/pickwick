@@ -66,7 +66,12 @@ internal fun AiScreeningSection(
                 models = it
                 modelsMessage = if (it.isEmpty()) "Provider returned no models" else null
             }
-            .onFailure { modelsMessage = "Couldn't load models: ${it.message?.take(80)}" }
+            .onFailure {
+                // The row shows a trimmed line; the log keeps the provider's
+                // whole answer, which is what actually says why.
+                android.util.Log.w("Pickwick", "model list from ${ai.baseUrl} failed", it)
+                modelsMessage = "Couldn't load models: ${it.message?.take(80)}"
+            }
     }
 
     Text(
