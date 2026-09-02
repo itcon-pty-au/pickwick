@@ -41,14 +41,20 @@ with no ads.
   younger sibling can't borrow an older kid's channels or clock.
 - A grid of **parent-approved channels and playlists**, ordered by their own favourites
 - **🎲 Surprise me** — a random mix drawn from allowed channels
-- **❤️ My list** — videos they saved by holding a tile (long-press / hold OK on the remote)
+- **❤️ Favorites** and **🕒 Watch later** — two lists they fill by holding a
+  tile (long-press / hold OK on the remote): one for the videos they love,
+  one for the ones they mean to get to
+- **Unwatched first** — a channel opens on what they haven't seen; everything
+  already watched moves behind a **Watched** tile at the end, so a favourite
+  is still one tap away without cluttering the row
 - **Keep watching** — resume where they left off, on any of the family's devices
 - **🔎 Search** — find videos by name, but only *inside* the allowed channels: it
   searches an on-device index of the whitelist, so a search can never surface
   anything a parent didn't approve
 - **📚 Up next** — hold any poster (long-press / hold OK) for one menu: add to
-  the queue, save to My list, or request an offline copy; queued videos play in
-  order and clear themselves only when truly finished
+  the queue, save to Favorites or Watch later, mark it watched, or request an
+  offline copy; queued videos play in order and clear themselves only when
+  truly finished
 - **🎧 Listen mode** *(only if a parent enables it)* — press the power button and
   the audio keeps playing with the screen off, for audiobooks and music at
   bedtime; minutes drain at a rate the parent chooses
@@ -71,15 +77,20 @@ Fully D-pad navigable on TV (colored focus glow, remote shortcuts: OK = pause,
 
 ## What the parent controls (all from their phone)
 
-Open settings (fingerprint-gated, with a 4-digit parent PIN as fallback) on the phone:
+Open settings (fingerprint-gated, with a 4-digit parent PIN as fallback) on the
+phone. It opens on a short list of six pages — Kids, Channels & playlists,
+Content screening, Devices, Playback, Backup & app — each with its own screen.
+**There is no Save button:** every change is kept as you make it and reaches the
+kids' devices on its own, catching up later with any device that was asleep.
 
-- **Kids** — one profile per child: name, age, color, avatar, own screen-time
-  rules (with "copy from sibling"), optional lock code. One kid changes nothing
-  visibly; a second brings the who's-watching screen. Each device can be
-  **dedicated to one kid** (their phone) or stay shared (the TV) — shared
-  devices re-ask per sitting, never between episodes. Watch history, saved
-  lists, NEW badges and stats are all per kid; the first kid a family creates
-  inherits everything the device already knew.
+- **Kids** — a page per child: name, age, color, avatar, optional lock code,
+  their own rules and their own bonus-time and pause controls, all in one
+  place. Every family starts with one child called *Kid*, ready to rename;
+  a family upgrading from an older build finds their existing rules already
+  on it. One kid changes nothing visibly; a second brings the who's-watching
+  screen. Each device can be **dedicated to one kid** (their phone) or stay
+  shared (the TV) — shared devices re-ask per sitting, never between episodes.
+  Watch history, saved lists, NEW badges and stats are all per kid.
 - **Channels & playlists** — search YouTube by name and tap Add; or paste any
   channel/playlist link. Pick from the built-in **suggested channels directory**
   (community-curated, multilingual), import a whitelist from a file, and
@@ -92,19 +103,28 @@ Open settings (fingerprint-gated, with a 4-digit parent PIN as fallback) on the 
   Each source has a **screen-time multiplier chip** — tap to cycle
   1x → 1.25x → 1.5x → 0.75x → 0.5x → 0.25x → FREE (long-press resets) — so
   educational channels can cost less (or nothing) and junk can cost extra.
-- **Screen time** — session length, sessions per weekday/weekend, break length,
-  and **blocked windows**: any number of named no-watching spans (bedtime,
-  school hours, dinner), each with its own days of the week, an **Allow
-  listening** box (the window blocks watching but a bedtime story plays on,
-  sound only, with the screen off), and a one-time **Skip tonight** pass for
-  special occasions. The daily budget is
+- **Rules, on each kid's page** — session length, sessions per
+  weekday/weekend, break length, and a **minimum video length**: set it and
+  anything shorter vanishes from that kid's channels, Surprise, search and
+  saved lists (Shorts never appear at all, so this is aimed at the
+  clip-length uploads that sit alongside a channel's real episodes).
+  **Copy rules from** a sibling saves retyping. The daily budget is
   `session × sessions`; only actual watching counts, and stopping early never
-  forfeits time. An optional **listening rate** turns on kid-side listen mode
+  forfeits time. Nothing is set unless you set it — there is no invented
+  bedtime for a parent who never chose one.
+- **Blocked times, on the same page** — any number of named no-watching spans
+  (bedtime, school hours, dinner), listed one line each and opened by tapping.
+  Each has its own days of the week, an **Allow listening** box (the window
+  blocks watching but a bedtime story plays on, sound only, with the screen
+  off), and a one-time **Skip** pass for special occasions.
+- **Bonus time and pause, per kid** — extra minutes today, or a **pause**
+  that stops that child until midnight while their brothers and sisters carry
+  on. Both apply to every device instantly.
+- **Pause everyone** — on the main settings screen, one tap stops all
+  watching on every device until midnight.
+- **Listening** — an optional **listening rate** turns on kid-side listen mode
   (screen-off audio) at that drain multiplier — leave it unset and the feature
   doesn't exist on kid devices.
-- **Grant extra time** — +15/+30/+60 today for a named kid, applied to every
-  device instantly.
-- **Pause for today** — one tap stops watching on every device until midnight.
 - **AI content screening** *(optional, off by default)* — screen new videos against
   your own house rules ("no horror, no unboxing, no fake challenges") using any
   OpenAI-compatible endpoint: Anthropic, OpenRouter, or a local server. Two
@@ -172,6 +192,7 @@ blocked     = named no-watching windows (bedtime, school…), per days of week,
               may cross midnight; each grants one parent-issued Skip pass,
               and may allow listening through (sound only, phones)
 grants      = parent adds minutes today; clears breaks; waives bedtime briefly
+min length  = hide videos shorter than N minutes (per kid; unset = no filter)
 multiplier  = per-channel drain rate (FREE, 0.25x–1.5x): scales budget & sitting
               use only — bedtime and breaks always apply, even on FREE channels
               (a bedtime with "Allow listening" still stops the picture)
@@ -353,3 +374,4 @@ persists across retries and app restarts.
 - [x] AI-assisted curation (channel discovery + rules-based screening)
 - [x] Offline downloads with parent approval
 - [x] Donations / sustainability
+- [x] Settings split into pages, with a page per kid

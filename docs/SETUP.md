@@ -97,28 +97,40 @@ If a kid has their own phone or tablet, install Pickwick on it the same way.
 Everything from here is done on the phone, in **Pickwick → ⚙ →** (it asks
 for your fingerprint, or a parent PIN you set on first use).
 
+Settings opens on a short list of six pages — *Kids*, *Channels & playlists*,
+*Content screening*, *Devices*, *Playback*, *Backup & app*. Tap one to open it,
+**‹ Back** to return. **There is no Save button:** every change is kept as you
+make it and sent to the TV a moment later.
+
 ---
 
 ## Part 4 — First-time setup on the phone
 
-Do these in order; each pushes to the TV automatically when you press
-**Save & close**.
+Do these in order. Each one is saved and sent to the TV on its own — there
+is nothing to press at the end.
 
-1. **Add channels** — under *Channels & playlists*, search a channel your
-   kid loves and tap **Add**. Repeat. (Or browse the in-app **Suggested
+1. **Add channels** — **Channels & playlists**: search a channel your kid
+   loves and tap **Add**. Repeat. (Or browse the in-app **Suggested
    channels** directory for ready-vetted picks, or import an exported
    `whitelist.txt` file — see the [whitelists folder](../whitelists/) for
    themed lists in that format.)
-2. **Add your kids** — under *Kids*, tap **Add your first kid**: name, age,
-   a color and an avatar. The age matters if you use AI screening later.
-   With **one** kid the app looks unchanged; adding a **second** kid brings
-   the "Who's watching?" screen on the TV.
-3. **Screen time** — pick a kid, set session length, sessions per
-   weekday/weekend, and bedtime. **Copy rules from** a sibling saves typing.
-4. **Optional — lock a profile**: Kids → Edit → **Set code**. The code is
-   four presses of the remote's arrows/OK button, entered blind (only dots
-   show on the TV) — so a younger sibling can't pick an older kid's profile.
-5. **Optional — AI screening**: under *AI content screening*, pick a
+2. **Name your kid** — **Kids** already lists one child called *Kid*. Tap
+   it to open their page and give it their real name, age, a color and an
+   avatar. The age matters if you use AI screening later. Use **Add a kid**
+   for each brother or sister. With **one** kid the TV goes straight to
+   their channels; a **second** brings the "Who's watching?" screen.
+3. **Their rules** — on the same page, under *Rules*: session length,
+   sessions per weekday and weekend, break length, and optionally
+   **hide videos shorter than** a few minutes (handy for cutting out
+   clip-length uploads). Under *Blocked times*, add a **Bedtime** or
+   **School hours** and adjust it. Nothing is set until you set it, so a
+   kid with no rules can watch freely. **Copy rules from** a sibling saves
+   typing.
+4. **Optional — lock a profile**: the kid's page → *Profile lock* →
+   **Set code**. The code is four presses of the remote's arrows/OK button,
+   entered blind (only dots show on the TV) — so a younger sibling can't
+   pick an older kid's profile.
+5. **Optional — AI screening**: under **Content screening**, pick a
    provider, paste an API key, write your house rules in plain words. New
    videos are checked per kid's age before kids can see them, and the first
    time a video is pressed it gets a **deep check** of its description, tags
@@ -154,24 +166,30 @@ Do these in order; each pushes to the TV automatically when you press
    Whichever you pick, paste the key into the **API key** field in Pickwick
    right after tapping that provider's button — the key never leaves your
    phone and TV except to talk directly to that provider.
-6. Press **Save & close** — the phone pushes everything to the TV and shows
-   "Synced ✓".
+6. Press **Done** when you've finished. Everything is already saved; this
+   just closes settings.
 
 **Check it worked:** both screens show the same settings fingerprint
-(`Settings #a1b2c3d4`) — TV: ⚙ screen; phone: under *Kid devices*. Matching
-numbers = provably in sync.
+(`Settings #a1b2c3d4`) — TV: ⚙ screen; phone: **Devices** → *Kid devices*.
+Matching numbers = provably in sync. If the TV was asleep or off, it catches
+up by itself the next time it's reachable.
 
 ---
 
 ## Everyday things
 
-- **Give bonus time:** ⚙ → *Screen time today* → pick the kid → **Grant**.
-- **Stop everything today:** ⚙ → **Pause for today** (Resume undoes it).
-- **See what's playing / today's minutes:** ⚙ → *Kid devices* → **Stats** —
-  works even while the TV is off (it shows the last report).
-- **Approve a download** the kid requested: ⚙ → *Offline downloads*.
-- **Updates:** ⚙ → *App* → **Check for updates** — installs new releases
-  from inside the app; no more sideloading after the first time.
+- **Give bonus time:** ⚙ → **Kids** → the kid → *Today* → **Grant**.
+- **Stop one kid today:** ⚙ → **Kids** → the kid → *Today* →
+  **Pause for today** (Resume undoes it). Their brothers and sisters are
+  unaffected.
+- **Stop everyone today:** ⚙ → **Pause everyone**, at the bottom of the
+  first settings screen.
+- **See what's playing / today's minutes:** ⚙ → **Devices** → *Kid devices*
+  → **Stats** — works even while the TV is off (it shows the last report).
+- **Approve a download** the kid requested: ⚙ → **Devices** →
+  *Offline downloads*.
+- **Updates:** ⚙ → **Backup & app** → **Check for updates** — installs new
+  releases from inside the app; no more sideloading after the first time.
 
 ## If something doesn't work
 
