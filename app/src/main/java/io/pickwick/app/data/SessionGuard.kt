@@ -34,6 +34,16 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
         /** Deliberately parent-attributed, so the kid doesn't read it as a bug. */
         private const val PAUSED_MESSAGE =
             "A parent paused screen time for today. See you tomorrow 💛"
+
+        /**
+         * Where a window pass ends after another grant of [minutes]. Grants stack:
+         * a second 15 during bedtime buys 30, matching the daily bonus (which is a
+         * plain sum) and what the parent's Stats screen then reports. A lapsed
+         * pass counts from now, not from when it ended — nothing is owed for the
+         * time in between.
+         */
+        fun extendPass(existingUntil: Long, now: Long, minutes: Int): Long =
+            maxOf(existingUntil, now) + minutes * 60_000L
     }
 
     // ---- limits config (persisted at whitelist refresh) ----
@@ -117,7 +127,7 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
             .putLong("sittingWatchedMs", 0)
             .putLong(
                 "windowPassUntil",
-                maxOf(prefs.getLong("windowPassUntil", 0), now + minutes * 60_000L)
+                extendPass(prefs.getLong("windowPassUntil", 0), now, minutes)
             )
             .apply()
     }
