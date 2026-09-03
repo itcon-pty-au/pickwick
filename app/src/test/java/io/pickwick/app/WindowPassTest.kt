@@ -19,4 +19,17 @@ class WindowPassTest {
         val now = 5_000_000L
         assertEquals(now + 15 * min, SessionGuard.extendPass(now - 60 * min, now, 15))
     }
+
+    @Test fun `taking back shortens a live pass but not below now`() {
+        val now = 1_000_000L
+        val pass = now + 30 * min
+        assertEquals(now + 15 * min, SessionGuard.shrinkPass(pass, now, 15))
+        assertEquals(now, SessionGuard.shrinkPass(pass, now, 45))
+    }
+
+    @Test fun `taking back leaves a lapsed pass alone`() {
+        val now = 1_000_000L
+        assertEquals(now - min, SessionGuard.shrinkPass(now - min, now, 15))
+        assertEquals(0L, SessionGuard.shrinkPass(0L, now, 15))
+    }
 }

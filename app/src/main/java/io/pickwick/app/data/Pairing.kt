@@ -250,8 +250,11 @@ class LanServer(
     private val configStore: ConfigStore,
     /** Applies a grant to the right kid's guard (null profile = legacy/active). */
     private val grantHandler: (minutes: Int, profileId: String?) -> Unit,
+    /** The undo for a grant, routed the same way. */
+    private val takeBackHandler: (minutes: Int, profileId: String?) -> Unit = { _, _ -> },
     private val pairingStore: PairingStore,
-    private val statsProvider: () -> String = { "{}" },
+    /** Today's numbers for one kid (by id), or for whoever this device shows. */
+    private val statsProvider: (profileId: String?) -> String = { "{}" },
     private val watchStateProvider: () -> String = { "{}" },
     private val watchStateMerger: (String) -> Unit = {},
     /** AI verdict-sharing: serve ours, merge a peer's — see ScreeningStore. */
@@ -492,7 +495,12 @@ class LanServer(
                     respond(200, "denied")
                 } else respond(400, "bad token")
             }
-            method == "GET" && path == "/stats" -> respond(200, statsProvider())
+            method == "GET" && path == "/stats" -> {
+                // The kid page asks after its own kid; a shared TV showing a
+                // sibling must not answer with the sibling's day.
+                val profileId = Regex("profile=([0-9a-f]{8})").find(target)?.groupValues?.get(1)
+                respond(200, statsProvider(profileId))
+            }
             method == "GET" && path == "/watchstate" -> respond(200, watchStateProvider())
             method == "POST" && path == "/watchstate" -> {
                 watchStateMerger(readBody())
@@ -582,6 +590,14 @@ class LanServer(
                 if (minutes != null && minutes in 1..240) {
                     grantHandler(minutes, profileId)
                     respond(200, "granted")
+                } else respond(400, "bad minutes")
+            }
+            method == "POST" && path == "/takeback" -> {
+                val minutes = Regex("minutes=(\\d+)").find(target)?.groupValues?.get(1)?.toIntOrNull()
+                val profileId = Regex("profile=([0-9a-f]{8})").find(target)?.groupValues?.get(1)
+                if (minutes != null && minutes in 1..240) {
+                    takeBackHandler(minutes, profileId)
+                    respond(200, "taken back")
                 } else respond(400, "bad minutes")
             }
             else -> respond(404, "not found")
@@ -816,6 +832,15 @@ object LanClient {
             }.getOrDefault(false)
         }
 
+    suspend fun takeBack(device: PairedDevice, minutes: Int, profileId: String? = null): Boolean =
+        withContext(Dispatchers.IO) {
+            val profileParam = profileId?.let { "&profile=$it" } ?: ""
+            runCatching {
+                request(device, "POST", "/takeback?minutes=$minutes$profileParam", "")
+                    .use { it.isSuccessful }
+            }.getOrDefault(false)
+        }
+
     /** Ask a TV to pair; returns "approved", "pending", or null (unreachable). */
     suspend fun requestPairing(host: String, port: Int, myName: String, myToken: String): String? =
         withContext(Dispatchers.IO) {
@@ -856,9 +881,11 @@ object LanClient {
         }
 
     /** Raw stats JSON from a device, or null when unreachable. */
-    suspend fun stats(device: PairedDevice): String? = withContext(Dispatchers.IO) {
+    /** [profileId] asks for that kid's day; null means whoever the device shows. */
+    suspend fun stats(device: PairedDevice, profileId: String? = null): String? = withContext(Dispatchers.IO) {
+        val profileParam = profileId?.let { "?profile=$it" } ?: ""
         runCatching {
-            request(device, "GET", "/stats", null).use { resp ->
+            request(device, "GET", "/stats$profileParam", null).use { resp ->
                 if (resp.isSuccessful) resp.body?.string() else null
             }
         }.getOrNull()

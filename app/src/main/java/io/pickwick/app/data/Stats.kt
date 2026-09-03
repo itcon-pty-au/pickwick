@@ -107,14 +107,17 @@ object Stats {
         val aiFlagged: List<AiFlagged> = emptyList()
     )
 
-    fun build(context: Context): String {
+    /** [profileId] names the kid asked about; unknown or null falls back to
+     *  the kid this device is showing. */
+    fun build(context: Context, profileId: String? = null): String {
         val app = context.applicationContext
         val config = ConfigStore(app).load()
         // With profiles, report the kid this device is showing right now — the
         // parent's dashboard says whose day it is looking at.
         val activeProfile = config.profiles.takeIf { it.isNotEmpty() }?.let { profiles ->
             val assigned = config.deviceProfiles[PairingStore(app).deviceToken()]
-            profiles.firstOrNull { it.id == assigned }
+            profiles.firstOrNull { it.id == profileId }
+                ?: profiles.firstOrNull { it.id == assigned }
                 ?: profiles.firstOrNull { it.id == ActiveProfileStore(app).activeId() }
                 ?: profiles.first()
         }

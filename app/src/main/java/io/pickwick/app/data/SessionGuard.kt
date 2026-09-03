@@ -44,6 +44,16 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
          */
         fun extendPass(existingUntil: Long, now: Long, minutes: Int): Long =
             maxOf(existingUntil, now) + minutes * 60_000L
+
+        /**
+         * The pass after a parent takes [minutes] back. A pass already lapsed
+         * is left alone (there is nothing to shorten), a live one loses the
+         * minutes but never ends before now — "now" is the cutoff the kid
+         * meets on the next tick, not a debt.
+         */
+        fun shrinkPass(existingUntil: Long, now: Long, minutes: Int): Long =
+            if (existingUntil <= now) existingUntil
+            else maxOf(now, existingUntil - minutes * 60_000L)
     }
 
     // ---- limits config (persisted at whitelist refresh) ----
@@ -129,6 +139,23 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
                 "windowPassUntil",
                 extendPass(prefs.getLong("windowPassUntil", 0), now, minutes)
             )
+            .apply()
+    }
+
+    /**
+     * The undo for [grantExtraMinutes]: today's bonus shrinks (never below
+     * zero — base minutes are the rules' business) and the window pass with
+     * it. Nothing else is restored: a break lock the grant ended is over, and
+     * the sitting it started is the one the kid is in. If the kid has already
+     * watched past the new budget the next tick stops the video — the parent
+     * chose that when they took the time back.
+     */
+    fun takeBackExtraMinutes(minutes: Int) {
+        rolloverIfNewDay()
+        val now = System.currentTimeMillis()
+        prefs.edit()
+            .putLong("bonusMs", (prefs.getLong("bonusMs", 0) - minutes * 60_000L).coerceAtLeast(0))
+            .putLong("windowPassUntil", shrinkPass(prefs.getLong("windowPassUntil", 0), now, minutes))
             .apply()
     }
 

@@ -109,8 +109,15 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     // a grant aimed at their sibling is not their news.
                     if (target == here) KidNotices.post(KidNotices.grant(minutes))
                 },
+                takeBackHandler = { minutes, profileId ->
+                    val here = kidHere(ConfigStore(appContext).load())
+                    val target = profileId ?: here
+                    SessionGuard(appContext, profileNs.suffixFor(target))
+                        .takeBackExtraMinutes(minutes)
+                    if (target == here) KidNotices.post(KidNotices.takeBack(minutes))
+                },
                 pairingStore,
-                statsProvider = { io.pickwick.app.data.Stats.build(appContext) },
+                statsProvider = { profileId -> io.pickwick.app.data.Stats.build(appContext, profileId) },
                 watchStateProvider = { WatchSync.exportJson(appContext) },
                 watchStateMerger = { json ->
                     if (WatchSync.mergeJson(appContext, json)) {

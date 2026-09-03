@@ -63,6 +63,13 @@ fun formatClock(totalSeconds: Long): String {
  */
 val SponsorSegmentGreen = Color(0xFF00C853)
 
+/**
+ * Bonus minutes on the screen-time bar ([TodayTimeBar]). A warm orange next
+ * to the brand teal: a complementary pair, so the "extra" reads as extra
+ * without looking like an alarm — the red is spoken for by watched progress.
+ */
+val BonusTimeOrange = Color(0xFFFFA351)
+
 /** The "newer build available" dot on the settings gear. */
 val UpdateDot = Color(0xFFFF5252)
 

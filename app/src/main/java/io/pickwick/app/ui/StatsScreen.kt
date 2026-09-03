@@ -197,9 +197,10 @@ fun StatsScreen(
             }
             data.budgetTodayMin?.let { budget ->
                 Spacer(Modifier.height(6.dp))
-                LinearProgressIndicator(
-                    progress = { (data.watchedTodayMin.toFloat() / budget).coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxWidth()
+                TodayTimeBlock(
+                    watchedMin = data.watchedTodayMin,
+                    baseMin = budget - data.bonusTodayMin,
+                    bonusMin = data.bonusTodayMin
                 )
             }
             // Without this, "45 of 90" looks wrong to a parent who watched the
@@ -215,11 +216,6 @@ fun StatsScreen(
             data.breakUntil?.let {
                 Text("On a break until $it", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary)
-            }
-            if (data.bonusTodayMin > 0) {
-                Text("Includes ${data.bonusTodayMin} bonus min granted today",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             data.sittingCapMin?.let { cap ->
                 Text(

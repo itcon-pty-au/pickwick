@@ -41,6 +41,11 @@ object KidNotices {
     fun grant(minutes: Int): String =
         "You got $minutes more ${if (minutes == 1) "minute" else "minutes"}! 🎉"
 
+    /** Parent-attributed, like the pause: a countdown that just shrank
+     *  otherwise reads as the device miscounting. */
+    fun takeBack(minutes: Int): String =
+        "A parent took back $minutes ${if (minutes == 1) "minute" else "minutes"} 💛"
+
     /**
      * What a pushed config should tell the kid, or null when nothing about
      * their screen time moved — a push that only adds a channel or blocks a

@@ -32,6 +32,7 @@ import io.pickwick.app.data.TimeWindow
 import io.pickwick.app.data.TimeWindows
 import io.pickwick.app.data.WEEKDAYS
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 // --- Screen time ------------------------------------------------------------
 
@@ -684,6 +685,36 @@ internal fun GrantTimeSection(
     var targetKidId by remember(profiles.map { it.id }) {
         mutableStateOf(profiles.firstOrNull()?.id)
     }
+    val kidId = if (profiles.isEmpty()) null else targetKidId
+
+    // Today's numbers come from a paired device, not this phone: the phone
+    // never plays the kid's videos, so its own counter says nothing. Each
+    // device keeps its own day, so this is one device's view — the first
+    // that answers — named under the bar. Re-asked after every Grant / Take
+    // back so the bar moves with the tap, and every 15 s while open.
+    var today by remember { mutableStateOf<io.pickwick.app.data.Stats.Payload?>(null) }
+    var todayFrom by remember { mutableStateOf<String?>(null) }
+    var unreachable by remember { mutableStateOf(false) }
+    var reloadTick by remember { mutableIntStateOf(0) }
+    LaunchedEffect(kidId, reloadTick) {
+        val devices = withContext(kotlinx.coroutines.Dispatchers.IO) { pairingStore.paired() }
+        if (devices.isEmpty()) return@LaunchedEffect
+        while (true) {
+            var got = false
+            for (d in devices) {
+                val json = LanClient.stats(d, kidId) ?: continue
+                val parsed = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    io.pickwick.app.data.Stats.parse(json)
+                } ?: continue
+                today = parsed
+                todayFrom = d.name
+                got = true
+                break
+            }
+            unreachable = !got
+            kotlinx.coroutines.delay(15_000)
+        }
+    }
 
     // Granting to a child, not to a device: the minutes land on that kid's
     // guard here and on every paired device.
@@ -692,7 +723,40 @@ internal fun GrantTimeSection(
         Spacer(Modifier.height(4.dp))
     }
 
-    // Same stepper styling as the screen-time rows; Grant applies the amount.
+    today?.let { t ->
+        val budget = t.budgetTodayMin
+        if (budget != null) {
+            Text(
+                "${t.watchedTodayMin} of $budget min " +
+                    (if (t.multipliersActive) "counted" else "watched") +
+                    (todayFrom?.let { " on $it" } ?: ""),
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Spacer(Modifier.height(6.dp))
+            TodayTimeBlock(
+                watchedMin = t.watchedTodayMin,
+                baseMin = budget - t.bonusTodayMin,
+                bonusMin = t.bonusTodayMin
+            )
+        } else {
+            // No minute budget: a grant here only buys time past a blocked
+            // window, and there is no bar to draw for that.
+            Text(
+                "No daily limit set — bonus minutes only open blocked times",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (unreachable) Text(
+            "Last seen from $todayFrom — not reachable right now",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(8.dp))
+    }
+
+    // Same stepper styling as the screen-time rows; Grant applies the amount,
+    // Take back removes it again (the undo for a tap too many).
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 2.dp)) {
         Text("Bonus watch time", modifier = Modifier.weight(1f))
         CompactButton(
@@ -710,26 +774,48 @@ internal fun GrantTimeSection(
         CompactButton(
             onClick = { minutes = stepUp(minutes, 5).coerceAtMost(180) }
         ) { Text("+") }
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.End,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        val kidName = profiles.firstOrNull { it.id == kidId }?.name
+        val who = kidName?.let { " for $it" } ?: ""
+        // Both go to the phone's own guard for this kid first, then to every
+        // paired device; the receipt counts who heard.
+        fun apply(verb: String, local: (SessionGuard) -> Unit,
+                  remote: suspend (io.pickwick.app.data.PairedDevice) -> Boolean) {
+            val amount = minutes
+            val suffix = io.pickwick.app.data.ProfileNamespace(context.applicationContext)
+                .suffixFor(kidId)
+            local(SessionGuard(context.applicationContext, suffix))
+            val devices = pairingStore.paired()
+            if (devices.isEmpty()) {
+                granted = GrantReceipt("$verb $amount min$who 🎉")
+            } else {
+                scope.launch {
+                    var ok = 0
+                    devices.forEach { if (remote(it)) ok++ }
+                    granted = GrantReceipt("$verb $amount min$who here + $ok device(s)")
+                    reloadTick++
+                }
+            }
+        }
+        OutlinedButton(
+            modifier = Modifier.tvFocusHighlight(),
+            onClick = {
+                apply("Took back", { it.takeBackExtraMinutes(minutes) }) {
+                    LanClient.takeBack(it, minutes, kidId)
+                }
+            }
+        ) { Text("Take back") }
         Spacer(Modifier.width(8.dp))
         Button(
             modifier = Modifier.tvFocusHighlight(),
             onClick = {
-                val amount = minutes
-                val kidId = if (profiles.isEmpty()) null else targetKidId
-                val kidName = profiles.firstOrNull { it.id == kidId }?.name
-                val suffix = io.pickwick.app.data.ProfileNamespace(context.applicationContext)
-                    .suffixFor(kidId)
-                SessionGuard(context.applicationContext, suffix).grantExtraMinutes(amount)
-                val devices = pairingStore.paired()
-                val who = kidName?.let { " for $it" } ?: ""
-                if (devices.isEmpty()) {
-                    granted = GrantReceipt("Granted $amount extra minutes$who 🎉")
-                } else {
-                    scope.launch {
-                        var ok = 0
-                        devices.forEach { if (LanClient.grant(it, amount, kidId)) ok++ }
-                        granted = GrantReceipt("Granted $amount min$who here + $ok device(s) 🎉")
-                    }
+                apply("Granted", { it.grantExtraMinutes(minutes) }) {
+                    LanClient.grant(it, minutes, kidId)
                 }
             }
         ) { Text("Grant") }
