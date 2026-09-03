@@ -754,6 +754,17 @@ internal fun GrantTimeSection(
         )
         Spacer(Modifier.height(8.dp))
     }
+    // Nothing ever fetched: say so, or the section looks like it has no
+    // bar at all. A TV in standby (or one just reinstalled and not yet
+    // opened) is the usual reason.
+    if (today == null && unreachable) {
+        Text(
+            "Can't reach a paired device for today's numbers — is the TV on?",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(8.dp))
+    }
 
     // Same stepper styling as the screen-time rows; Grant applies the amount,
     // Take back removes it again (the undo for a tap too many).
