@@ -428,6 +428,7 @@ private fun AdminScreen(
             ai.childAge != baseline.ai.childAge ||
             ai.model != baseline.ai.model ||
             ai.baseUrl != baseline.ai.baseUrl ||
+            ai.reviewIncompleteChecks != baseline.ai.reviewIncompleteChecks ||
             io.pickwick.app.data.screeningJudgmentChanged(baseline.profiles, profiles)
         val finalAi = if (judgingChanged) ai.copy(rulesVersion = baseline.ai.rulesVersion + 1) else ai
         // A removed kid must not linger: entries owned only by them fall back

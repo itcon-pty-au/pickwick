@@ -13,6 +13,11 @@ import kotlinx.coroutines.withTimeoutOrNull
  */
 object DeepCheck {
 
+    /** A regular REVIEW verdict makes the existing parent queue and sync apply. */
+    internal fun incompleteResult(ai: AiConfig, videoId: String, reason: String): AiScreener.Result? =
+        if (ai.reviewIncompleteChecks) AiScreener.Result(videoId, AiScreener.Verdict.REVIEW, reason)
+        else null
+
     /** The stored deep verdict still valid under the current rules and channel
      *  note, or null. A title-only entry doesn't count — that's exactly what
      *  the deep pass upgrades — and neither does an ALLOW/REVIEW judged under
@@ -29,9 +34,9 @@ object DeepCheck {
         }
 
     /**
-     * Runs the deep check and persists the verdict. Null on failure or
-     * [timeoutMs] — callers fail open (play this once / pass to the parent)
-     * and nothing is cached, so the next attempt tries again.
+     * Runs the deep check and persists the verdict. Incomplete checks are held
+     * as REVIEW when configured. Otherwise failures return null without caching,
+     * so callers allow this attempt and the next attempt tries again.
      */
     suspend fun runAndStore(
         ai: AiConfig,
@@ -45,15 +50,24 @@ object DeepCheck {
         channelNote: String? = null
     ): ScreeningStore.Entry? = withContext(Dispatchers.IO) {
         val started = System.currentTimeMillis()
-        // Fail-open is deliberate, but it must never be *silent* — a run of
-        // timeouts reads as "screening stopped working" unless the log says
-        // exactly what happened to each check.
+        val fallbackAction = if (ai.reviewIncompleteChecks) "holding for parent review"
+            else "allowing unchecked this once"
         var timedOut = false
         var transcriptChars = -1
-        val result = try {
+        val checked = try {
             withTimeoutOrNull(timeoutMs) {
+                if (pb.description.isBlank()) {
+                    incompleteResult(ai, videoId, "Description unavailable; parent review required")?.let {
+                        return@withTimeoutOrNull it
+                    }
+                }
                 val transcript = Captions.pickEnglish(pb.subtitles)?.let { Captions.fetchText(it) }
                 transcriptChars = transcript?.length ?: -1
+                if (transcript.isNullOrBlank()) {
+                    incompleteResult(ai, videoId, "English subtitles unavailable; parent review required")?.let {
+                        return@withTimeoutOrNull it
+                    }
+                }
                 AiScreener.deepScreen(
                     ai, videoId, title, channel, pb.description, pb.tags, transcript,
                     profiles, channelNote
@@ -62,20 +76,24 @@ object DeepCheck {
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
-            android.util.Log.w("Pickwick", "Deep check $videoId failed — allowing unchecked this once", e)
+            android.util.Log.w("Pickwick", "Deep check $videoId failed — $fallbackAction", e)
             null
         }
-        if (result == null) {
+        if (checked == null) {
             if (timedOut) {
                 android.util.Log.w(
                     "Pickwick",
                     "Deep check $videoId timed out after ${timeoutMs}ms " +
                         "(transcript ${if (transcriptChars < 0) "not fetched" else "$transcriptChars chars"}) " +
-                        "— allowing unchecked this once"
+                        "— $fallbackAction"
                 )
             }
-            return@withContext null
         }
+        val result = checked ?: incompleteResult(
+            ai, videoId,
+            if (timedOut) "Pre-play check timed out; parent review required"
+            else "Pre-play check failed; parent review required"
+        ) ?: return@withContext null
         android.util.Log.i(
             "Pickwick",
             "Deep check $videoId: ${result.verdict} (\"${result.reason}\") " +

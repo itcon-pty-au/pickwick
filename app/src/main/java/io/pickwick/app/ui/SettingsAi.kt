@@ -76,9 +76,9 @@ internal fun AiScreeningSection(
 
     Text(
         "New videos on allowed channels are checked against your rules by an AI " +
-            "before the kid can see them. Only video titles and channel names are " +
-            "sent — never watch history. Anything blocked appears under each " +
-            "device's Stats for your review.",
+            "before the kid can see them. Before playback, a deeper check also reads " +
+            "the description, tags and English subtitles. Watch history is never sent. " +
+            "Videos needing a decision appear under Waiting for your OK.",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )
@@ -93,6 +93,35 @@ internal fun AiScreeningSection(
         )
     }
     if (!ai.enabled) return
+
+    Text("When the pre-play check is incomplete", style = MaterialTheme.typography.titleSmall)
+    Text(
+        "If the description or English subtitles are unavailable, or the check fails or times out.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        RadioButton(
+            selected = !ai.reviewIncompleteChecks,
+            onClick = { onChanged(ai.copy(reviewIncompleteChecks = false)) },
+            modifier = Modifier.tvFocusHighlight()
+        )
+        Text("Allow playback (default)")
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        RadioButton(
+            selected = ai.reviewIncompleteChecks,
+            onClick = { onChanged(ai.copy(reviewIncompleteChecks = true)) },
+            modifier = Modifier.tvFocusHighlight()
+        )
+        Text("Block playback and ask for parent review")
+    }
+    Text(
+        "Parent review holds the video in Waiting for your OK. With Allow playback, " +
+            "the AI still checks available information and can flag a rule violation.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
 
     androidx.compose.foundation.layout.FlowRow(
         horizontalArrangement = Arrangement.spacedBy(6.dp)

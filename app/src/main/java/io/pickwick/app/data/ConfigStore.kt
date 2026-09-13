@@ -179,6 +179,7 @@ class ConfigStore(context: Context) {
                         w.ai.rules, w.ai.childAge, w.ai.rulesVersion
                     ).joinToString("|")
                 )
+                if (w.ai.reviewIncompleteChecks) append(";AI_REVIEW_INCOMPLETE:true")
                 append(";AA:"); append(w.aiAllowedVideoIds.sorted().joinToString(","))
                 // Everything profile-shaped is append-only-when-present, so a
                 // family that never adds a second kid keeps its pre-profile hash.
@@ -276,6 +277,7 @@ class ConfigStore(context: Context) {
                 put("rules", w.ai.rules)
                 w.ai.childAge?.let { put("childAge", it) }
                 put("rulesVersion", w.ai.rulesVersion)
+                put("reviewIncompleteChecks", w.ai.reviewIncompleteChecks)
             })
             root.put("aiAllowed", JSONArray(w.aiAllowedVideoIds.toList()))
             // Profile fields are written only when used, so a single-kid family's
@@ -496,7 +498,8 @@ class ConfigStore(context: Context) {
                 apiKey = ao.optString("apiKey"),
                 rules = ao.optString("rules"),
                 childAge = if (ao.has("childAge")) ao.getInt("childAge") else null,
-                rulesVersion = ao.optInt("rulesVersion", 0)
+                rulesVersion = ao.optInt("rulesVersion", 0),
+                reviewIncompleteChecks = ao.optBoolean("reviewIncompleteChecks", false)
             )
             val aiAllowed = mutableSetOf<String>()
             val aiAllowedArr = root.optJSONArray("aiAllowed") ?: JSONArray()

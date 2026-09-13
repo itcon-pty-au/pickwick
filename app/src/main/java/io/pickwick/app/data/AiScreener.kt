@@ -429,9 +429,8 @@ object AiScreener {
 
     /**
      * One-video deep screening. Throws on network/HTTP/parse failure — the
-     * player treats that as "couldn't check" and plays this once rather than
-     * punishing the kid for an outage; nothing is cached, so the next press
-     * tries again.
+     * deep-check caller applies the parent's incomplete-check policy: allow
+     * this attempt without caching, or hold it for parent review.
      */
     suspend fun deepScreen(
         cfg: AiConfig,

@@ -15,6 +15,17 @@ import org.junit.Test
 /** Screen-time multiplier: serialization, fingerprint, and export behavior. */
 class ConfigStoreJsonTest {
 
+    @Test
+    fun `incomplete check policy defaults to allow and syncs when changed`() {
+        val plain = Whitelist(emptyList(), emptySet())
+        val json = org.json.JSONObject(ConfigStore.toJson(plain))
+        json.getJSONObject("ai").remove("reviewIncompleteChecks")
+        assertFalse(ConfigStore.fromJson(json.toString()).ai.reviewIncompleteChecks)
+        val held = plain.copy(ai = plain.ai.copy(reviewIncompleteChecks = true))
+        assertTrue(ConfigStore.fromJson(ConfigStore.toJson(held)).ai.reviewIncompleteChecks)
+        assertNotEquals(ConfigStore.fingerprint(plain), ConfigStore.fingerprint(held))
+    }
+
     private fun entry(id: String, percent: Int = 100) = WhitelistEntry(
         id, "https://www.youtube.com/channel/$id", "Channel $id",
         SourceKind.CHANNEL, timeMultiplierPercent = percent

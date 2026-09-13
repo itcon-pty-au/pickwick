@@ -138,6 +138,12 @@ is nothing to press at the end.
    your OK under *Waiting for your OK*; anything it blocks is listed under
    *Blocked videos*, where Allow overrules it.
 
+   **When the pre-play check is incomplete** defaults to **Allow playback**:
+   the AI uses whatever information is available, and failures allow that attempt.
+   Choose **Block playback and ask for parent review** to hold videos in
+   *Waiting for your OK* when the description or English subtitles are missing,
+   or the check fails or times out.
+
    Need different rules for one channel? Tap 📝 next to it under *Channels &
    playlists* and write them there ("only the engineering builds — no prank
    videos"). They apply to that channel only, on top of the family rules.

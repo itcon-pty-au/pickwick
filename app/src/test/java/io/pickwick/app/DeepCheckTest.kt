@@ -21,6 +21,26 @@ import java.io.File
  */
 class DeepCheckTest {
 
+    @Test
+    fun `incomplete checks can be held for all kids and synced to parent review`() {
+        val ai = io.pickwick.app.data.AiConfig(reviewIncompleteChecks = true)
+        val result = io.pickwick.app.data.DeepCheck.incompleteResult(ai, "vid", "Check unavailable")!!
+        val store = ScreeningStore(File(tmp.root, "incomplete.json"))
+        store.putAll(mapOf("vid" to entry(true, result.verdict).copy(reason = result.reason)))
+        val parent = ScreeningStore(File(tmp.root, "parent.json"))
+        parent.importJson(store.exportJson(1), 1)
+        assertEquals("vid", parent.flagged(1).single().first)
+        assertEquals(AiScreener.Verdict.REVIEW, parent.get("vid")!!.verdictFor("kid"))
+        assertEquals(null, io.pickwick.app.data.DeepCheck.cached(parent, "vid", 2, 0))
+    }
+
+    @Test
+    fun `default incomplete policy allows retry without a fallback verdict`() {
+        assertEquals(null, io.pickwick.app.data.DeepCheck.incompleteResult(
+            io.pickwick.app.data.AiConfig(), "vid", "Check failed"
+        ))
+    }
+
     @get:Rule
     val tmp = TemporaryFolder()
 

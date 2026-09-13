@@ -158,7 +158,9 @@ data class AiConfig(
     val rules: String = "",
     val childAge: Int? = null,
     /** Bumped when rules/age/model change — cached verdicts for older versions are re-screened. */
-    val rulesVersion: Int = 0
+    val rulesVersion: Int = 0,
+    /** Hold incomplete pre-play checks for a parent instead of allowing playback. */
+    val reviewIncompleteChecks: Boolean = false
 )
 
 data class Whitelist(

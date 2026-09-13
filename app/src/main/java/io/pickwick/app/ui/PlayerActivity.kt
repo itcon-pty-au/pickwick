@@ -645,10 +645,9 @@ class PlayerActivity : ComponentActivity() {
      * Whether the pre-play deep check refuses this video for the launching kid.
      * One AI call per video per rules version, cached in [screeningStore] like
      * a batch verdict (with the deep flag, so the cheap title pass never
-     * overwrites it) — after that, this answers from disk. Fail-open on
-     * purpose: an unreachable or erroring provider plays the video unchecked
-     * this once and caches nothing, so the next press tries again — the kid is
-     * not punished for an outage.
+     * overwrites it) — after that, this answers from disk. Incomplete checks
+     * follow the parent's setting: allow this attempt without caching a failure,
+     * or persist REVIEW and hold playback until the parent decides.
      */
     private suspend fun deepCheckBlocks(
         pageUrl: String,
@@ -681,7 +680,7 @@ class PlayerActivity : ComponentActivity() {
         deepChecking.value = true
         val entry = try {
             // Bounded overall: past ~20s the kid is staring at a spinner and an
-            // answer that slow is treated like an outage (play this once).
+            // answer that slow follows the parent's incomplete-check setting.
             io.pickwick.app.data.DeepCheck.runAndStore(
                 ai, cfg.profiles, screeningStore, id, pb.title, currentChannel,
                 pb, timeoutMs = 20_000, channelNote = note
@@ -689,7 +688,7 @@ class PlayerActivity : ComponentActivity() {
         } finally {
             deepChecking.value = false
         }
-        // Null = failure/timeout: play unchecked this once, nothing cached.
+        // Null = allow-on-failure policy. The review policy returns a stored REVIEW.
         entry != null && entry.verdictFor(gateProfileId) != AiScreener.Verdict.ALLOW
     }
 
