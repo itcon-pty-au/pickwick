@@ -97,23 +97,28 @@ If a kid has their own phone or tablet, install Pickwick on it the same way.
 Everything from here is done on the phone, in **Pickwick → ⚙ →** (it asks
 for your fingerprint, or a parent PIN you set on first use).
 
-Settings opens on a short list of six pages — *Kids*, *Channels & playlists*,
+Settings opens on a short list of six pages — *Kids*, *Content Sources*,
 *Content screening*, *Devices*, *Playback*, *Backup & app*. Tap one to open it,
-**‹ Back** to return. **There is no Save button:** every change is kept as you
-make it and sent to the TV a moment later.
+**‹ Back** to return. Inline changes save automatically and are sent to the TV.
+Connection, catalog and content-group dialogs have their own Save action.
 
 ---
 
 ## Part 4 — First-time setup on the phone
 
-Do these in order. Each one is saved and sent to the TV on its own — there
-is nothing to press at the end.
+Do these in order. After saving any open dialog, there is no separate final
+Save button for the settings page.
 
-1. **Add channels** — **Channels & playlists**: search a channel your kid
+1. **Add channels** — **Content Sources > YouTube**: search a channel your kid
    loves and tap **Add**. Repeat. (Or browse the in-app **Suggested
    channels** directory for ready-vetted picks, or import an exported
    `whitelist.txt` file — see the [whitelists folder](../whitelists/) for
-   themed lists in that format.)
+   themed lists in that format.) For your own collection, use **Content Sources >
+   Network shares**: save the SMB2/3 connection once, then add catalog folders.
+   A show folder can contain season folders with episodes inside. Choose everyone
+   or selected children for each source. Follow the [network setup guide](NETWORK_CATALOGS.md)
+   for router USB drives, computers and NAS devices. No internet is needed for
+   network playback, but the child device must be able to reach the share.
 2. **Name your kid** — **Kids** already lists one child called *Kid*. Tap
    it to open their page and give it their real name, age, a color and an
    avatar. The age matters if you use AI screening later. Use **Add a kid**
@@ -125,7 +130,10 @@ is nothing to press at the end.
    clip-length uploads). Under *Blocked times*, add a **Bedtime** or
    **School hours** and adjust it. Nothing is set until you set it, so a
    kid with no rules can watch freely. **Copy rules from** a sibling saves
-   typing.
+   typing. To reserve only part of a session for a show, open **Content Sources >
+   Content groups**. Combine its YouTube sources and network catalogs and set a
+   per-child minutes-per-session cap. Group usage is counted separately on each
+   device. See [content-group rules and examples](CONTENT_GROUPS.md).
 4. **Optional — lock a profile**: the kid's page → *Profile lock* →
    **Set code**. The code is four presses of the remote's arrows/OK button,
    entered blind (only dots show on the TV) — so a younger sibling can't
@@ -144,8 +152,8 @@ is nothing to press at the end.
    *Waiting for your OK* when the description or English subtitles are missing,
    or the check fails or times out.
 
-   Need different rules for one channel? Tap 📝 next to it under *Channels &
-   playlists* and write them there ("only the engineering builds — no prank
+   Need different rules for one channel? Tap 📝 next to it under *Content Sources >
+   YouTube* and write them there ("only the engineering builds — no prank
    videos"). They apply to that channel only, on top of the family rules.
 
    Don't have a key yet? Pick one provider and get a key from it — you only

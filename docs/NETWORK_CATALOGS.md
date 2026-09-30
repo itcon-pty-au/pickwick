@@ -35,6 +35,8 @@ awake for playback. Internet access is not required for SMB playback or time lim
 
 ## Playback and availability
 
+For step-by-step group setup and examples, see [Content groups](CONTENT_GROUPS.md).
+
 Content Sources > Content groups combines YouTube channels/playlists and network
 catalogs under a per-child minutes-per-session cap. Unset means Unlimited; zero
 blocks that group for the session. Usage counts real playing time, including
@@ -58,7 +60,14 @@ devices. Updating every playback device is necessary for enforcement.
 - Folder listings and thumbnails are stored locally in app storage. Recent listings
   reopen without network access for 15 minutes; older listings display immediately
   while refreshing. The Refresh button checks the drive immediately. Metadata and
-  thumbnails are read incrementally on a network refresh; no full download is required.
+  thumbnails are read incrementally, including when reopening an unfinished cached
+  listing; no full download is required. Reading video details shows the number of
+  files processed. Completed results are retained when leaving the folder.
+- Duration and a small JPEG thumbnail are extracted from each video. Thumbnail
+  selection starts a quarter of the way in to avoid common intros, with later
+  attempts for near-black frames. It does not guarantee unique artwork for every
+  episode. Extraction pauses while the browser is in the background, including
+  during playback, and resumes on return.
 - Catalogs and folders use channel-style cards, with cover art from cached videos
   in previously visited folders. Episodes share the online video-card layout.
 - A disconnected drive retains cached listings and history. Retry reopens the
@@ -72,6 +81,24 @@ devices. Updating every playback device is necessary for enforcement.
   share enumeration, guest networks or hostname lookup do not.
 - A directory is limited to 10,000 entries. Filesystem links/reparse points are
   excluded. Removing a catalog never removes files from the server.
+
+## Buffering and troubleshooting
+
+Playback uses a bounded 1 MB SMB read-ahead buffer to combine small decoder reads.
+The player also buffers ahead within its memory limit. Network videos are not
+transcoded: a high-bitrate file still needs enough sustained network throughput,
+and its video/audio codecs must be supported by the phone or TV.
+
+- If the drive is unavailable, check that it is awake and the player can reach the
+  saved server address on the home network. Cached posters do not mean the video
+  itself is downloaded.
+- If a share is not discovered, enter its address and exact share name manually.
+  Discovery is optional; SMB2/3 support is required.
+- If a video buffers, compare the same file on another player/device on the same
+  network to distinguish a file or share problem from a device-specific one.
+- Audio and subtitles must be embedded in the file to appear in the track menu.
+- Approving a folder includes future files added beneath it. Review what is stored
+  there: network files do not pass through YouTube AI screening.
 
 ## Credentials and sync
 

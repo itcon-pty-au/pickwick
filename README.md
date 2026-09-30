@@ -11,7 +11,7 @@
 </p>
 
 A kid-safe, whitelist-only video player for Android phones, tablets and Google TV —
-**parents choose exactly which YouTube channels exist; nothing else is reachable.**
+**parents choose the YouTube channels, playlists and home-network video folders kids can access.**
 No ads, no Shorts, no comments, no recommendations, no rabbit holes, no accounts, no cloud.
 
 Open source (GPL-3.0), sideloaded — not distributed via app stores.
@@ -40,6 +40,10 @@ with no ads.
   remote's D-pad/OK buttons, entered blind with only dots on screen — so a
   younger sibling can't borrow an older kid's channels or clock.
 - A grid of **parent-approved channels and playlists**, ordered by their own favourites
+- **Network shares** appears when a parent adds a collection: browse shows,
+  season folders and episodes from a router USB drive, computer or NAS.
+  Listings and thumbnails are cached locally; playback needs access to the home share,
+  but not the internet. Network episodes also work with Favorites, Watch later and Up next.
 - **🎲 Surprise me** — a random mix drawn from allowed channels
 - **❤️ Favorites** and **🕒 Watch later** — two lists they fill by holding a
   tile (long-press / hold OK on the remote): one for the videos they love,
@@ -78,10 +82,11 @@ Fully D-pad navigable on TV (colored focus glow, remote shortcuts: OK = pause,
 ## What the parent controls (all from their phone)
 
 Open settings (fingerprint-gated, with a 4-digit parent PIN as fallback) on the
-phone. It opens on a short list of six pages — Kids, Channels & playlists,
+phone. It opens on a short list of six pages — Kids, Content Sources,
 Content screening, Devices, Playback, Backup & app — each with its own screen.
-**There is no Save button:** every change is kept as you make it and reaches the
-kids' devices on its own, catching up later with any device that was asleep.
+Inline changes save automatically; connection, catalog and content-group dialogs
+have their own Save action. Saved changes reach the kids' devices on their own,
+catching up later with any device that was asleep.
 
 - **Kids** — a page per child: name, age, color, avatar, optional lock code,
   their own rules and their own bonus-time and pause controls, all in one
@@ -91,7 +96,7 @@ kids' devices on its own, catching up later with any device that was asleep.
   screen. Each device can be **dedicated to one kid** (their phone) or stay
   shared (the TV) — shared devices re-ask per sitting, never between episodes.
   Watch history, saved lists, NEW badges and stats are all per kid.
-- **Channels & playlists** — search YouTube by name and tap Add; or paste any
+- **Content Sources > YouTube** — search YouTube by name and tap Add; or paste any
   channel/playlist link. Pick from the built-in **suggested channels directory**
   (community-curated, multilingual), import a whitelist from a file, and
   **export/share** your own list back out (save to file or share sheet) — or
@@ -103,6 +108,16 @@ kids' devices on its own, catching up later with any device that was asleep.
   Each source has a **screen-time multiplier chip** — tap to cycle
   1x → 1.25x → 1.5x → 0.75x → 0.5x → 0.25x → FREE (long-press resets) — so
   educational channels can cost less (or nothing) and junk can cost extra.
+- **Content Sources > Network shares** — save an SMB2/3 connection once, then
+  add catalog folders beneath it without entering credentials again. Assign each
+  catalog to everyone or selected children, with its own time multiplier.
+  [Network setup and compatibility](docs/NETWORK_CATALOGS.md).
+- **Content Sources > Content groups** — group YouTube channels/playlists and
+  network catalogs under one per-child, per-session allowance. For example,
+  allow 10 minutes of a favourite show within a 30-minute session. Group limits
+  count actual playing time, even for FREE sources; reaching one leaves other
+  content available if the child's overall rules allow it. Usage is local to each
+  device. [Content-group setup and rules](docs/CONTENT_GROUPS.md).
 - **Rules, on each kid's page** — session length, sessions per
   weekday/weekend, break length, and a **minimum video length**: set it and
   anything shorter vanishes from that kid's channels, Surprise, search and
@@ -201,9 +216,7 @@ multiplier  = per-channel drain rate (FREE, 0.25x–1.5x): scales budget & sitti
 Only actual playback consumes time. An idle gap of a break-length starts a fresh
 sitting with nothing lost. Everything resets at midnight. No rules set → no limits.
 
-## Quality
-
-### Network video collections
+## Network Video Collections
 
 Parents can add SMB2/3 folders under **Settings > Content Sources > Network shares**. Children
 browse shows, seasons and episodes from **Network shares** on the home screen.
@@ -211,12 +224,25 @@ Videos stream directly from the home share and use the existing screen-time
 rules, per-catalog time rates and per-child access. See
 [network catalog setup and compatibility](docs/NETWORK_CATALOGS.md).
 
-Thumbnail resolution and playback quality adapt to the device and connection:
+Save a connection once and add separate catalogs for each collection. Folder-only
+views use the homepage channel-card size; episode views use larger video cards and
+focus the first video on TV. Embedded audio and subtitle tracks are selectable.
+Thumbnail generation resumes after leaving a folder, skips near-black frames and
+pauses during playback. SMB read-ahead reduces small network requests.
+
+## Quality
+
+For YouTube, thumbnail resolution and playback quality adapt to the device and connection:
 up to 1080p on a TV with fast Wi-Fi (video+audio streams merged in ExoPlayer),
 degrading gracefully to lighter streams on weak links. Streams are fetched in
 ranged chunks the way official clients do — defeating server-side throttling —
 with a five-minute read-ahead buffer, so a Wi-Fi dip drains the buffer instead
 of stalling playback.
+
+Network videos play the original file without transcoding or automatic quality
+changes. Supported formats depend on the playback device's codecs, and sustained
+playback depends on the share and local network. Content-group time remaining is
+shown with the player controls, not permanently over the video.
 
 ## Installing
 

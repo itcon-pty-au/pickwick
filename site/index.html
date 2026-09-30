@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pickwick — kid-safe, whitelist-only video player for Android & Google TV</title>
-<meta name="description" content="Pickwick is a free, open-source video player for kids. Parents choose exactly which YouTube channels exist — no ads, no Shorts, no recommendations, no accounts, no cloud.">
+<meta name="description" content="Pickwick is a free, open-source video player for kids. Choose YouTube channels and home-network video collections, with per-child screen time and content-group limits. No ads or accounts.">
 <style>
   :root {
     /* Pickwick brand teals — see app Theme.kt (#00695C logo, #4DB6AC primary) */
@@ -230,6 +230,8 @@
   <a href="gallery.html">🖼️ Screenshots</a>
   <a href="directory.html">📺 Channel directory</a>
   <a href="https://github.com/itcon-pty-au/pickwick/blob/main/docs/SETUP.md">📖 Setup guide</a>
+  <a href="https://github.com/itcon-pty-au/pickwick/blob/main/docs/NETWORK_CATALOGS.md">Network shares guide</a>
+  <a href="https://github.com/itcon-pty-au/pickwick/blob/main/docs/CONTENT_GROUPS.md">Content groups guide</a>
   <a href="donate.html">❤️ Donate</a>
   <a href="contact.html">✉️ Contact admin</a>
   <a href="https://github.com/itcon-pty-au/pickwick">🐙 GitHub</a>
@@ -242,7 +244,7 @@
   <h1>Pickwick<span class="beta">Beta</span></h1>
   <p class="tagline">
     A kid-safe, whitelist-only video player for Android phones, tablets and Google&nbsp;TV —
-    <strong>parents choose exactly which YouTube channels exist; nothing else is reachable.</strong>
+    <strong>parents choose the YouTube channels, playlists and home-network video folders kids can access.</strong>
   </p>
   <div class="nots">
     <span>No ads</span><span>No Shorts</span><span>No comments</span>
@@ -267,15 +269,17 @@
         <li><strong>"Who's watching?"</strong> — each kid gets their own profile
             (color + avatar), with an optional <strong>secret remote-button
             code</strong> so siblings can't borrow each other's</li>
-        <li>A grid of <strong>parent-approved channels</strong> — and nothing else</li>
+        <li>A grid of <strong>parent-approved channels and collections</strong></li>
+        <li><strong>Network shares</strong> &mdash; shows, seasons and episodes from your
+            router USB drive, computer or NAS, with locally cached posters and listings</li>
         <li><strong>🎲 Surprise me</strong>, <strong>❤️ Favorites</strong> and <strong>🕒 Watch later</strong> — per kid</li>
         <li><strong>Keep watching</strong> across the family's devices</li>
         <li><strong>🔎 Search</strong> — by name, but only <em>inside</em> the allowed channels</li>
         <li><strong>📚 Up next queue</strong> — hold a poster to queue it, save it, or ask for an offline copy</li>
         <li><strong>🎧 Listen mode</strong> — screen-off audio for audiobooks &amp; music, if a parent enables it</li>
         <li><strong>📥 Offline downloads</strong> — kid asks, parent approves; works with no Wi-Fi</li>
-        <li>Fullscreen player with no ads and nothing to escape into — subtitles on demand,
-            sponsor segments skipped automatically</li>
+        <li>Fullscreen player with subtitles and audio tracks on demand;
+            network files support embedded tracks, and YouTube sponsor segments are skipped automatically</li>
         <li><strong>NEW badges</strong> when an allowed channel has fresh uploads</li>
         <li>Gentle time warnings, friendly break &amp; bedtime screens</li>
         <li>Fully D-pad navigable on TV</li>
@@ -287,10 +291,17 @@
         <li><strong>Kids</strong> — one profile per child; one shared channel list
             with <strong>per-kid switches</strong>, per-kid screen time, and
             devices dedicated to a kid or shared</li>
-        <li><strong>Channels &amp; playlists</strong> — search, add, browse the
-            <a href="directory.html">community directory</a>, or import &amp; share whitelists</li>
+        <li><strong>Content Sources</strong> &mdash; manage YouTube and network shares
+            together, with access for everyone or selected children. Browse the
+            <a href="directory.html">YouTube community directory</a>, or import &amp; share whitelists</li>
+        <li><strong>Network libraries</strong> &mdash; save an SMB2/3 connection once,
+            then add catalog folders with their own time rates. No media server needed;
+            playback needs your home share, not the internet</li>
+        <li><strong>Content groups</strong> &mdash; limit a show or collection to, say,
+            10 minutes of a 30-minute session. Combine YouTube sources and network
+            catalogs, with a separate cap for each child. Usage is counted per device</li>
         <li><strong>Discover with AI</strong> — describe what you want, get verified channel suggestions</li>
-        <li><strong>AI content screening</strong> <em>(optional)</em> — your house rules, enforced on
+        <li><strong>AI content screening</strong> <em>(optional, YouTube only)</em> — your house rules, enforced on
             new videos with <strong>a verdict per kid, by age</strong>, plus a
             <strong>deep check</strong> of the description, tags and transcript before a video
             first plays; bring your own key or local model</li>
@@ -319,7 +330,7 @@
       </div>
       <div class="step">
         <div class="num">3</div>
-        <p><strong>Add channels &amp; kids</strong><br>curate from the couch; the TV syncs instantly</p>
+        <p><strong>Add sources &amp; kids</strong><br>choose YouTube or home collections; settings sync to the TV</p>
       </div>
     </div>
   </div>
