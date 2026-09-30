@@ -515,7 +515,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                     PlayerActivity.EXTRA_QUEUE_PERCENTS,
                                     queuePercents(
                                         items.map { it.video },
-                                        vm.state.value.channels
+                                        vm.state.value.channels,
+                                        vm.state.value.networkTimePercents
                                     ).toIntArray()
                                 )
                                 intent.putExtra(
@@ -532,6 +533,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         val s = vm.state.value
                         val screen = s.screen
                         val intent = Intent(this, PlayerActivity::class.java)
+                        if (screen is Screen.ChannelVideos) intent.putExtra(PlayerActivity.EXTRA_SOURCE_URL, screen.source.url)
+                        if (screen is Screen.WatchedVideos) intent.putExtra(PlayerActivity.EXTRA_SOURCE_URL, screen.source.url)
                         // Playlist sources auto-advance: hand the player the visible queue.
                         if (screen is Screen.ChannelVideos && screen.source.kind == SourceKind.PLAYLIST) {
                             intent.putStringArrayListExtra(
@@ -558,9 +561,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         // the video's channel name, defaulting to normal speed.
                         val timePercent = when (screen) {
                             is Screen.ChannelVideos -> screen.source.timeMultiplierPercent
-                            else -> s.channels
-                                .firstOrNull { it.name == item.video.channelName }
-                                ?.timeMultiplierPercent ?: 100
+                            else -> queuePercents(listOf(item.video), s.channels, s.networkTimePercents).single()
                         }
                         intent.putExtra(PlayerActivity.EXTRA_TIME_PERCENT, timePercent)
                         startActivity(intent)

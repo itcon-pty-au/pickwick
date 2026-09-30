@@ -7,11 +7,14 @@ import java.io.File
  * Persists each source's last-fetched video list so opening a channel paints
  * instantly from disk while the fresh list loads in the background.
  */
-class VideoCache(context: Context) {
+class VideoCache(private val context: Context) {
 
     private val dir = File(context.filesDir, "video_cache").apply { mkdirs() }
 
     private fun fileFor(sourceId: String) = File(dir, "$sourceId.tsv")
+
+    fun rememberSource(source: Source, video: Video) =
+        ContentMembershipStore(context).remember(video.url, setOf(source.url, "id:${source.id}"))
 
     fun load(sourceId: String): List<Video> {
         val file = fileFor(sourceId)
@@ -32,6 +35,8 @@ class VideoCache(context: Context) {
     }
 
     fun save(sourceId: String, videos: List<Video>) {
+        val membership = ContentMembershipStore(context)
+        videos.forEach { membership.remember(it.url, setOf("id:$sourceId")) }
         runCatching {
             fileFor(sourceId).writeText(
                 videos.joinToString("\n") { v ->

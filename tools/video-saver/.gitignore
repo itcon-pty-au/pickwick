@@ -1,0 +1,5 @@
+native/.venv/
+native/config.json
+native/host.json
+native/launch.cmd
+native/__pycache__/

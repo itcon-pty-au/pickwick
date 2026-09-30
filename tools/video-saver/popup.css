@@ -1,0 +1,18 @@
+body { width: 360px; margin: 0; padding: 16px; box-sizing: border-box; font: 14px system-ui, sans-serif; color: #202322; background: #f7f8fa; letter-spacing: 0; }
+h1 { font-size: 19px; margin: 0 0 14px; }
+h2 { font-size: 15px; margin: 16px 0 8px; }
+#queue { max-height: 250px; }
+#queue button { margin-right: 6px; }
+.toolbar { display: flex; gap: 8px; }
+button { border: 1px solid #bac2c6; background: white; color: #202322; border-radius: 4px; padding: 8px; cursor: pointer; }
+button:hover { background: #e7f3ee; }
+button:disabled { opacity: .6; cursor: default; }
+#status { color: #475461; line-height: 1.4; }
+ul { list-style: none; padding: 0; margin: 0; max-height: 360px; overflow-y: auto; }
+li { padding: 12px 0; border-top: 1px solid #d6dce0; }
+strong, small { display: block; overflow-wrap: anywhere; margin-bottom: 6px; }
+small { color: #59636b; }
+#job { overflow-wrap: anywhere; line-height: 1.4; }
+.toolbar { align-items: center; justify-content: space-between; }
+label { display: block; font-size: 12px; color: #475461; }
+select { display: block; box-sizing: border-box; width: 100%; margin: 5px 0 10px; padding: 7px; border: 1px solid #bac2c6; border-radius: 4px; background: white; color: #202322; }

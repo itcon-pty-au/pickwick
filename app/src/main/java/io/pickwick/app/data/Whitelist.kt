@@ -209,7 +209,10 @@ data class Whitelist(
      * drain at [listenDrainPercent]. Phones only: a TV can't play with its
      * panel off, so TVs ignore it.
      */
-    val listenPercent: Int? = null
+    val listenPercent: Int? = null,
+    val networkCatalogs: List<SmbCatalog> = emptyList(),
+    val networkShares: List<SmbShare> = emptyList(),
+    val contentGroups: List<ContentGroup> = emptyList()
 ) {
     fun profile(id: String?): Profile? = profiles.firstOrNull { it.id == id }
 

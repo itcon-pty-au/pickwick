@@ -46,6 +46,7 @@ data class Video(
         // Sideloaded files carry a synthetic pickwick://local/<hash> URL; the
         // hash is 16 hex chars so it can't collide with an 11-char YouTube id.
         get() = if (LocalLibrary.isLocal(url)) url.removePrefix(LocalLibrary.URL_PREFIX)
+        else if (SmbPaths.isNetwork(url)) "smb-" + LocalLibrary.idFor(url)
         else VIDEO_ID.find(url)?.groupValues?.get(1)
 
     companion object {
@@ -376,7 +377,8 @@ class YouTubeRepository {
         /** Uploader-written page fields, carried for the pre-play deep check —
          *  the StreamInfo fetch already paid for them. Empty for local files. */
         val description: String = "",
-        val tags: List<String> = emptyList()
+        val tags: List<String> = emptyList(),
+        val uploaderUrl: String? = null
     )
 
     /** Human-authored tracks first — auto-captions are a fallback, not a default. */
@@ -457,7 +459,7 @@ class YouTubeRepository {
                     return@withContext Playback(
                         info.name, bestVideo.content, bestAudio.url, subtitlesOf(info), audioTracks,
                         description = info.description?.content.orEmpty(),
-                        tags = info.tags.orEmpty()
+                        tags = info.tags.orEmpty(), uploaderUrl = info.uploaderUrl
                     )
                 }
             }
@@ -468,7 +470,7 @@ class YouTubeRepository {
             Playback(
                 info.name, muxed.content, null, subtitlesOf(info),
                 description = info.description?.content.orEmpty(),
-                tags = info.tags.orEmpty()
+                tags = info.tags.orEmpty(), uploaderUrl = info.uploaderUrl
             )
         }
 

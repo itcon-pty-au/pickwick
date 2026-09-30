@@ -350,7 +350,7 @@ internal fun ChannelsSection(
  */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun TimeMultiplierChip(percent: Int, onChange: (Int) -> Unit) {
+internal fun TimeMultiplierChip(percent: Int, onChange: (Int) -> Unit) {
     val color = timeMultiplierColor(percent)
     // Deliberately no tvFocusHighlight: this screen is phone/touch-only (TVs
     // show the QR screen), and its graphicsLayer + animation states per row —

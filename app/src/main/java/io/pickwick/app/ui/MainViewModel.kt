@@ -553,6 +553,14 @@ class MainViewModel(
         }
         runCatching { whitelist.load() }
             .onSuccess { list ->
+                _state.value = _state.value.copy(
+                    hasNetworkCatalogs = list.networkCatalogs.any {
+                        list.networkCatalogFor(it.id, activeProfileId) != null
+                    },
+                    networkTimePercents = list.networkCatalogs.filter {
+                        list.networkCatalogFor(it.id, activeProfileId) != null
+                    }.associate { it.id to it.timePercent }
+                )
                 // Per-kid blocks fold into one set — every downstream check
                 // ("is this video blocked?") stays a plain membership test.
                 blockedVideoIds = list.blockedVideoIds +
@@ -562,6 +570,7 @@ class MainViewModel(
                 screener?.profiles = list.profiles
                 screener?.activeProfileId = activeProfileId
                 screener?.allowedOverrides = list.allowedIdsFor(activeProfileId)
+                _state.value = _state.value.copy(videos = annotated(includeFinishedNow()))
                 // Only the kid whose home this is owns these prefs. With nobody
                 // picked yet (who's-watching screen) `sessionGuard` is still the
                 // legacy unsuffixed store — which ProfileNamespace hands to the
@@ -732,7 +741,8 @@ class MainViewModel(
 
     /** Raw videos on the current screen hidden by the screener (no verdict yet or held for review). */
     private fun heldByScreening(): Int = rawVideos.count { v ->
-        v.videoId !in blockedVideoIds && !tooShort(v) && screener?.isVisible(v) == false
+        !io.pickwick.app.data.SmbPaths.isNetwork(v.url) &&
+            v.videoId !in blockedVideoIds && !tooShort(v) && screener?.isVisible(v) == false
     }
 
     /**
@@ -815,7 +825,10 @@ class MainViewModel(
     private fun annotated(includeFinished: Boolean): List<VideoItem> =
         rawVideos.mapNotNull { video ->
             if (video.videoId in blockedVideoIds || tooShort(video)) return@mapNotNull null
-            if (screener?.isVisible(video) == false) return@mapNotNull null
+            if (io.pickwick.app.data.SmbPaths.isNetwork(video.url)) {
+                val catalogId = runCatching { io.pickwick.app.data.SmbPaths.parse(video.url).first }.getOrNull()
+                if (catalogId !in _state.value.networkTimePercents) return@mapNotNull null
+            } else if (screener?.isVisible(video) == false) return@mapNotNull null
             val p = history.progress(video.url)
             when {
                 p == null -> VideoItem(video, null)
@@ -1048,7 +1061,10 @@ class MainViewModel(
                     // Persist the whole accumulated list so the next visit paints
                     // this deep instantly (capped to keep the cache file sane).
                     (_state.value.screen as? Screen.ChannelVideos)?.let { s ->
-                        withContext(Dispatchers.IO) { videoCache.save(s.source.id, rawVideos.take(500)) }
+                        withContext(Dispatchers.IO) {
+                            page.videos.forEach { videoCache.rememberSource(s.source, it) }
+                            videoCache.save(s.source.id, rawVideos.take(500))
+                        }
                         // Browsed depth becomes searchable depth — the network
                         // cost is already paid, so harvest it into the index.
                         crawler?.harvestHistory(s.source, page.videos)
@@ -1117,10 +1133,12 @@ class MainViewModel(
      * an un-save has to drop the video out of the grid underfoot.
      */
     private fun toggleSaved(item: VideoItem, store: SavedListStore, ownScreen: Screen) {
+        val origin = channelSource()
         val url = item.video.url
         viewModelScope.launch {
             // Store round-trips are file I/O — off-main, per refreshProgress.
             val (urls, listVideos) = withContext(Dispatchers.IO) {
+                if (origin != null) videoCache.rememberSource(origin, item.video)
                 if (url in savedUrls(ownScreen)) store.remove(url) else store.add(item.video)
                 store.urls() to
                     if (_state.value.screen == ownScreen) store.load() else null
@@ -1177,9 +1195,11 @@ class MainViewModel(
 
     /** Tap-to-line-up: toggles a video in the kid's play queue. */
     fun toggleQueue(item: VideoItem) {
+        val origin = channelSource()
         val url = item.video.url
         viewModelScope.launch {
             val (queued, listVideos) = withContext(Dispatchers.IO) {
+                if (origin != null) videoCache.rememberSource(origin, item.video)
                 if (url in _state.value.queued) {
                     queueStore.remove(url)
                 } else {

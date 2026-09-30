@@ -75,16 +75,20 @@ class ConfigStore(context: Context) {
      * the settings form and [fingerprint] all expect it to be there.
      */
     private fun withSecrets(w: Whitelist): Whitelist {
+        val network = w.networkCatalogs.map { c -> c.copy(password = secrets.networkPassword(c.id)) }
+        val hydrated = w.copy(networkCatalogs = network, networkShares = w.networkShares.map {
+            it.copy(password = secrets.networkPassword("share-${it.id}"))
+        }).resolveNetworkShares()
         if (w.ai.apiKey.isNotBlank()) {
             // Written by a build that still stored the key on disk. Move it and
             // rewrite the file without it, once — even when AI isn't set up,
             // because the key rides cloud backup for as long as it sits there.
             secrets.setAiApiKey(w.ai.apiKey)
             runCatching { file.writeText(stripSecrets(file.readText())) }
-            return w
+            return hydrated
         }
-        if (!aiInUse(w)) return w
-        return w.copy(ai = w.ai.copy(apiKey = secrets.aiApiKey()))
+        if (!aiInUse(w)) return hydrated
+        return hydrated.copy(ai = w.ai.copy(apiKey = secrets.aiApiKey()))
     }
 
     /**
@@ -93,19 +97,32 @@ class ConfigStore(context: Context) {
      * unconfigured) would quietly wipe a key the parent had set.
      */
     private fun rememberSecrets(w: Whitelist) {
+        w.networkShares.forEach { secrets.setNetworkPassword("share-${it.id}", it.password) }
+        w.networkCatalogs.forEach { secrets.setNetworkPassword(it.id, it.password) }
         if (w.ai.apiKey.isNotBlank() || aiInUse(w)) secrets.setAiApiKey(w.ai.apiKey)
     }
 
     fun save(whitelist: Whitelist) {
         runCatching {
-            val w = registered(whitelist)
+            val w = registered(whitelist.resolveNetworkShares())
             rememberSecrets(w)
             file.writeText(toJson(w, includeSecrets = false))
         }
     }
 
     fun saveRaw(json: String): Boolean = runCatching {
-        val w = registered(fromJson(json)) // validate before accepting
+        val incoming = registered(fromJson(json)) // validate before accepting
+        val rows = JSONObject(json).optJSONArray("networkCatalogs")
+        val suppliedPasswords = if (rows == null) emptySet() else (0 until rows.length())
+            .map { rows.getJSONObject(it) }.filter { it.has("password") }.map { it.getString("id") }.toSet()
+        val shareRows = JSONObject(json).optJSONArray("networkShares")
+        val suppliedSharePasswords = if (shareRows == null) emptySet() else (0 until shareRows.length())
+            .map { shareRows.getJSONObject(it) }.filter { it.has("password") }.map { it.getString("id") }.toSet()
+        val w = incoming.copy(networkShares = incoming.networkShares.map {
+            if (it.id in suppliedSharePasswords) it else it.copy(password = secrets.networkPassword("share-${it.id}"))
+        }, networkCatalogs = incoming.networkCatalogs.map {
+            if (it.id in suppliedPasswords) it else it.copy(password = secrets.networkPassword(it.id))
+        }).resolveNetworkShares()
         rememberSecrets(w)
         // The pushed payload carries the key so this device can screen; the copy
         // that lands on disk must not. Stripped surgically rather than
@@ -144,6 +161,16 @@ class ConfigStore(context: Context) {
          */
         fun fingerprint(w: Whitelist): String {
             val canonical = buildString {
+                w.contentGroups.forEach { append("CONTENT:"); append(it.toJson()); append('\n') }
+                w.networkShares.forEach {
+                    append("SHARE:"); append(it.toJson(false)); append('|'); append(it.password); append('\n')
+                }
+                if (w.networkCatalogs.isNotEmpty()) {
+                    append("SMB:")
+                    w.resolveNetworkShares().networkCatalogs.forEach {
+                        append(it.toJson(false).toString()); append('|'); append(it.password); append('\n')
+                    }
+                }
                 w.sources.forEach {
                     append(it.id); append('|'); append(it.kind.name); append('|')
                     append(it.label ?: "")
@@ -238,10 +265,16 @@ class ConfigStore(context: Context) {
          */
         fun stripSecrets(json: String): String = runCatching {
             val root = JSONObject(json)
-            val ai = root.optJSONObject("ai") ?: return@runCatching json
-            if (!ai.has("apiKey")) return@runCatching json
-            ai.remove("apiKey")
-            root.toString(2)
+            var changed = root.optJSONObject("ai")?.has("apiKey") == true
+            root.optJSONObject("ai")?.remove("apiKey")
+            listOf("networkCatalogs", "networkShares").forEach { key -> root.optJSONArray(key)?.let { a ->
+                for (i in 0 until a.length()) {
+                    val row = a.getJSONObject(i)
+                    if (row.has("password")) changed = true
+                    row.remove("password")
+                }
+            } }
+            if (changed) root.toString(2) else json
         }.getOrDefault(json)
 
         /**
@@ -252,6 +285,16 @@ class ConfigStore(context: Context) {
         fun toJson(w: Whitelist, includeSecrets: Boolean = true): String {
             val root = JSONObject()
             root.put("updatedAt", System.currentTimeMillis())
+            if (w.contentGroups.isNotEmpty()) root.put("contentGroups", JSONArray().apply {
+                w.contentGroups.forEach { put(it.toJson()) }
+            })
+            if (w.networkShares.isNotEmpty()) root.put("networkShares", JSONArray().apply {
+                w.networkShares.forEach { put(it.toJson(includeSecrets)) }
+            })
+            if (w.networkCatalogs.isNotEmpty()) root.put("networkCatalogs", JSONArray().apply {
+                // Expanded snapshots keep older paired players compatible; share IDs are authoritative here.
+                w.resolveNetworkShares().networkCatalogs.forEach { put(it.toJson(includeSecrets)) }
+            })
             root.put("entries", JSONArray().apply {
                 w.sources.forEach { e ->
                     put(JSONObject().apply {
@@ -543,8 +586,20 @@ class ConfigStore(context: Context) {
                 deviceProfiles = deviceProfiles,
                 masterDeviceToken = root.optString("master").ifEmpty { null },
                 sponsorSkip = root.optBoolean("sponsorSkip", true),
-                listenPercent = if (root.has("listen")) root.getInt("listen") else null
-            )
+                listenPercent = if (root.has("listen")) root.getInt("listen") else null,
+                networkCatalogs = root.optJSONArray("networkCatalogs")?.let { a ->
+                    (0 until a.length()).map { SmbCatalog.fromJson(a.getJSONObject(it)) }.distinctBy { it.id }
+                }.orEmpty(),
+                contentGroups = root.optJSONArray("contentGroups")?.let { a ->
+                    require(a.length() <= 200) { "Too many content groups" }
+                    (0 until a.length()).map { ContentGroup.fromJson(a.getJSONObject(it)) }.also { groups ->
+                        require(groups.map { it.id }.distinct().size == groups.size) { "Duplicate content group" }
+                    }
+                }.orEmpty(),
+                networkShares = root.optJSONArray("networkShares")?.let { a ->
+                    (0 until a.length()).map { SmbShare.fromJson(a.getJSONObject(it)) }.distinctBy { it.id }
+                }.orEmpty()
+            ).resolveNetworkShares()
         }
     }
 }

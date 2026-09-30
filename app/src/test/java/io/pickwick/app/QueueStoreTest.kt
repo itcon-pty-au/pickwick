@@ -25,6 +25,18 @@ import java.io.File
  */
 class QueueStoreTest {
 
+    @Test fun `network queue items use catalog identity and survive reload`() {
+        val network = video(1).copy(url = "pickwick://smb/catalog/Season%201/episode.mp4")
+        val store = QueueStore(storeFile())
+        store.add(network)
+        store.add(video(2))
+        val restored = QueueStore(storeFile()).load()
+        assertEquals(listOf(network, video(2)), restored)
+        assertEquals(listOf(0, 100), queuePercents(restored, emptyList(), mapOf("catalog" to 0)))
+        assertEquals(listOf(200, 100), queuePercents(restored, emptyList(), mapOf("catalog" to 200)))
+        assertEquals(listOf(100), queuePercents(listOf(network.copy(url = "pickwick://smb/broken")), emptyList()))
+    }
+
     @get:Rule
     val tmp = TemporaryFolder()
 

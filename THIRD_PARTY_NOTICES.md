@@ -1,5 +1,15 @@
 # Third-party notices
 
+## Network sharing
+
+- [SMBJ](https://github.com/hierynomus/smbj), Apache License 2.0.
+- [SMBJ-RPC](https://github.com/rapid7/smbj-rpc), Copyright Rapid7,
+  BSD 3-Clause License.
+- [Guava](https://github.com/google/guava), Copyright Google,
+  Apache License 2.0.
+
+SMBJ and SMBJ-RPC license texts are bundled under `assets/licenses` in the APK.
+
 ## Fluent Emoji (Microsoft)
 
 The profile avatar images bundled at `app/src/main/res/drawable-nodpi/avatar_*.png`

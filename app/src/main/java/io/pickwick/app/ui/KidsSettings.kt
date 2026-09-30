@@ -185,6 +185,7 @@ fun WhoForDialog(
     profiles: List<Profile>,
     initialIds: Set<String>,
     confirmLabel: String = "OK",
+    showEveryone: Boolean = false,
     onDismiss: () -> Unit,
     onConfirm: (Set<String>) -> Unit
 ) {
@@ -198,6 +199,18 @@ fun WhoForDialog(
             // Reachable from a hold in the screening log, so the tail of that
             // hold must not tick a kid on the way in.
             Column(modifier = Modifier.ignoreSelectUntilRelease()) {
+                if (showEveryone) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth().clickable { checked = profiles.map { it.id }.toSet() }
+                    ) {
+                        Checkbox(
+                            checked = profiles.all { it.id in checked },
+                            onCheckedChange = { checked = profiles.map { it.id }.toSet() }
+                        )
+                        Text("Everyone")
+                    }
+                }
                 profiles.forEach { profile ->
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -221,7 +234,7 @@ fun WhoForDialog(
         },
         confirmButton = {
             Button(
-                enabled = checked.isNotEmpty(),
+                enabled = checked.isNotEmpty() || (showEveryone && profiles.isEmpty()),
                 onClick = {
                     onConfirm(if (checked.size == profiles.size) emptySet() else checked)
                 },

@@ -203,6 +203,14 @@ sitting with nothing lost. Everything resets at midnight. No rules set → no li
 
 ## Quality
 
+### Network video collections
+
+Parents can add SMB2/3 folders under **Settings > Content Sources > Network shares**. Children
+browse shows, seasons and episodes from **Network shares** on the home screen.
+Videos stream directly from the home share and use the existing screen-time
+rules, per-catalog time rates and per-child access. See
+[network catalog setup and compatibility](docs/NETWORK_CATALOGS.md).
+
 Thumbnail resolution and playback quality adapt to the device and connection:
 up to 1080p on a TV with fast Wi-Fi (video+audio streams merged in ExoPlayer),
 degrading gracefully to lighter streams on weak links. Streams are fetched in

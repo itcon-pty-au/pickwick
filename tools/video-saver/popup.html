@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Pickwick Video Saver</title><link rel="stylesheet" href="popup.css"></head>
+<body>
+  <h1>Video Saver</h1>
+  <div class="toolbar"><span>Pokeflix auto-capture</span><button id="refresh" title="Refresh media list" aria-label="Refresh media list">&#8635;</button></div>
+  <p id="status" role="status"></p>
+  <h2>Downloads</h2>
+  <div class="toolbar"><label>Parallel downloads<select id="parallel"><option>1</option><option>2</option><option selected>3</option><option>4</option></select></label><button id="clear">Clear finished</button></div>
+  <p id="queue-status" role="status"></p>
+  <ul id="queue"></ul>
+  <h2>This Tab's Sources</h2>
+  <ul id="items"></ul>
+  <script src="popup.js" type="module"></script>
+</body>
+</html>

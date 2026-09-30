@@ -43,6 +43,19 @@ class SecretStore(context: Context) {
 
     fun aiApiKey(): String = runCatching { prefs.getString(KEY_AI, "").orEmpty() }.getOrDefault("")
 
+    // Network credentials must never fall back to plaintext preferences.
+    private val networkPrefs by lazy {
+        EncryptedSharedPreferences.create(
+            "network_secrets", MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC), appContext,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
+    }
+    fun networkPassword(id: String): String = runCatching { networkPrefs.getString(id, "").orEmpty() }.getOrDefault("")
+    fun setNetworkPassword(id: String, password: String) {
+        check(networkPrefs.edit().putString(id, password).commit()) { "Could not save network credentials" }
+    }
+
     fun setAiApiKey(value: String) {
         runCatching { prefs.edit().putString(KEY_AI, value).apply() }
     }

@@ -34,6 +34,8 @@ data class UiState(
     val refreshing: Boolean = false,
     val error: String? = null,
     val channels: List<Source> = emptyList(),
+    val hasNetworkCatalogs: Boolean = false,
+    val networkTimePercents: Map<String, Int> = emptyMap(),
     val screen: Screen = Screen.Home,
     val videos: List<VideoItem> = emptyList(),
     /**

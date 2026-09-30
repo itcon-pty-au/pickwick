@@ -24,6 +24,8 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import io.pickwick.app.data.*
 
+internal val ChannelGridMinWidth = 160.dp
+
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun KeepWatchingRow(
@@ -84,6 +86,8 @@ internal fun ChannelGrid(
     onOpen: (Source) -> Unit,
     onSurprise: () -> Unit,
     onOpenWatchlist: () -> Unit,
+    hasNetworkCatalogs: Boolean = false,
+    onOpenNetworkCatalogs: () -> Unit = {},
     hasWatchLater: Boolean = false,
     onOpenWatchLater: () -> Unit = {},
     hasQueue: Boolean = false,
@@ -95,12 +99,12 @@ internal fun ChannelGrid(
     onSwitchProfile: (() -> Unit)? = null,
     onSearch: (String) -> Unit = {}
 ) {
-    if (channels.isEmpty()) {
+    if (channels.isEmpty() && !hasNetworkCatalogs) {
         EmptyHome(onOpenSettings)
         return
     }
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize = 160.dp),
+        columns = GridCells.Adaptive(minSize = ChannelGridMinWidth),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         // Room for the focus glow on edge tiles.
@@ -139,6 +143,11 @@ internal fun ChannelGrid(
         item(key = "watchlist-tile") {
             WatchlistTile(onClick = onOpenWatchlist)
         }
+        if (hasNetworkCatalogs) {
+            item(key = "network-catalogs-tile") {
+                NetworkCatalogsTile(onClick = onOpenNetworkCatalogs)
+            }
+        }
         // Watch later earns its tile only once something is in it — an empty
         // shelf is a dead end for the kid, same reasoning as the queue tile.
         if (hasWatchLater) {
@@ -170,19 +179,43 @@ private fun ChannelTile(
     onOpen: (Source) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    ArtworkTile(
+        title = channel.name + if (channel.kind == SourceKind.PLAYLIST) "  ·  playlist" else "",
+        thumbnail = channel.avatarUrl,
+        timePercent = channel.timeMultiplierPercent,
+        isNew = isNew,
+        modifier = modifier,
+        onClick = { onOpen(channel) }
+    )
+}
+
+@Composable
+internal fun ArtworkTile(
+    title: String,
+    thumbnail: String?,
+    timePercent: Int = 100,
+    isNew: Boolean = false,
+    modifier: Modifier = Modifier,
+    fallback: String? = null,
+    onClick: () -> Unit
+) {
     var focused by remember { mutableStateOf(false) }
     Card(
         shape = androidx.compose.ui.graphics.RectangleShape,
         modifier = modifier
             .tvFocusHighlight { focused = it }
-            .clickable { onOpen(channel) }
+            .clickable { onClick() }
     ) {
         Column {
             // Full-bleed cover, video-tile style (1:1 — avatars are square).
             Box {
-                AsyncImage(
-                    model = channel.avatarUrl,
-                    contentDescription = channel.name,
+                if (thumbnail == null && fallback != null) {
+                    Box(Modifier.fillMaxWidth().aspectRatio(1f).background(DownloadsTileTeal), contentAlignment = Alignment.Center) {
+                        Text(fallback, fontSize = androidx.compose.ui.unit.TextUnit(56f, androidx.compose.ui.unit.TextUnitType.Sp))
+                    }
+                } else AsyncImage(
+                    model = thumbnail,
+                    contentDescription = title,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxWidth().aspectRatio(1f)
                 )
@@ -200,9 +233,9 @@ private fun ChannelTile(
                 }
                 // The screen-time "price tag" — shown only when it differs from
                 // normal, so kids can pick cheap/free channels knowingly.
-                timeMultiplierColor(channel.timeMultiplierPercent)?.let { color ->
+                timeMultiplierColor(timePercent)?.let { color ->
                     Text(
-                        timeMultiplierLabel(channel.timeMultiplierPercent),
+                        timeMultiplierLabel(timePercent),
                         style = MaterialTheme.typography.labelSmall,
                         color = Color.White,
                         modifier = Modifier
@@ -215,8 +248,7 @@ private fun ChannelTile(
             }
             Box(Modifier.padding(8.dp)) {
                 MarqueeTitle(
-                    text = channel.name +
-                        if (channel.kind == SourceKind.PLAYLIST) "  ·  playlist" else "",
+                    text = title,
                     focused = focused
                 )
             }
@@ -379,6 +411,8 @@ internal fun TvHomeRows(
     onOpen: (Source) -> Unit,
     onSurprise: () -> Unit,
     onOpenWatchlist: () -> Unit,
+    hasNetworkCatalogs: Boolean = false,
+    onOpenNetworkCatalogs: () -> Unit = {},
     hasWatchLater: Boolean = false,
     onOpenWatchLater: () -> Unit = {},
     hasQueue: Boolean = false,
@@ -388,7 +422,7 @@ internal fun TvHomeRows(
     onSwitchProfile: (() -> Unit)? = null,
     onSearch: (String) -> Unit = {}
 ) {
-    if (channels.isEmpty()) {
+    if (channels.isEmpty() && !hasNetworkCatalogs) {
         EmptyHome(onOpenSettings)
         return
     }
@@ -416,7 +450,7 @@ internal fun TvHomeRows(
             }
         }
 
-        item(key = "channels") {
+        if (channels.isNotEmpty()) item(key = "channels") {
             Column {
                 TvRowTitle("Channels")
                 CompositionLocalProvider(
@@ -458,10 +492,18 @@ internal fun TvHomeRows(
                             }
                         }
                         item(key = "surprise") {
-                            SurpriseTile(Modifier.width(150.dp), onSurprise)
+                            SurpriseTile(
+                                (if (channels.isEmpty()) Modifier.focusRequester(firstTileFocus) else Modifier).width(150.dp),
+                                onSurprise
+                            )
                         }
                         item(key = "watchlist") {
                             WatchlistTile(Modifier.width(150.dp), onOpenWatchlist)
+                        }
+                        if (hasNetworkCatalogs) {
+                            item(key = "network-catalogs") {
+                                NetworkCatalogsTile(Modifier.width(150.dp), onOpenNetworkCatalogs)
+                            }
                         }
                         if (hasWatchLater) {
                             item(key = "watch-later") {
@@ -488,6 +530,10 @@ private fun QueueTile(modifier: Modifier = Modifier, onClick: () -> Unit) =
 @Composable
 private fun WatchlistTile(modifier: Modifier = Modifier, onClick: () -> Unit) =
     SpecialTile("❤️", "Favorites", WatchlistTileTeal, modifier = modifier, onClick = onClick)
+
+@Composable
+private fun NetworkCatalogsTile(modifier: Modifier = Modifier, onClick: () -> Unit) =
+    SpecialTile("📁", "Network shares", DownloadsTileTeal, modifier = modifier, onClick = onClick)
 
 @Composable
 private fun WatchLaterTile(modifier: Modifier = Modifier, onClick: () -> Unit) =

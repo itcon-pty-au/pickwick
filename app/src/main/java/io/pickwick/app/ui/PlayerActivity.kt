@@ -48,6 +48,7 @@ import io.pickwick.app.data.SessionGuard
 import io.pickwick.app.data.WatchHistoryStore
 import io.pickwick.app.data.YouTubeRepository
 import io.pickwick.app.data.listenDrainPercent
+import io.pickwick.app.data.networkCatalogFor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -74,6 +75,7 @@ class PlayerActivity : ComponentActivity() {
          *  truly finish are removed there, so the queue self-clears. */
         const val EXTRA_FROM_QUEUE = "from_queue"
         const val EXTRA_CHANNEL = "channel"
+        const val EXTRA_SOURCE_URL = "source_url"
         /** Screen-time drain rate for this launch, percent (100 normal, 0 FREE). */
         const val EXTRA_TIME_PERCENT = "time_percent"
         /**
@@ -117,6 +119,7 @@ class PlayerActivity : ComponentActivity() {
     private val buffering = mutableStateOf(false)
     /** TV controls overlay stays visible until this timestamp (poked by remote keys). */
     private val controlsVisibleUntil = mutableStateOf(0L)
+    private val playerControlsVisible = mutableStateOf(false)
     /** Transient top-of-screen pill: time-left warnings, subtitles toggled, … */
     private val notice = mutableStateOf<Notice?>(null)
     /** Which time-left warnings (5, 1 min) already fired; cleared when time is granted back. */
@@ -124,6 +127,8 @@ class PlayerActivity : ComponentActivity() {
     /** Kid's sticky captions choice (survives across videos and app runs). */
     private var captionsOn = false
     private var currentSubtitles: List<YouTubeRepository.Subtitle> = emptyList()
+    private var embeddedAudio = emptyList<EmbeddedTrack>()
+    private var embeddedText = emptyList<EmbeddedTrack>()
     private val trackPanel = mutableStateOf(TvTrackPanel.Hidden)
     private val trackCursor = mutableIntStateOf(0)
     private val selectedAudioTrack = mutableIntStateOf(0)
@@ -148,6 +153,11 @@ class PlayerActivity : ComponentActivity() {
     private var gateProfileId: String? = null
     /** Family config for the gate (AI settings, overrides, kids), loaded off-main once. */
     private var familyConfig: io.pickwick.app.data.Whitelist? = null
+    private var contentGroups = emptyList<io.pickwick.app.data.ContentGroup>()
+    private var contentPlayingSince: Long? = null
+    private val contentRemaining = mutableStateOf<Pair<io.pickwick.app.data.ContentGroup, Long>?>(null)
+    private val contentBlocked = mutableStateOf<String?>(null)
+    private val contentWarnings = mutableSetOf<String>()
     /** Channel name → parent's channel note, resolved once alongside the config. */
     private var channelNotes: Map<String, String>? = null
     private val screeningStore by lazy { io.pickwick.app.data.ScreeningStore(this) }
@@ -310,6 +320,25 @@ class PlayerActivity : ComponentActivity() {
             }
             .build().apply {
                 addListener(object : Player.Listener {
+                    override fun onIsPlayingChanged(isPlaying: Boolean) {
+                        flushContentUsage()
+                        contentPlayingSince = if (isPlaying) android.os.SystemClock.elapsedRealtime() else null
+                        if (isPlaying && contentBlocked.value != null) pause()
+                    }
+                    override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
+                        updateEmbeddedTracks(tracks)
+                    }
+
+                    override fun onTrackSelectionParametersChanged(parameters: androidx.media3.common.TrackSelectionParameters) {
+                        if (embeddedText.isNotEmpty()) {
+                            captionsOn = androidx.media3.common.C.TRACK_TYPE_TEXT !in parameters.disabledTrackTypes
+                            val enabled = captionsOn
+                            lifecycleScope.launch(Dispatchers.IO) {
+                                getSharedPreferences("player", MODE_PRIVATE).edit().putBoolean("captions", enabled).apply()
+                            }
+                        }
+                    }
+
                     override fun onPlaybackStateChanged(playbackState: Int) {
                         buffering.value = playbackState == Player.STATE_BUFFERING
                         if (playbackState == Player.STATE_ENDED) {
@@ -397,6 +426,19 @@ class PlayerActivity : ComponentActivity() {
                 saveProgress()
                 val exo = player ?: continue
                 // Publish now-playing for the parent's stats screen.
+                currentPageUrl?.takeIf(io.pickwick.app.data.SmbPaths::isNetwork)?.let { url ->
+                    val config = kotlinx.coroutines.withContext(Dispatchers.IO) {
+                        io.pickwick.app.data.ConfigStore(this@PlayerActivity).load()
+                    }
+                    val pid = intent.getStringExtra(EXTRA_PROFILE_ID)
+                    val id = io.pickwick.app.data.SmbPaths.parse(url).first
+                    val catalog = config.networkCatalogFor(id, pid)
+                    sessionGuard.saveLimits(config.limitsFor(pid))
+                    if (catalog == null) {
+                        exo.pause()
+                        timeUpMessage.value = "This catalog is no longer available for this profile"
+                    } else timePercent = catalog.timePercent
+                }
                 if (exo.duration > 0) {
                     io.pickwick.app.data.NowPlaying.update(
                         currentTitle, currentChannel,
@@ -408,6 +450,12 @@ class PlayerActivity : ComponentActivity() {
                 // it back. Checked whether or not playback is running, so a
                 // paused story is in the right mode when it resumes.
                 syncListenOnlyWindow()
+                if (currentPageUrl?.let(io.pickwick.app.data.SmbPaths::isNetwork) == true && timeUpMessage.value == null) {
+                    sessionGuard.checkStart(timePercent, listenActive)?.let { reason ->
+                        exo.pause()
+                        timeUpMessage.value = reason
+                    }
+                }
                 if (exo.isPlaying && timeUpMessage.value == null) {
                     // Stats record real watch time; the budget drains at the
                     // source's multiplier (exact integer ms — 25% of 5s = 1250ms),
@@ -417,7 +465,7 @@ class PlayerActivity : ComponentActivity() {
                         if (listenActive) listenDrainPercent(timePercent, listenPercent)
                         else timePercent
                     channelUsage.addSeconds(currentChannel, 5)
-                    sessionGuard.tick(5_000L * drain / 100, listenActive)?.let { reason ->
+                    sessionGuard.tick(5_000L * drain / 100, listenActive, drain)?.let { reason ->
                         exo.pause()
                         timeUpMessage.value = reason
                         delay(6_000)
@@ -446,6 +494,34 @@ class PlayerActivity : ComponentActivity() {
             }
         }
 
+        lifecycleScope.launch {
+            var refresh = 0
+            while (isActive) {
+                delay(1000)
+                flushContentUsage()?.join()
+                val url = currentPageUrl ?: continue
+                val pb = currentPlayback ?: continue
+                try {
+                    val result = kotlinx.coroutines.withContext(io.pickwick.app.data.ContentUsageIo.dispatcher) {
+                        val groups = if (refresh++ % 5 == 0) {
+                            val config = io.pickwick.app.data.ConfigStore(this@PlayerActivity).load()
+                            sessionGuard.saveLimits(config.limitsFor(gateProfileId))
+                            io.pickwick.app.data.matchingContentGroups(this@PlayerActivity, config, url,
+                                intent.getStringExtra(EXTRA_SOURCE_URL), pb.uploaderUrl)
+                        } else contentGroups
+                        groups to sessionGuard.contentRemaining(groups, gateProfileId)
+                    }
+                    if (currentPageUrl != url || currentPlayback !== pb) continue
+                    contentGroups = result.first
+                    showContentRemaining(result.second)
+                } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    player?.pause()
+                    contentBlocked.value = "Could not check content time. Please try again."
+                }
+            }
+        }
+
         setContent {
             MaterialTheme(colorScheme = PickwickDarkColors) {
                 val playback by playbackState
@@ -457,6 +533,10 @@ class PlayerActivity : ComponentActivity() {
                 val listenOnly by listenOnlyMessage
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     when {
+                        contentBlocked.value != null -> Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(contentBlocked.value!!, color = Color.White, style = MaterialTheme.typography.headlineSmall)
+                            androidx.compose.material3.Button(onClick = { finish() }) { Text("Choose something else") }
+                        }
                         timeUp != null -> Text(
                             timeUp!!,
                             color = Color.White,
@@ -469,7 +549,12 @@ class PlayerActivity : ComponentActivity() {
                             color = Color.White,
                             style = MaterialTheme.typography.headlineMedium
                         )
-                        error != null -> Text("Could not play video: $error", color = Color.White)
+                        error != null -> Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("Could not play video: $error", color = Color.White)
+                            if (currentPageUrl?.let(io.pickwick.app.data.SmbPaths::isNetwork) == true) {
+                                androidx.compose.material3.Button(onClick = { playIndex(indexState.intValue) }) { Text("Retry") }
+                            }
+                        }
                         // Sound only, by the parent's window: no video view at
                         // all, and the screen is no longer held awake, so this
                         // is what the kid sees for the few seconds before it
@@ -514,6 +599,11 @@ class PlayerActivity : ComponentActivity() {
                                     // TV: no on-screen controller — the remote drives
                                     // playback directly (OK, ◀ ▶, play/pause keys).
                                     useController = !isTv
+                                    if (!isTv) setControllerVisibilityListener(
+                                        PlayerView.ControllerVisibilityListener { visibility ->
+                                            playerControlsVisible.value = visibility == android.view.View.VISIBLE
+                                        }
+                                    )
                                     setShowSubtitleButton(true)
                                     // Without this the view drops its shutter (opaque
                                     // black) the moment the player is re-prepared with
@@ -525,13 +615,13 @@ class PlayerActivity : ComponentActivity() {
                     }
                     // Spinner over the held frame: resolving the next video's
                     // streams, initial buffer, seek, or a mid-video stall.
-                    if (timeUp == null && error == null && blocked == null &&
+                    if (contentBlocked.value == null && timeUp == null && error == null && blocked == null &&
                         listenOnly == null && played &&
                         (playback == null || buffering.value)
                     ) {
                         CircularProgressIndicator()
                     }
-                    if (isTv && timeUp == null && blocked == null) {
+                    if (isTv && timeUp == null && blocked == null && contentBlocked.value == null) {
                         TvControlsOverlay(
                             controlsVisibleUntil,
                             sponsorSegments.value,
@@ -540,10 +630,18 @@ class PlayerActivity : ComponentActivity() {
                             playback,
                             selectedAudioTrack.intValue,
                             selectedSubtitleTrack.intValue,
-                            captionsOn
+                            captionsOn,
+                            onVisibilityChanged = { playerControlsVisible.value = it }
                         ) { player }
                     }
-                    if (timeUp == null) NoticeOverlay(notice)
+                    if (timeUp == null) NoticeOverlay(notice, if (contentRemaining.value != null && playerControlsVisible.value) 72.dp else 28.dp)
+                    if (playerControlsVisible.value && contentBlocked.value == null && timeUp == null) contentRemaining.value?.let { (group, left) ->
+                        Text("${group.name}: ${formatClock((left + 999) / 1000)} this session",
+                            color = Color.White, style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            modifier = Modifier.align(Alignment.TopStart).padding(start = 12.dp, end = 12.dp, top = 8.dp)
+                                .background(Color(0xCC000000)).padding(8.dp))
+                    }
                 }
             }
         }
@@ -557,7 +655,11 @@ class PlayerActivity : ComponentActivity() {
     }
 
     private fun onPlaybackFailed(message: String) {
-        if (indexState.intValue < queue.lastIndex) playIndex(indexState.intValue + 1)
+        if (currentPageUrl?.let(io.pickwick.app.data.SmbPaths::isNetwork) == true) {
+            saveProgress()
+            player?.pause()
+            errorState.value = "Network playback stopped. Check the connection and try again."
+        } else if (indexState.intValue < queue.lastIndex) playIndex(indexState.intValue + 1)
         else errorState.value = message
     }
 
@@ -568,6 +670,13 @@ class PlayerActivity : ComponentActivity() {
      * device (1080p TV on fast Wi-Fi, down to muxed).
      */
     private fun playIndex(i: Int) {
+        flushContentUsage()
+        contentPlayingSince = null
+        player?.pause()
+        contentGroups = emptyList()
+        contentRemaining.value = null
+        contentBlocked.value = null
+        contentWarnings.clear()
         indexState.intValue = i
         selectedAudioTrack.intValue = 0
         selectedSubtitleTrack.intValue = -1
@@ -575,8 +684,17 @@ class PlayerActivity : ComponentActivity() {
         resolveJob?.cancel()
         resolveJob = lifecycleScope.launch {
             playbackState.value = null
+            currentPlayback = null
+            embeddedAudio = emptyList()
+            embeddedText = emptyList()
+            currentSubtitles = emptyList()
             errorState.value = null
             currentPageUrl = queue[i]
+            player?.let { exo ->
+                exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon()
+                    .clearOverridesOfType(androidx.media3.common.C.TRACK_TYPE_AUDIO)
+                    .clearOverridesOfType(androidx.media3.common.C.TRACK_TYPE_TEXT).build()
+            }
             // Per-item stats/drain: the 5-second tick reads these fields, so a
             // cross-channel queue charges and credits each video correctly.
             queueChannels.getOrNull(i)?.let { currentChannel = it }
@@ -600,6 +718,25 @@ class PlayerActivity : ComponentActivity() {
             }
             val pb = runCatching {
                 val local = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    if (io.pickwick.app.data.SmbPaths.isNetwork(queue[i])) {
+                        val (id, path) = io.pickwick.app.data.SmbPaths.parse(queue[i])
+                        val config = io.pickwick.app.data.ConfigStore(this@PlayerActivity).load()
+                        val pid = intent.getStringExtra(EXTRA_PROFILE_ID)
+                        val catalog = config.networkCatalogFor(id, pid)
+                            ?: error("This catalog is no longer available for this profile")
+                        timePercent = catalog.timePercent
+                        currentChannel = catalog.name
+                        sessionGuard.saveLimits(config.limitsFor(pid))
+                        sessionGuard.checkStart(timePercent, listenActive)?.let { error(it) }
+                        val minimum = (config.limitsFor(pid).minVideoMinutes ?: 0) * 60L
+                        if (minimum > 0) {
+                            val library = io.pickwick.app.data.SmbLibrary(this@PlayerActivity)
+                            val item = library.list(catalog, path.substringBeforeLast('/', "")).firstOrNull { it.path == path }
+                                ?: error("This video is no longer available")
+                            check(library.metadata(catalog, item).duration >= minimum) { "This video is shorter than your allowed minimum" }
+                        }
+                        return@withContext YouTubeRepository.Playback(path.substringAfterLast('/').substringBeforeLast('.'), queue[i], null, emptyList())
+                    }
                     // Sideloaded file (content:// via SAF) or a finished
                     // download — both play from disk with no network.
                     localLibrary.playback(queue[i])
@@ -619,7 +756,7 @@ class PlayerActivity : ComponentActivity() {
                 // mistaken for a broken video and trigger its own advance.
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 // Mid-playlist failure: skip to the next video instead of dying.
-                if (i < queue.lastIndex) playIndex(i + 1)
+                if (i < queue.lastIndex && !io.pickwick.app.data.SmbPaths.isNetwork(queue[i])) playIndex(i + 1)
                 else errorState.value = e.message
                 return@launch
             }
@@ -628,6 +765,22 @@ class PlayerActivity : ComponentActivity() {
                 return@launch
             }
             currentTitle = pb.title
+            try {
+                val policy = kotlinx.coroutines.withContext(io.pickwick.app.data.ContentUsageIo.dispatcher) {
+                    val config = io.pickwick.app.data.ConfigStore(this@PlayerActivity).load()
+                    sessionGuard.saveLimits(config.limitsFor(gateProfileId))
+                    val groups = io.pickwick.app.data.matchingContentGroups(this@PlayerActivity, config, queue[i],
+                        intent.getStringExtra(EXTRA_SOURCE_URL), pb.uploaderUrl)
+                    groups to sessionGuard.contentRemaining(groups, gateProfileId)
+                }
+                contentGroups = policy.first
+                showContentRemaining(policy.second)
+                if (contentBlocked.value != null) return@launch
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                contentBlocked.value = "Could not check content time. Please try again."
+                return@launch
+            }
             currentPlayback = pb
             ListenService.title = pb.title
             ListenService.channelName = currentChannel
@@ -742,9 +895,9 @@ class PlayerActivity : ComponentActivity() {
         // buffer starved (stalled at 0s ahead, then crept up at
         // ~1.5x playback); chunked, the whole video was resident
         // 19s in. See ChunkedStreamDataSource for why.
-        val factory = io.pickwick.app.data.ChunkedStreamDataSource.Factory(
+        val factory = io.pickwick.app.data.SmbDataSource.Factory(this, intent.getStringExtra(EXTRA_PROFILE_ID), io.pickwick.app.data.ChunkedStreamDataSource.Factory(
             androidx.media3.datasource.DefaultDataSource.Factory(this)
-        )
+        ))
         fun progressive(url: String) =
             androidx.media3.exoplayer.source.ProgressiveMediaSource
                 .Factory(factory).createMediaSource(
@@ -977,7 +1130,7 @@ class PlayerActivity : ComponentActivity() {
     }
 
     private fun handleTrackPanelKey(keyCode: Int): Boolean {
-        val pb = currentPlayback ?: return false
+        val pb = playbackState.value ?: return false
         return when (trackPanel.value) {
             TvTrackPanel.Hidden -> false
             TvTrackPanel.Toolbar -> when (keyCode) {
@@ -1013,7 +1166,13 @@ class PlayerActivity : ComponentActivity() {
                     else trackCursor.intValue.coerceIn(0, pb.audioTracks.lastIndex)
                 if (pb.audioTracks.isNotEmpty() && chosen != selectedAudioTrack.intValue) {
                     selectedAudioTrack.intValue = chosen
-                    attachSources(pb, audioOnly = false, resumeMs = player?.currentPosition)
+                    val embedded = embeddedAudio.getOrNull(chosen)
+                    if (embedded != null) {
+                        player?.let { exo ->
+                            exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon()
+                                .setOverrideForType(embedded.override).build()
+                        }
+                    } else attachSources(pb, audioOnly = false, resumeMs = player?.currentPosition)
                 }
                 notice.value = Notice(
                     "Audio: " + (pb.audioTracks.getOrNull(chosen)?.name ?: "Original")
@@ -1072,6 +1231,12 @@ class PlayerActivity : ComponentActivity() {
         val exo = player ?: return
         val builder = exo.trackSelectionParameters.buildUpon()
             .setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_TEXT, !captionsOn)
+        if (currentPageUrl?.let(io.pickwick.app.data.SmbPaths::isNetwork) == true) {
+            builder.clearOverridesOfType(androidx.media3.common.C.TRACK_TYPE_TEXT)
+            if (captionsOn) embeddedText.getOrNull(selectedSubtitleTrack.intValue)?.let {
+                builder.setOverrideForType(it.override)
+            }
+        }
         if (captionsOn) {
             val selected = currentSubtitles.getOrNull(selectedSubtitleTrack.intValue)
             val languages =
@@ -1082,6 +1247,26 @@ class PlayerActivity : ComponentActivity() {
             builder.setPreferredTextLanguages(*languages.toTypedArray())
         }
         exo.trackSelectionParameters = builder.build()
+    }
+
+    private fun updateEmbeddedTracks(tracks: androidx.media3.common.Tracks) {
+        val exo = player ?: return
+        val pb = currentPlayback ?: return
+        if (!io.pickwick.app.data.SmbPaths.isNetwork(pb.videoUrl) ||
+            pb.videoUrl != currentPageUrl || exo.currentMediaItem?.localConfiguration?.uri.toString() != pb.videoUrl) return
+        embeddedAudio = embeddedTracks(tracks, androidx.media3.common.C.TRACK_TYPE_AUDIO)
+        embeddedText = embeddedTracks(tracks, androidx.media3.common.C.TRACK_TYPE_TEXT)
+        selectedAudioTrack.intValue = embeddedAudio.indexOfFirst { it.selected }.coerceAtLeast(0)
+        selectedSubtitleTrack.intValue = embeddedText.indexOfFirst { it.selected }
+        captionsOn = androidx.media3.common.C.TRACK_TYPE_TEXT !in exo.trackSelectionParameters.disabledTrackTypes
+        currentSubtitles = embeddedText.map {
+            YouTubeRepository.Subtitle("", it.mimeType, it.language, it.name, false)
+        }
+        // UI descriptors only: embedded tracks stay in the original media source.
+        playbackState.value = pb.copy(
+            audioTracks = embeddedAudio.map { YouTubeRepository.AudioTrack("", it.language, it.name, false) },
+            subtitles = currentSubtitles
+        )
     }
 
     private fun toggleCaptions() {
@@ -1146,6 +1331,8 @@ class PlayerActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        flushContentUsage()
+        contentPlayingSince = null
         super.onDestroy()
         resolveJob = null
         RemotePlayerControl.handler = null
@@ -1154,6 +1341,36 @@ class PlayerActivity : ComponentActivity() {
         if (ListenService.player === player) ListenService.player = null
         player?.release()
         player = null
+    }
+
+    private fun flushContentUsage(): kotlinx.coroutines.Job? {
+        val since = contentPlayingSince ?: return null
+        val now = android.os.SystemClock.elapsedRealtime()
+        contentPlayingSince = now
+        val delta = (now - since).coerceAtLeast(0)
+        val groups = contentGroups
+        val guard = sessionGuard
+        return io.pickwick.app.data.ContentUsageIo.scope.launch {
+            try { guard.recordContent(groups, delta) }
+            catch (e: Exception) {
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    player?.pause()
+                    contentBlocked.value = "Could not save content time. Please try again."
+                }
+            }
+        }
+    }
+
+    private fun showContentRemaining(remaining: Pair<io.pickwick.app.data.ContentGroup, Long>?) {
+        contentRemaining.value = remaining
+        if (remaining == null) return
+        val (group, left) = remaining
+        if (left <= 0) {
+            player?.pause()
+            contentBlocked.value = "You've used your ${group.name} time for this session. You can choose something else."
+        } else if (left <= 60_000 && contentWarnings.add(group.id)) {
+            notice.value = Notice("1 minute of ${group.name} left this session")
+        }
     }
 }
 
@@ -1164,7 +1381,7 @@ private enum class TvTrackPanel { Hidden, Toolbar, Audio, Subtitles }
 
 /** Top-center pill that shows a notice for a few seconds, then fades away. */
 @Composable
-private fun BoxScope.NoticeOverlay(state: MutableState<Notice?>) {
+private fun BoxScope.NoticeOverlay(state: MutableState<Notice?>, topPadding: androidx.compose.ui.unit.Dp = 28.dp) {
     val n = state.value ?: return
     Text(
         n.text,
@@ -1172,7 +1389,7 @@ private fun BoxScope.NoticeOverlay(state: MutableState<Notice?>) {
         style = MaterialTheme.typography.titleMedium,
         modifier = Modifier
             .align(Alignment.TopCenter)
-            .padding(top = 28.dp)
+            .padding(top = topPadding)
             .background(Color(0xCC000000), shape = RoundedCornerShape(24.dp))
             .padding(horizontal = 20.dp, vertical = 10.dp)
     )
@@ -1193,6 +1410,7 @@ private fun BoxScope.TvControlsOverlay(
     selectedAudio: Int,
     selectedSubtitle: Int,
     captionsOn: Boolean,
+    onVisibilityChanged: (Boolean) -> Unit,
     playerProvider: () -> ExoPlayer?
 ) {
     val until by visibleUntil
@@ -1216,7 +1434,12 @@ private fun BoxScope.TvControlsOverlay(
         visible = false
     }
 
-    if ((visible || panel != TvTrackPanel.Hidden) && durationMs > 0) {
+    val controlsShown = (visible || panel != TvTrackPanel.Hidden) && durationMs > 0
+    androidx.compose.runtime.SideEffect { onVisibilityChanged(controlsShown) }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { onVisibilityChanged(false) }
+    }
+    if (controlsShown) {
         if (panel == TvTrackPanel.Audio || panel == TvTrackPanel.Subtitles) {
             TvTrackSheet(
                 panel = panel,

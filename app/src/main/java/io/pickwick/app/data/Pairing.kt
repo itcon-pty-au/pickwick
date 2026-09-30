@@ -563,9 +563,19 @@ class LanServer(
             // config while this device still holds the family's full one (blocks,
             // safe-list, channels, rules). Serving it back means a reinstall costs
             // one re-pair, not the curation history.
-            method == "GET" && path == "/config" -> respond(200, configStore.rawJson())
-            method == "POST" && path == "/config" -> {
-                val body = readBody()
+            method == "GET" && path == "/config-key" -> respond(200, NetworkConfigCrypto.publicKey())
+            method == "POST" && path == "/config-export" -> {
+                val key = readBody()
+                respond(200, NetworkConfigCrypto.seal(configStore.rawJson(), key))
+            }
+            method == "GET" && path == "/config" -> respond(200,
+                ConfigStore.toJson(configStore.load().let { w ->
+                    w.copy(networkCatalogs = w.networkCatalogs.map { it.copy(password = "") },
+                        networkShares = w.networkShares.map { it.copy(password = "") })
+                }))
+            method == "POST" && (path == "/config" || path == "/config-sealed") -> {
+                val payload = readBody()
+                val body = if (path == "/config-sealed") NetworkConfigCrypto.open(payload) else payload
                 // Snapshot first: the reconcile sweep re-pushes a config a
                 // device already has, so only a real difference may reach the
                 // kid. Both loads are a file read and a parse — a push is rare.
@@ -802,13 +812,24 @@ object LanClient {
     suspend fun pushConfig(device: PairedDevice, configJson: String): Boolean =
         withContext(Dispatchers.IO) {
             runCatching {
-                request(device, "POST", "/config", configJson).use { it.isSuccessful }
+                if (listOf("networkCatalogs", "networkShares").any {
+                    JSONObject(configJson).optJSONArray(it)?.length()?.let { size -> size > 0 } == true
+                }) {
+                    val key = request(device, "GET", "/config-key", null).use {
+                        check(it.isSuccessful) { "Update the paired device to use network catalogs" }
+                        it.body!!.string()
+                    }
+                    request(device, "POST", "/config-sealed", NetworkConfigCrypto.seal(configJson, key)).use { it.isSuccessful }
+                } else request(device, "POST", "/config", configJson).use { it.isSuccessful }
             }.getOrDefault(false)
         }
 
     /** The device's full config JSON (channels, blocks, safe-list, rules), or null. */
     suspend fun fetchConfig(device: PairedDevice): String? = withContext(Dispatchers.IO) {
         runCatching {
+            request(device, "POST", "/config-export", NetworkConfigCrypto.publicKey()).use { resp ->
+                if (resp.isSuccessful) return@runCatching NetworkConfigCrypto.open(resp.body!!.string())
+            }
             request(device, "GET", "/config", null).use { resp ->
                 if (resp.isSuccessful) resp.body?.string() else null
             }

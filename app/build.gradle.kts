@@ -27,11 +27,12 @@ android {
     compileSdk = 34
 
     defaultConfig {
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         applicationId = "io.pickwick.app"
         minSdk = 26 // adaptive icons; every realistic target device is far above this
         targetSdk = 34
-        versionCode = 30
-        versionName = "0.8.1"
+        versionCode = 31
+        versionName = "0.9.0"
 
         // Self-update manifest: JSON with versionCode/versionName/apkUrl.
         buildConfigField(
@@ -88,6 +89,7 @@ android {
             signingConfig = signingConfigs.findByName("release")
         }
     }
+    testBuildType = "release"
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -136,6 +138,11 @@ gradle.taskGraph.whenReady {
 }
 
 dependencies {
+    implementation("com.hierynomus:smbj:0.14.0")
+    implementation("com.rapid7.client:dcerpc:0.12.13") {
+        exclude(group = "com.google.guava", module = "guava")
+    }
+    implementation("com.google.guava:guava:33.4.0-android")
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
@@ -158,6 +165,9 @@ dependencies {
     implementation(libs.zxing.core)
     implementation(libs.coil.compose)
     testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
     // Real org.json for JVM unit tests — the android.jar stubs throw "not mocked".
     testImplementation("org.json:json:20240303")
 }

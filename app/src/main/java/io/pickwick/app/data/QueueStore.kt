@@ -121,7 +121,9 @@ fun QueuedVideo.finishedSinceQueued(progress: WatchProgress?): Boolean =
  * (Surprise, Favorites) already use for single launches. A cross-channel queue
  * billed at one flat rate would over- or under-charge every other item.
  */
-fun queuePercents(videos: List<Video>, channels: List<Source>): List<Int> =
+fun queuePercents(videos: List<Video>, channels: List<Source>, networkTimePercents: Map<String, Int> = emptyMap()): List<Int> =
     videos.map { v ->
-        channels.firstOrNull { it.name == v.channelName }?.timeMultiplierPercent ?: 100
+        if (SmbPaths.isNetwork(v.url)) {
+            runCatching { networkTimePercents[SmbPaths.parse(v.url).first] }.getOrNull() ?: 100
+        } else channels.firstOrNull { it.name == v.channelName }?.timeMultiplierPercent ?: 100
     }

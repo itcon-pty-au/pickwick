@@ -30,7 +30,37 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
     private val prefs = context.applicationContext
         .getSharedPreferences("limits$profileSuffix", Context.MODE_PRIVATE)
 
+    private fun android.content.SharedPreferences.Editor.clearContentUsage(): android.content.SharedPreferences.Editor = apply {
+        prefs.all.keys.filter { it.startsWith("content:") }.forEach { remove(it) }
+    }
+
+    /** Actual playback time, independent of FREE/discounted source rates. Device-local. */
+    fun recordContent(groups: List<ContentGroup>, deltaMs: Long) {
+        if (deltaMs <= 0) return
+        rolloverIfNewDay()
+        val now = System.currentTimeMillis()
+        startFreshSittingAfterGap(limits(), now)
+        val editor = prefs.edit().putLong("lastWatchAt", now)
+        groups.distinctBy { it.id }.forEach { group ->
+            val key = "content:${group.id}"
+            editor.putLong(key, prefs.getLong(key, 0) + deltaMs)
+        }
+        check(editor.commit()) { "Could not save content usage" }
+    }
+
+    /** The strictest overlapping group. Call on the content I/O dispatcher. */
+    fun contentRemaining(groups: List<ContentGroup>, profileId: String?): Pair<ContentGroup, Long>? {
+        rolloverIfNewDay()
+        startFreshSittingAfterGap(limits(), System.currentTimeMillis())
+        return groups.mapNotNull { g -> g.minutesFor(profileId)?.let { minutes ->
+            g to (minutes * 60_000L - prefs.getLong("content:${g.id}", 0)).coerceAtLeast(0)
+        } }.minByOrNull { it.second }
+    }
+
     companion object {
+        internal fun budgetReached(watchedMs: Long, budgetMs: Long?, multiplierPercent: Int): Boolean =
+            multiplierPercent > 0 && budgetMs != null && watchedMs >= budgetMs
+
         /** Deliberately parent-attributed, so the kid doesn't read it as a bug. */
         private const val PAUSED_MESSAGE =
             "A parent paused screen time for today. See you tomorrow 💛"
@@ -135,6 +165,7 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
             .putLong("bonusMs", prefs.getLong("bonusMs", 0) + minutes * 60_000L)
             .putLong("lockUntil", 0)
             .putLong("sittingWatchedMs", 0)
+            .clearContentUsage()
             .putLong(
                 "windowPassUntil",
                 extendPass(prefs.getLong("windowPassUntil", 0), now, minutes)
@@ -206,7 +237,7 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
             // parent is looking at.
             if (breakPassActive(l)) {
                 spendBreakPass(l)
-                prefs.edit().putLong("lockUntil", 0).putLong("sittingWatchedMs", 0).apply()
+                prefs.edit().putLong("lockUntil", 0).putLong("sittingWatchedMs", 0).clearContentUsage().apply()
             } else {
                 return "Time for a break! You can watch again at ${timeOf(lockUntil)} ⏰"
             }
@@ -214,10 +245,8 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
 
         startFreshSittingAfterGap(l, now)
 
-        if (multiplierPercent > 0) dailyBudgetMs(l)?.let { budget ->
-            if (prefs.getLong("dailyWatchedMs", 0) >= budget) {
-                return "That's all the watching for today! 🌟"
-            }
+        if (budgetReached(prefs.getLong("dailyWatchedMs", 0), dailyBudgetMs(l), multiplierPercent)) {
+            return "That's all the watching for today! 🌟"
         }
         return null
     }
@@ -228,7 +257,7 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
      * the caller's current mode, so a window marked "Allow listening" arriving
      * mid-story doesn't stop it — the player switches to sound-only instead.
      */
-    fun tick(deltaMs: Long, listening: Boolean = false): String? {
+    fun tick(deltaMs: Long, listening: Boolean = false, multiplierPercent: Int = 100): String? {
         rolloverIfNewDay()
         val l = limits()
         val now = System.currentTimeMillis()
@@ -242,9 +271,7 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
         val sitting = prefs.getLong("sittingWatchedMs", 0) + deltaMs
         prefs.edit().putLong("dailyWatchedMs", daily).putLong("sittingWatchedMs", sitting).apply()
 
-        dailyBudgetMs(l)?.let { budget ->
-            if (daily >= budget) return "That's all the watching for today! 🌟"
-        }
+        if (budgetReached(daily, dailyBudgetMs(l), multiplierPercent)) return "That's all the watching for today! 🌟"
         // No break rule → nothing to arm; the sitting cap only exists to force
         // a rest of the configured length. The daily budget above still caps
         // the day, so this isn't unlimited watching.
@@ -255,7 +282,7 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
             // on. The daily budget above still caps the day.
             if (breakPassActive(l)) {
                 spendBreakPass(l)
-                prefs.edit().putLong("sittingWatchedMs", 0).apply()
+                prefs.edit().putLong("sittingWatchedMs", 0).clearContentUsage().apply()
                 return null
             }
             prefs.edit().putLong("lockUntil", now + breakLen * 60_000L).apply()
@@ -317,7 +344,7 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
         val gapMs = l.breakMinutes?.let { it * 60_000L } ?: return
         val lastWatch = prefs.getLong("lastWatchAt", 0)
         if (lastWatch > 0 && now - lastWatch >= gapMs) {
-            prefs.edit().putLong("sittingWatchedMs", 0).apply()
+            prefs.edit().putLong("sittingWatchedMs", 0).putLong("lastWatchAt", 0).clearContentUsage().apply()
         }
     }
 
@@ -341,6 +368,7 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
                 .putString("day", today)
                 .putLong("dailyWatchedMs", 0)
                 .putLong("sittingWatchedMs", 0)
+                .clearContentUsage()
                 .putLong("lockUntil", 0)
                 .putLong("bonusMs", 0)
                 .putLong("windowPassUntil", 0)

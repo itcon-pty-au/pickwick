@@ -48,7 +48,7 @@ internal class TvPivotBringIntoView(
 }
 
 /** Vertical browsing: the focused row settles a quarter down the screen. */
-private val TvColumnPivot = TvPivotBringIntoView(0.25f)
+internal val TvColumnPivot = TvPivotBringIntoView(0.25f)
 
 /**
  * Inside a row: the focused tile stays pinned left-of-center. Not tighter than
@@ -74,6 +74,11 @@ fun PickwickScreen(
 ) {
     val state by vm.state.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
+    var networkOpen by remember(activeProfile?.id) { mutableStateOf(false) }
+    if (networkOpen) {
+        NetworkLibraryScreen(activeProfile?.id, vm) { networkOpen = false }
+        return
+    }
     val isTv = remember {
         (context.getSystemService(android.content.Context.UI_MODE_SERVICE) as android.app.UiModeManager)
             .currentModeType == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
@@ -143,6 +148,8 @@ fun PickwickScreen(
                             onOpen = vm::openChannel,
                             onSurprise = vm::surpriseMe,
                             onOpenWatchlist = vm::openWatchlist,
+                            hasNetworkCatalogs = state.hasNetworkCatalogs,
+                            onOpenNetworkCatalogs = { networkOpen = true },
                             hasWatchLater = state.watchLater.isNotEmpty(),
                             onOpenWatchLater = vm::openWatchLater,
                             hasQueue = state.queued.isNotEmpty(),
@@ -167,6 +174,8 @@ fun PickwickScreen(
                                 onOpen = vm::openChannel,
                                 onSurprise = vm::surpriseMe,
                                 onOpenWatchlist = vm::openWatchlist,
+                                hasNetworkCatalogs = state.hasNetworkCatalogs,
+                                onOpenNetworkCatalogs = { networkOpen = true },
                                 hasWatchLater = state.watchLater.isNotEmpty(),
                                 onOpenWatchLater = vm::openWatchLater,
                                 hasQueue = state.queued.isNotEmpty(),

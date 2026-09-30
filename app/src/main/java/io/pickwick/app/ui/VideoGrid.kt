@@ -23,6 +23,8 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import io.pickwick.app.data.*
 
+internal val CatalogGridMinWidth = 240.dp
+
 /**
  * A small emoji status light riding a poster corner — never tappable (every
  * action lives in the hold menu; fingertip-sized corner targets were a
@@ -264,7 +266,7 @@ internal fun VideoGrid(
                             Text(if (seen) "↩️  Move back to not watched" else "✔️  Mark as watched")
                         }
                     }
-                    if (onToggleDownload != null) {
+                    if (onToggleDownload != null && !io.pickwick.app.data.SmbPaths.isNetwork(item.video.url)) {
                         val url = item.video.url
                         TextButton(
                             onClick = { onToggleDownload(item); menuFor = null },
@@ -312,7 +314,7 @@ internal fun VideoGrid(
     }
     LazyVerticalGrid(
         state = gridState,
-        columns = GridCells.Adaptive(minSize = 240.dp),
+        columns = GridCells.Adaptive(minSize = CatalogGridMinWidth),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         // Room for the focus glow on edge tiles.
@@ -418,7 +420,7 @@ internal fun WatchedShelfTile(
 /** One poster in the grid. Extracted so a non-video tile can sit among them. */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun VideoTile(
+internal fun VideoTile(
     item: VideoItem,
     focusRequester: androidx.compose.ui.focus.FocusRequester?,
     onPlay: (VideoItem) -> Unit,

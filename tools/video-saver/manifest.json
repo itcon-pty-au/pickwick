@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "Pickwick Video Saver",
+  "version": "0.4.0",
+  "description": "Automatically detect Pokeflix media and save best-quality audio and video locally.",
+  "permissions": ["activeTab", "tabs", "nativeMessaging", "storage", "webRequest"],
+  "host_permissions": ["http://*/*", "https://*/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": { "default_popup": "popup.html" }
+}

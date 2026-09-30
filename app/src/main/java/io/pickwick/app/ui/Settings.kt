@@ -32,6 +32,7 @@ import io.pickwick.app.data.PairingWindow
 import io.pickwick.app.data.SettingsStore
 import io.pickwick.app.data.SourceCache
 import io.pickwick.app.data.Whitelist
+import io.pickwick.app.data.migrateNetworkShares
 import io.pickwick.app.data.YouTubeRepository
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -368,6 +369,10 @@ private fun AdminScreen(
     var masterToken by remember(initial) { mutableStateOf(initial.masterDeviceToken) }
     var sponsorSkip by remember(initial) { mutableStateOf(initial.sponsorSkip) }
     var listenPercent by remember(initial) { mutableStateOf(initial.listenPercent) }
+    val migratedNetwork = remember(initial) { initial.migrateNetworkShares() }
+    var networkCatalogs by remember(initial) { mutableStateOf(migratedNetwork.networkCatalogs) }
+    var networkShares by remember(initial) { mutableStateOf(migratedNetwork.networkShares) }
+    var contentGroups by remember(initial) { mutableStateOf(initial.contentGroups) }
     var baseline by remember(initial) { mutableStateOf(initial) }
     /** Entries added by this session's URL import — shown with a NEW tag for review. */
     var newIds by remember { mutableStateOf(setOf<String>()) }
@@ -447,7 +452,10 @@ private fun AdminScreen(
             deviceProfiles.filterValues { it in validIds },
             masterDeviceToken = masterToken,
             sponsorSkip = sponsorSkip,
-            listenPercent = listenPercent
+            listenPercent = listenPercent,
+            networkCatalogs = networkCatalogs.map { it.copy(profileIds = it.profileIds.intersect(validIds)) },
+            networkShares = networkShares,
+            contentGroups = contentGroups
         )
     }
 
@@ -539,9 +547,28 @@ private fun AdminScreen(
     // eighteen sections, and "where is X" was the first support question.
     var page by remember { mutableStateOf<HubPage?>(null) }
     page?.let { p ->
-        BackHandler { page = null }
-        SubPage(title = p.title, onBack = { page = null }) {
+        val backToParent = { page = if (p in listOf(HubPage.Channels, HubPage.Network, HubPage.ContentGroups)) HubPage.ContentSources else null }
+        BackHandler { backToParent() }
+        SubPage(title = p.title, onBack = backToParent) {
             when (p) {
+                HubPage.ContentSources -> {
+                    SettingsCard(padded = false) {
+                        HubRow("📺", "YouTube", "${entries.size} channels and playlists") { page = HubPage.Channels }
+                        SettingsDivider()
+                        HubRow("📁", "Network shares", "${networkShares.size} shares, ${networkCatalogs.size} catalogs") { page = HubPage.Network }
+                        SettingsDivider()
+                        HubRow("📚", "Content groups", "${contentGroups.size} groups") { page = HubPage.ContentGroups }
+                    }
+                }
+                HubPage.ContentGroups -> ContentGroupSettings(contentGroups,
+                    entries.map { if (it.label == null) it.copy(label = resolvedNames[it.url]) else it },
+                    networkCatalogs, profiles) { contentGroups = it }
+                HubPage.Network -> {
+                    SectionTitle("Network shares")
+                    NetworkCatalogSettings(networkShares, networkCatalogs, profiles) { shares, catalogs ->
+                        networkShares = shares; networkCatalogs = catalogs
+                    }
+                }
                 HubPage.Kids -> {
                     SectionTitle("Kids")
                     SettingsCard {
@@ -736,9 +763,9 @@ private fun AdminScreen(
             HubRow("🧒", "Kids", kidsLine) { page = HubPage.Kids }
             SettingsDivider()
             HubRow(
-                "📺", "Channels & playlists",
-                "${entries.size} source${if (entries.size == 1) "" else "s"} · suggestions"
-            ) { page = HubPage.Channels }
+                "📺", "Content Sources",
+                "YouTube and network shares"
+            ) { page = HubPage.ContentSources }
             SettingsDivider()
             HubRow(
                 "🛡️", "Content screening",
@@ -769,10 +796,13 @@ private fun AdminScreen(
     }
 }
 
-/** The six pages behind the settings root. */
+/** Settings pages, including the two content source branches. */
 private enum class HubPage(val title: String) {
+    ContentSources("Content Sources"),
+    ContentGroups("Content groups"),
+    Network("Network shares"),
     Kids("Kids"),
-    Channels("Channels & playlists"),
+    Channels("YouTube"),
     Screening("Content screening"),
     Devices("Devices"),
     Playback("Playback"),
