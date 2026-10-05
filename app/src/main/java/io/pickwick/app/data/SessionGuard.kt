@@ -157,6 +157,11 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
      * Parent grant: adds minutes to today's budget, ends any break lock, starts a
      * fresh sitting, and waives every blocked window for the granted minutes.
      * Resets at midnight.
+     *
+     * Content-group minutes are deliberately left alone: a grant is general
+     * time. A kid who has used up their Pokémon allowance gets the extra
+     * minutes for everything else, not another round of Pokémon — that cap is
+     * its own rule, lifted only by its own reset.
      */
     fun grantExtraMinutes(minutes: Int) {
         rolloverIfNewDay()
@@ -165,7 +170,6 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
             .putLong("bonusMs", prefs.getLong("bonusMs", 0) + minutes * 60_000L)
             .putLong("lockUntil", 0)
             .putLong("sittingWatchedMs", 0)
-            .clearContentUsage()
             .putLong(
                 "windowPassUntil",
                 extendPass(prefs.getLong("windowPassUntil", 0), now, minutes)
