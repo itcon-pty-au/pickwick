@@ -49,6 +49,7 @@ import io.pickwick.app.data.WatchHistoryStore
 import io.pickwick.app.data.YouTubeRepository
 import io.pickwick.app.data.listenDrainPercent
 import io.pickwick.app.data.networkCatalogFor
+import io.pickwick.app.data.podcastFor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -170,6 +171,20 @@ class PlayerActivity : ComponentActivity() {
     private var resolveJob: kotlinx.coroutines.Job? = null
 
     /**
+     * Up next can mix podcast episodes in with videos. Those play here, in
+     * this one player, rather than handing off to [PodcastPlayerActivity]:
+     * with the screen off Android refuses a background activity launch, so a
+     * handoff would strand a listening queue at the first change of kind.
+     * While one is current, every screen-time rule stands aside — no start
+     * gate, no budget drain, no content-group cap — and it plays on with the
+     * screen off whether or not the family listening rate is set.
+     */
+    private fun isPodcastItem() = currentPageUrl?.let(io.pickwick.app.data.PodcastPaths::isPodcast) == true
+
+    /** Cover art for a podcast item: PlayerView shows it while no video track exists. */
+    private val podcastArtwork = mutableStateOf<android.graphics.drawable.Drawable?>(null)
+
+    /**
      * Family screen-off listening rate; null = feature off (default), which
      * keeps the old behavior: locking the phone pauses. Loaded off-main once,
      * phones only.
@@ -239,8 +254,11 @@ class PlayerActivity : ComponentActivity() {
         timePercent = (queuePercents?.getOrNull(startIndex)
             ?: intent.getIntExtra(EXTRA_TIME_PERCENT, 100)).coerceIn(0, 400)
 
-        // Screen-time rules: blocked before we even build the player.
-        sessionGuard.checkStart(timePercent)?.let { reason ->
+        // Screen-time rules: blocked before we even build the player. A queue
+        // that starts on a podcast episode isn't gated; the videos after it
+        // are held to the rules by the 5-second tick, as any later item is.
+        val startsOnPodcast = io.pickwick.app.data.PodcastPaths.isPodcast(queue[startIndex])
+        (if (startsOnPodcast) null else sessionGuard.checkStart(timePercent))?.let { reason ->
             // A window marked "Allow listening" refuses the picture, not the
             // story — start sound-only instead of showing the block screen.
             // Only when listening clears *every* rule: an exhausted budget or a
@@ -449,14 +467,15 @@ class PlayerActivity : ComponentActivity() {
                 // the picture instead of stopping the video, and morning gives
                 // it back. Checked whether or not playback is running, so a
                 // paused story is in the right mode when it resumes.
-                syncListenOnlyWindow()
+                // Not under a podcast: it has no picture to take away.
+                if (!isPodcastItem()) syncListenOnlyWindow()
                 if (currentPageUrl?.let(io.pickwick.app.data.SmbPaths::isNetwork) == true && timeUpMessage.value == null) {
                     sessionGuard.checkStart(timePercent, listenActive)?.let { reason ->
                         exo.pause()
                         timeUpMessage.value = reason
                     }
                 }
-                if (exo.isPlaying && timeUpMessage.value == null) {
+                if (exo.isPlaying && timeUpMessage.value == null && !isPodcastItem()) {
                     // Stats record real watch time; the budget drains at the
                     // source's multiplier (exact integer ms — 25% of 5s = 1250ms),
                     // further scaled by the family listening rate while the
@@ -610,7 +629,8 @@ class PlayerActivity : ComponentActivity() {
                                     // the next video — the other half of the cut to black.
                                     setKeepContentOnPlayerReset(true)
                                 }
-                            }
+                            },
+                            update = { it.defaultArtwork = podcastArtwork.value }
                         )
                     }
                     // Spinner over the held frame: resolving the next video's
@@ -718,6 +738,30 @@ class PlayerActivity : ComponentActivity() {
             }
             val pb = runCatching {
                 val local = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    io.pickwick.app.data.PodcastPaths.parse(queue[i])?.let { (feedId, key) ->
+                        val config = io.pickwick.app.data.ConfigStore(this@PlayerActivity).load()
+                        val feed = config.podcastFor(feedId, intent.getStringExtra(EXTRA_PROFILE_ID))
+                            ?: error("This podcast is no longer available")
+                        val library = io.pickwick.app.data.PodcastLibrary(this@PlayerActivity)
+                        // Cached feed first; one refresh covers an episode queued
+                        // on another device before this one ever fetched the feed.
+                        val episode = library.episode(feedId, key)
+                            ?: library.refresh(feed).episodes.firstOrNull { it.key == key }
+                            ?: error("This episode is no longer in the podcast")
+                        timePercent = 0
+                        currentChannel = feed.name
+                        podcastArtwork.value = episode.imageUrl?.let { url ->
+                            runCatching {
+                                coil.Coil.imageLoader(this@PlayerActivity).execute(
+                                    coil.request.ImageRequest.Builder(this@PlayerActivity).data(url).build()
+                                ).drawable
+                            }.getOrNull()
+                        }
+                        // The audio is the whole item, so it rides as videoUrl:
+                        // no separate track to merge or swap in listen mode.
+                        return@withContext YouTubeRepository.Playback(episode.title, episode.audioUrl, null)
+                    }
+                    podcastArtwork.value = null
                     if (io.pickwick.app.data.SmbPaths.isNetwork(queue[i])) {
                         val (id, path) = io.pickwick.app.data.SmbPaths.parse(queue[i])
                         val config = io.pickwick.app.data.ConfigStore(this@PlayerActivity).load()
@@ -791,6 +835,9 @@ class PlayerActivity : ComponentActivity() {
                 audioOnly = listenActive && pb.audioUrl != null,
                 resumeMs = null
             )
+            // A podcast carried the queue into the background with listening
+            // off for this family; the video after it must not play on unseen.
+            if (listenActive && listenPercent == null && !isPodcastItem()) player?.pause()
         }
     }
 
@@ -895,8 +942,11 @@ class PlayerActivity : ComponentActivity() {
         // buffer starved (stalled at 0s ahead, then crept up at
         // ~1.5x playback); chunked, the whole video was resident
         // 19s in. See ChunkedStreamDataSource for why.
+        // Cross-protocol redirects on: podcast audio goes through tracking
+        // redirects that hop https -> http, which the default refuses.
         val factory = io.pickwick.app.data.SmbDataSource.Factory(this, intent.getStringExtra(EXTRA_PROFILE_ID), io.pickwick.app.data.ChunkedStreamDataSource.Factory(
-            androidx.media3.datasource.DefaultDataSource.Factory(this)
+            androidx.media3.datasource.DefaultDataSource.Factory(this,
+                androidx.media3.datasource.DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true))
         ))
         fun progressive(url: String) =
             androidx.media3.exoplayer.source.ProgressiveMediaSource
@@ -959,7 +1009,9 @@ class PlayerActivity : ComponentActivity() {
      */
     private fun enterListenMode() {
         if (isTv || listenActive) return
-        listenPercent ?: return // unset = feature off: onStop pauses as always
+        // Unset = feature off: onStop pauses as always — except under a podcast,
+        // which is audio-only and outside screen-time rules.
+        if (listenPercent == null && !isPodcastItem()) return
         if (timeUpMessage.value != null) return
         val exo = player ?: return
         // Mid-advance (between videos) counts as playing: the resolve finishes

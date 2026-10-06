@@ -26,8 +26,8 @@ import androidx.media3.ui.PlayerNotificationManager
  * onStop — the static handoff mirrors [io.pickwick.app.data.RemotePlayerControl].
  * The media notification puts a pause button on the lock screen, and the
  * [MediaSession] behind it routes headset buttons too. Phones only by
- * construction: the sole caller is PlayerActivity's enterListenMode, which
- * bails on TV.
+ * construction: the callers are PlayerActivity's enterListenMode and
+ * [PodcastPlayerActivity]'s onStop, both of which bail on TV.
  */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class ListenService : Service() {

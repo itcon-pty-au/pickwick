@@ -13,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -223,6 +224,8 @@ internal fun VideoGrid(
                     // release belongs to nothing here.
                     modifier = Modifier.ignoreSelectUntilRelease()
                 ) {
+                    // Podcast episodes get every row but downloads (below).
+                    val podcast = PodcastPaths.isPodcast(item.video.url)
                     TextButton(
                         onClick = { onToggleQueue?.invoke(item); menuFor = null },
                         modifier = Modifier
@@ -266,7 +269,7 @@ internal fun VideoGrid(
                             Text(if (seen) "↩️  Move back to not watched" else "✔️  Mark as watched")
                         }
                     }
-                    if (onToggleDownload != null && !io.pickwick.app.data.SmbPaths.isNetwork(item.video.url)) {
+                    if (onToggleDownload != null && !io.pickwick.app.data.SmbPaths.isNetwork(item.video.url) && !podcast) {
                         val url = item.video.url
                         TextButton(
                             onClick = { onToggleDownload(item); menuFor = null },
@@ -455,7 +458,25 @@ internal fun VideoTile(
     ) {
         Column {
             Box {
-                AsyncImage(
+                if (PodcastPaths.isPodcast(item.video.url)) {
+                    // Podcast art is square and usually carries the show's name
+                    // as text; a 16:9 crop would cut it off. Same tile geometry,
+                    // art shown whole over a dimmed, blurred fill of itself.
+                    Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(androidx.compose.ui.graphics.RectangleShape)) {
+                        AsyncImage(
+                            model = item.video.thumbnailUrl,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize().blur(24.dp).graphicsLayer { alpha = 0.45f }
+                        )
+                        AsyncImage(
+                            model = item.video.thumbnailUrl,
+                            contentDescription = item.video.title,
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                } else AsyncImage(
                     model = item.video.thumbnailUrl,
                     contentDescription = item.video.title,
                     contentScale = ContentScale.Crop,

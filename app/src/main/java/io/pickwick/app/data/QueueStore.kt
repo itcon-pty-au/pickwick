@@ -123,7 +123,9 @@ fun QueuedVideo.finishedSinceQueued(progress: WatchProgress?): Boolean =
  */
 fun queuePercents(videos: List<Video>, channels: List<Source>, networkTimePercents: Map<String, Int> = emptyMap()): List<Int> =
     videos.map { v ->
-        if (SmbPaths.isNetwork(v.url)) {
+        // Podcasts are FREE; the player also skips every other time rule for them.
+        if (PodcastPaths.isPodcast(v.url)) 0
+        else if (SmbPaths.isNetwork(v.url)) {
             runCatching { networkTimePercents[SmbPaths.parse(v.url).first] }.getOrNull() ?: 100
         } else channels.firstOrNull { it.name == v.channelName }?.timeMultiplierPercent ?: 100
     }

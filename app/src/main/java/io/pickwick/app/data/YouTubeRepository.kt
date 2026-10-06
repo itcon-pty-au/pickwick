@@ -47,6 +47,7 @@ data class Video(
         // hash is 16 hex chars so it can't collide with an 11-char YouTube id.
         get() = if (LocalLibrary.isLocal(url)) url.removePrefix(LocalLibrary.URL_PREFIX)
         else if (SmbPaths.isNetwork(url)) "smb-" + LocalLibrary.idFor(url)
+        else if (PodcastPaths.isPodcast(url)) "pod-" + url.substringAfterLast('/')
         else VIDEO_ID.find(url)?.groupValues?.get(1)
 
     companion object {

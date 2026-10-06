@@ -559,7 +559,8 @@ class MainViewModel(
                     },
                     networkTimePercents = list.networkCatalogs.filter {
                         list.networkCatalogFor(it.id, activeProfileId) != null
-                    }.associate { it.id to it.timePercent }
+                    }.associate { it.id to it.timePercent },
+                    podcasts = list.podcasts.filter { list.podcastFor(it.id, activeProfileId) != null }
                 )
                 // Per-kid blocks fold into one set — every downstream check
                 // ("is this video blocked?") stays a plain membership test.
@@ -741,7 +742,7 @@ class MainViewModel(
 
     /** Raw videos on the current screen hidden by the screener (no verdict yet or held for review). */
     private fun heldByScreening(): Int = rawVideos.count { v ->
-        !io.pickwick.app.data.SmbPaths.isNetwork(v.url) &&
+        !io.pickwick.app.data.SmbPaths.isNetwork(v.url) && !io.pickwick.app.data.PodcastPaths.isPodcast(v.url) &&
             v.videoId !in blockedVideoIds && !tooShort(v) && screener?.isVisible(v) == false
     }
 
@@ -828,6 +829,12 @@ class MainViewModel(
             if (io.pickwick.app.data.SmbPaths.isNetwork(video.url)) {
                 val catalogId = runCatching { io.pickwick.app.data.SmbPaths.parse(video.url).first }.getOrNull()
                 if (catalogId !in _state.value.networkTimePercents) return@mapNotNull null
+            } else if (io.pickwick.app.data.PodcastPaths.isPodcast(video.url)) {
+                // A parent-approved feed, not a screened video — but a saved
+                // episode leaves the shelves once its podcast is removed or
+                // hidden from this kid, like a network catalog's files.
+                val feedId = io.pickwick.app.data.PodcastPaths.parse(video.url)?.first
+                if (_state.value.podcasts.none { it.id == feedId }) return@mapNotNull null
             } else if (screener?.isVisible(video) == false) return@mapNotNull null
             val p = history.progress(video.url)
             when {

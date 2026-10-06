@@ -530,6 +530,18 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                             }
                         }
                     ) { item ->
+                        // Saved podcast episodes (Favorites, Watch later) open in
+                        // the podcast player — the video player can't stream them.
+                        io.pickwick.app.data.PodcastPaths.parse(item.video.url)?.let { (feedId, key) ->
+                            startActivity(
+                                Intent(this, PodcastPlayerActivity::class.java)
+                                    .putExtra(PodcastPlayerActivity.EXTRA_FEED_ID, feedId)
+                                    .putStringArrayListExtra(PodcastPlayerActivity.EXTRA_EPISODES, arrayListOf(key))
+                                    .putExtra(PodcastPlayerActivity.EXTRA_PROFILE_ID, activeProfileId)
+                                    .putExtra(PodcastPlayerActivity.EXTRA_PROFILE_SUFFIX, profileSuffix)
+                            )
+                            return@PickwickScreen
+                        }
                         val s = vm.state.value
                         val screen = s.screen
                         val intent = Intent(this, PlayerActivity::class.java)

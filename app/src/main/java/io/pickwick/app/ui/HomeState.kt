@@ -36,6 +36,8 @@ data class UiState(
     val channels: List<Source> = emptyList(),
     val hasNetworkCatalogs: Boolean = false,
     val networkTimePercents: Map<String, Int> = emptyMap(),
+    /** RSS podcasts this kid may hear — each gets its own home tile. */
+    val podcasts: List<io.pickwick.app.data.PodcastFeed> = emptyList(),
     val screen: Screen = Screen.Home,
     val videos: List<VideoItem> = emptyList(),
     /**

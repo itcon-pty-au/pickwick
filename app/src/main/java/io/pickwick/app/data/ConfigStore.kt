@@ -162,6 +162,7 @@ class ConfigStore(context: Context) {
         fun fingerprint(w: Whitelist): String {
             val canonical = buildString {
                 w.contentGroups.forEach { append("CONTENT:"); append(it.toJson()); append('\n') }
+                w.podcasts.forEach { append("POD:"); append(it.toJson()); append('\n') }
                 w.networkShares.forEach {
                     append("SHARE:"); append(it.toJson(false)); append('|'); append(it.password); append('\n')
                 }
@@ -287,6 +288,10 @@ class ConfigStore(context: Context) {
             root.put("updatedAt", System.currentTimeMillis())
             if (w.contentGroups.isNotEmpty()) root.put("contentGroups", JSONArray().apply {
                 w.contentGroups.forEach { put(it.toJson()) }
+            })
+            // Own top-level key, not an entry kind: older builds carry it along untouched.
+            if (w.podcasts.isNotEmpty()) root.put("podcasts", JSONArray().apply {
+                w.podcasts.forEach { put(it.toJson()) }
             })
             if (w.networkShares.isNotEmpty()) root.put("networkShares", JSONArray().apply {
                 w.networkShares.forEach { put(it.toJson(includeSecrets)) }
@@ -598,6 +603,10 @@ class ConfigStore(context: Context) {
                 }.orEmpty(),
                 networkShares = root.optJSONArray("networkShares")?.let { a ->
                     (0 until a.length()).map { SmbShare.fromJson(a.getJSONObject(it)) }.distinctBy { it.id }
+                }.orEmpty(),
+                podcasts = root.optJSONArray("podcasts")?.let { a ->
+                    require(a.length() <= 500) { "Too many podcasts" }
+                    (0 until a.length()).map { PodcastFeed.fromJson(a.getJSONObject(it)) }.distinctBy { it.id }
                 }.orEmpty()
             ).resolveNetworkShares()
         }

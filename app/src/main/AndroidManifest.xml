@@ -67,6 +67,12 @@
             android:exported="false"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" />
 
+        <!-- Audio-only podcast playback, outside screen-time rules. -->
+        <activity
+            android:name=".ui.PodcastPlayerActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" />
+
         <!-- Fetches parent-approved videos for offline play, one at a time. -->
         <service
             android:name=".data.DownloadService"
@@ -75,7 +81,8 @@
 
         <!-- Listen mode: keeps playback alive while the phone screen is off
              and puts a pause button on the lock screen. Phones only — started
-             solely by PlayerActivity when the display actually turns off. -->
+             by PlayerActivity when the display actually turns off, and by
+             PodcastPlayerActivity whenever it leaves the screen mid-episode. -->
         <service
             android:name=".ui.ListenService"
             android:exported="false"

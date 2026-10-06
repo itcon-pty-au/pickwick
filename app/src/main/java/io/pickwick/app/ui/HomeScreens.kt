@@ -88,6 +88,8 @@ internal fun ChannelGrid(
     onOpenWatchlist: () -> Unit,
     hasNetworkCatalogs: Boolean = false,
     onOpenNetworkCatalogs: () -> Unit = {},
+    podcasts: List<PodcastFeed> = emptyList(),
+    onOpenPodcast: (PodcastFeed) -> Unit = {},
     hasWatchLater: Boolean = false,
     onOpenWatchLater: () -> Unit = {},
     hasQueue: Boolean = false,
@@ -99,10 +101,11 @@ internal fun ChannelGrid(
     onSwitchProfile: (() -> Unit)? = null,
     onSearch: (String) -> Unit = {}
 ) {
-    if (channels.isEmpty() && !hasNetworkCatalogs) {
+    if (channels.isEmpty() && !hasNetworkCatalogs && podcasts.isEmpty()) {
         EmptyHome(onOpenSettings)
         return
     }
+    val podcastCovers = rememberPodcastCovers(podcasts)
     LazyVerticalGrid(
         columns = GridCells.Adaptive(minSize = ChannelGridMinWidth),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -169,6 +172,9 @@ internal fun ChannelGrid(
         items(channels, key = { it.id }) { channel ->
             ChannelTile(channel, isNew = channel.id in newBadges, onOpen = onOpen)
         }
+        items(podcasts, key = { "podcast-" + it.id }) { feed ->
+            PodcastTile(feed, podcastCovers[feed.id], onClick = { onOpenPodcast(feed) })
+        }
     }
 }
 
@@ -184,6 +190,7 @@ private fun ChannelTile(
         thumbnail = channel.avatarUrl,
         timePercent = channel.timeMultiplierPercent,
         isNew = isNew,
+        source = SourceBadge.YOUTUBE,
         modifier = modifier,
         onClick = { onOpen(channel) }
     )
@@ -197,6 +204,7 @@ internal fun ArtworkTile(
     isNew: Boolean = false,
     modifier: Modifier = Modifier,
     fallback: String? = null,
+    source: SourceBadge? = null,
     onClick: () -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -231,19 +239,24 @@ internal fun ArtworkTile(
                             .padding(horizontal = 6.dp, vertical = 2.dp)
                     )
                 }
-                // The screen-time "price tag" — shown only when it differs from
-                // normal, so kids can pick cheap/free channels knowingly.
-                timeMultiplierColor(timePercent)?.let { color ->
-                    Text(
-                        timeMultiplierLabel(timePercent),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White,
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .padding(6.dp)
-                            .background(color)
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
+                Row(
+                    Modifier.align(Alignment.TopStart).padding(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    source?.let { SourceBadgeIcon(it) }
+                    // The screen-time "price tag" — shown only when it differs from
+                    // normal, so kids can pick cheap/free channels knowingly.
+                    timeMultiplierColor(timePercent)?.let { color ->
+                        Text(
+                            timeMultiplierLabel(timePercent),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White,
+                            modifier = Modifier
+                                .background(color)
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
                 }
             }
             Box(Modifier.padding(8.dp)) {
@@ -413,6 +426,8 @@ internal fun TvHomeRows(
     onOpenWatchlist: () -> Unit,
     hasNetworkCatalogs: Boolean = false,
     onOpenNetworkCatalogs: () -> Unit = {},
+    podcasts: List<PodcastFeed> = emptyList(),
+    onOpenPodcast: (PodcastFeed) -> Unit = {},
     hasWatchLater: Boolean = false,
     onOpenWatchLater: () -> Unit = {},
     hasQueue: Boolean = false,
@@ -422,10 +437,11 @@ internal fun TvHomeRows(
     onSwitchProfile: (() -> Unit)? = null,
     onSearch: (String) -> Unit = {}
 ) {
-    if (channels.isEmpty() && !hasNetworkCatalogs) {
+    if (channels.isEmpty() && !hasNetworkCatalogs && podcasts.isEmpty()) {
         EmptyHome(onOpenSettings)
         return
     }
+    val podcastCovers = rememberPodcastCovers(podcasts)
     val firstTileFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     LaunchedEffect(Unit) { runCatching { firstTileFocus.requestFocus() } }
 
@@ -475,6 +491,30 @@ internal fun TvHomeRows(
             }
         }
 
+        if (podcasts.isNotEmpty()) item(key = "podcasts") {
+            Column {
+                TvRowTitle("Podcasts")
+                CompositionLocalProvider(
+                    androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides TvRowPivot
+                ) {
+                    androidx.compose.foundation.lazy.LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                        modifier = Modifier.dpadHeldScrollThrottle(keys = DPAD_HORIZONTAL)
+                    ) {
+                        items(podcasts.size, key = { podcasts[it].id }) { i ->
+                            PodcastTile(
+                                podcasts[i], podcastCovers[podcasts[i].id],
+                                modifier = (if (i == 0 && channels.isEmpty()) Modifier.focusRequester(firstTileFocus)
+                                    else Modifier).width(150.dp),
+                                onClick = { onOpenPodcast(podcasts[i]) }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         item(key = "explore") {
             Column {
                 TvRowTitle("Explore")
@@ -493,7 +533,7 @@ internal fun TvHomeRows(
                         }
                         item(key = "surprise") {
                             SurpriseTile(
-                                (if (channels.isEmpty()) Modifier.focusRequester(firstTileFocus) else Modifier).width(150.dp),
+                                (if (channels.isEmpty() && podcasts.isEmpty()) Modifier.focusRequester(firstTileFocus) else Modifier).width(150.dp),
                                 onSurprise
                             )
                         }
@@ -533,11 +573,16 @@ private fun WatchlistTile(modifier: Modifier = Modifier, onClick: () -> Unit) =
 
 @Composable
 private fun NetworkCatalogsTile(modifier: Modifier = Modifier, onClick: () -> Unit) =
-    SpecialTile("📁", "Network shares", DownloadsTileTeal, modifier = modifier, onClick = onClick)
+    SpecialTile("📁", "Network shares", DownloadsTileTeal, modifier = modifier, source = SourceBadge.FOLDER, onClick = onClick)
 
 @Composable
 private fun WatchLaterTile(modifier: Modifier = Modifier, onClick: () -> Unit) =
     SpecialTile("🕒", "Watch later", WatchLaterTileTeal, modifier = modifier, onClick = onClick)
+
+@Composable
+internal fun PodcastTile(feed: PodcastFeed, cover: String?, modifier: Modifier = Modifier, onClick: () -> Unit) =
+    ArtworkTile(title = feed.name, thumbnail = cover, fallback = "🎙️", source = SourceBadge.PODCAST,
+        modifier = modifier, onClick = onClick)
 
 @Composable
 private fun TvRowTitle(text: String) {

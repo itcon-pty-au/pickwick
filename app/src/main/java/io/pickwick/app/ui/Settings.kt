@@ -373,6 +373,7 @@ private fun AdminScreen(
     var networkCatalogs by remember(initial) { mutableStateOf(migratedNetwork.networkCatalogs) }
     var networkShares by remember(initial) { mutableStateOf(migratedNetwork.networkShares) }
     var contentGroups by remember(initial) { mutableStateOf(initial.contentGroups) }
+    var podcasts by remember(initial) { mutableStateOf(initial.podcasts) }
     var baseline by remember(initial) { mutableStateOf(initial) }
     /** Entries added by this session's URL import — shown with a NEW tag for review. */
     var newIds by remember { mutableStateOf(setOf<String>()) }
@@ -455,7 +456,8 @@ private fun AdminScreen(
             listenPercent = listenPercent,
             networkCatalogs = networkCatalogs.map { it.copy(profileIds = it.profileIds.intersect(validIds)) },
             networkShares = networkShares,
-            contentGroups = contentGroups
+            contentGroups = contentGroups,
+            podcasts = podcasts.map { it.copy(profileIds = it.profileIds.intersect(validIds)) }
         )
     }
 
@@ -547,7 +549,7 @@ private fun AdminScreen(
     // eighteen sections, and "where is X" was the first support question.
     var page by remember { mutableStateOf<HubPage?>(null) }
     page?.let { p ->
-        val backToParent = { page = if (p in listOf(HubPage.Channels, HubPage.Network, HubPage.ContentGroups)) HubPage.ContentSources else null }
+        val backToParent = { page = if (p in listOf(HubPage.Channels, HubPage.Network, HubPage.Podcasts, HubPage.ContentGroups)) HubPage.ContentSources else null }
         BackHandler { backToParent() }
         SubPage(title = p.title, onBack = backToParent) {
             when (p) {
@@ -556,6 +558,8 @@ private fun AdminScreen(
                         HubRow("📺", "YouTube", "${entries.size} channels and playlists") { page = HubPage.Channels }
                         SettingsDivider()
                         HubRow("📁", "Network shares", "${networkShares.size} shares, ${networkCatalogs.size} catalogs") { page = HubPage.Network }
+                        SettingsDivider()
+                        HubRow("🎙️", "Podcasts", "${podcasts.size} RSS podcasts") { page = HubPage.Podcasts }
                         SettingsDivider()
                         HubRow("📚", "Content groups", "${contentGroups.size} groups") { page = HubPage.ContentGroups }
                     }
@@ -568,6 +572,10 @@ private fun AdminScreen(
                     NetworkCatalogSettings(networkShares, networkCatalogs, profiles) { shares, catalogs ->
                         networkShares = shares; networkCatalogs = catalogs
                     }
+                }
+                HubPage.Podcasts -> {
+                    SectionTitle("RSS podcasts")
+                    PodcastSettings(podcasts, profiles) { podcasts = it }
                 }
                 HubPage.Kids -> {
                     SectionTitle("Kids")
@@ -764,7 +772,7 @@ private fun AdminScreen(
             SettingsDivider()
             HubRow(
                 "📺", "Content Sources",
-                "YouTube and network shares"
+                "YouTube, network shares and podcasts"
             ) { page = HubPage.ContentSources }
             SettingsDivider()
             HubRow(
@@ -801,6 +809,7 @@ private enum class HubPage(val title: String) {
     ContentSources("Content Sources"),
     ContentGroups("Content groups"),
     Network("Network shares"),
+    Podcasts("Podcasts"),
     Kids("Kids"),
     Channels("YouTube"),
     Screening("Content screening"),

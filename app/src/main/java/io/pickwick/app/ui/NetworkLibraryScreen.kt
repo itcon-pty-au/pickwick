@@ -214,7 +214,7 @@ internal fun NetworkLibraryScreen(profileId: String?, vm: MainViewModel? = null,
                 if (catalogId == null) {
                     if (catalogs.isEmpty() && config != null) item(span = { GridItemSpan(maxLineSpan) }) { Text("No network shares yet") }
                     items(catalogs, key = { it.id }) { c ->
-                        ArtworkTile(title = c.name, thumbnail = covers[c.id], timePercent = c.timePercent, fallback = "📁",
+                        ArtworkTile(title = c.name, thumbnail = covers[c.id], timePercent = c.timePercent, fallback = "📁", source = SourceBadge.FOLDER,
                             modifier = if (isTv && c.id == focusKey) Modifier.focusRequester(firstContentFocus) else Modifier,
                             onClick = { catalogId = c.id; path = "" })
                     }

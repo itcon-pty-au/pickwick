@@ -79,6 +79,11 @@ fun PickwickScreen(
         NetworkLibraryScreen(activeProfile?.id, vm) { networkOpen = false }
         return
     }
+    var podcastOpen by remember(activeProfile?.id) { mutableStateOf<String?>(null) }
+    podcastOpen?.let { feedId ->
+        PodcastScreen(feedId, activeProfile?.id, vm) { podcastOpen = null }
+        return
+    }
     val isTv = remember {
         (context.getSystemService(android.content.Context.UI_MODE_SERVICE) as android.app.UiModeManager)
             .currentModeType == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
@@ -150,6 +155,8 @@ fun PickwickScreen(
                             onOpenWatchlist = vm::openWatchlist,
                             hasNetworkCatalogs = state.hasNetworkCatalogs,
                             onOpenNetworkCatalogs = { networkOpen = true },
+                            podcasts = state.podcasts,
+                            onOpenPodcast = { podcastOpen = it.id },
                             hasWatchLater = state.watchLater.isNotEmpty(),
                             onOpenWatchLater = vm::openWatchLater,
                             hasQueue = state.queued.isNotEmpty(),
@@ -176,6 +183,8 @@ fun PickwickScreen(
                                 onOpenWatchlist = vm::openWatchlist,
                                 hasNetworkCatalogs = state.hasNetworkCatalogs,
                                 onOpenNetworkCatalogs = { networkOpen = true },
+                                podcasts = state.podcasts,
+                                onOpenPodcast = { podcastOpen = it.id },
                                 hasWatchLater = state.watchLater.isNotEmpty(),
                                 onOpenWatchLater = vm::openWatchLater,
                                 hasQueue = state.queued.isNotEmpty(),

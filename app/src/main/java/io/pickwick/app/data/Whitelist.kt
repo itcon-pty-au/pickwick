@@ -212,7 +212,8 @@ data class Whitelist(
     val listenPercent: Int? = null,
     val networkCatalogs: List<SmbCatalog> = emptyList(),
     val networkShares: List<SmbShare> = emptyList(),
-    val contentGroups: List<ContentGroup> = emptyList()
+    val contentGroups: List<ContentGroup> = emptyList(),
+    val podcasts: List<PodcastFeed> = emptyList()
 ) {
     fun profile(id: String?): Profile? = profiles.firstOrNull { it.id == id }
 

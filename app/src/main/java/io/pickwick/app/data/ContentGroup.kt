@@ -61,6 +61,8 @@ class ContentMembershipStore(context: Context) {
 /** All I/O here is called off the UI thread. Display names are never identities. */
 fun matchingContentGroups(context: Context, config: Whitelist, videoUrl: String,
     originUrl: String? = null, uploaderUrl: String? = null): List<ContentGroup> {
+    // Podcasts sit outside screen time entirely, content-group caps included.
+    if (PodcastPaths.isPodcast(videoUrl)) return emptyList()
     if (SmbPaths.isNetwork(videoUrl)) {
         val id = SmbPaths.parse(videoUrl).first
         return config.contentGroups.filter { id in it.catalogIds }

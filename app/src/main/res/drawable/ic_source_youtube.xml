@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Source badge: a YouTube channel or playlist. Two-tone, drawn untinted. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#FFFF0000"
+        android:pathData="M21.6,7.2c-0.2,-0.9 -0.9,-1.6 -1.8,-1.8C18.2,5 12,5 12,5s-6.2,0 -7.8,0.4c-0.9,0.2 -1.6,0.9 -1.8,1.8C2,8.8 2,12 2,12s0,3.2 0.4,4.8c0.2,0.9 0.9,1.6 1.8,1.8C5.8,19 12,19 12,19s6.2,0 7.8,-0.4c0.9,-0.2 1.6,-0.9 1.8,-1.8C22,15.2 22,12 22,12s0,-3.2 -0.4,-4.8z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M10,15l5.2,-3 -5.2,-3z" />
+</vector>
