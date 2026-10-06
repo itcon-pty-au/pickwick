@@ -119,6 +119,10 @@ Save button for the settings page.
    or selected children for each source. Follow the [network setup guide](NETWORK_CATALOGS.md)
    for router USB drives, computers and NAS devices. No internet is needed for
    network playback, but the child device must be able to reach the share.
+   For podcasts, use **Content Sources > Podcasts**: paste the show's RSS feed
+   address, tap **Check feed**, then **Save**. Podcasts don't use screen time —
+   bedtime and breaks don't stop them either — so give each one only to the kids
+   it suits. See the [podcast guide](PODCASTS.md) for finding a feed address.
 2. **Name your kid** — **Kids** already lists one child called *Kid*. Tap
    it to open their page and give it their real name, age, a color and an
    avatar. The age matters if you use AI screening later. Use **Add a kid**

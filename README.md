@@ -11,7 +11,7 @@
 </p>
 
 A kid-safe, whitelist-only video player for Android phones, tablets and Google TV —
-**parents choose the YouTube channels, playlists and home-network video folders kids can access.**
+**parents choose the YouTube channels, playlists, podcasts and home-network video folders kids can access.**
 No ads, no Shorts, no comments, no recommendations, no rabbit holes, no accounts, no cloud.
 
 Open source (GPL-3.0), sideloaded — not distributed via app stores.
@@ -44,6 +44,11 @@ with no ads.
   season folders and episodes from a router USB drive, computer or NAS.
   Listings and thumbnails are cached locally; playback needs access to the home share,
   but not the internet. Network episodes also work with Favorites, Watch later and Up next.
+- **🎙️ Podcasts** — each podcast a parent adds gets its own tile and opens onto
+  its episodes like a channel. Audio-only, so it doesn't use screen time, and on
+  phones it keeps playing with the screen off. Episodes resume where they were
+  left and work with Favorites, Watch later and Up next, which can mix podcast
+  episodes and videos in one queue.
 - **🎲 Surprise me** — a random mix drawn from allowed channels
 - **❤️ Favorites** and **🕒 Watch later** — two lists they fill by holding a
   tile (long-press / hold OK on the remote): one for the videos they love,
@@ -69,6 +74,8 @@ with no ads.
   auto-play in order, and in-video sponsor segments are skipped automatically
   (via SponsorBlock's community data)
 - **NEW badges** when an allowed channel has fresh uploads
+- **Source icons** on tiles — YouTube, network share or podcast — so a mixed
+  home screen stays easy to read
 - **Time price tags** on tiles (0.5x … FREE, or 1.5x for "junk food" channels) —
   cheaper channels drain the clock slower, so kids can spend their time knowingly
 - **Subtitles, audio language and quality** on demand — CC button on phones,
@@ -112,6 +119,11 @@ catching up later with any device that was asleep.
   add catalog folders beneath it without entering credentials again. Assign each
   catalog to everyone or selected children, with its own time multiplier.
   [Network setup and compatibility](docs/NETWORK_CATALOGS.md).
+- **Content Sources > Podcasts** — paste a podcast's RSS feed address and tap
+  **Check feed**; Pickwick fills in the show's name and episode count. Assign each
+  podcast to everyone or selected children. Podcasts sit outside screen time
+  entirely — no budget, breaks, bedtime or content groups — so hide a podcast from
+  a child to keep it away from them. [Podcast setup and rules](docs/PODCASTS.md).
 - **Content Sources > Content groups** — group YouTube channels/playlists and
   network catalogs under one per-child, per-session allowance. For example,
   allow 10 minutes of a favourite show within a 30-minute session. Group limits
@@ -216,6 +228,10 @@ multiplier  = per-channel drain rate (FREE, 0.25x–1.5x): scales budget & sitti
 Only actual playback consumes time. An idle gap of a break-length starts a fresh
 sitting with nothing lost. Everything resets at midnight. No rules set → no limits.
 
+Podcasts are the exception: they're audio-only and exempt from every rule above,
+including blocked times and **Pause everyone**. In a mixed Up next queue, each video
+still follows the rules and each podcast episode doesn't.
+
 ## Network Video Collections
 
 Parents can add SMB2/3 folders under **Settings > Content Sources > Network shares**. Children
@@ -229,6 +245,17 @@ views use the homepage channel-card size; episode views use larger video cards a
 focus the first video on TV. Embedded audio and subtitle tracks are selectable.
 Thumbnail generation resumes after leaving a folder, skips near-black frames and
 pauses during playback. SMB read-ahead reduces small network requests.
+
+## Podcasts
+
+Parents add RSS podcasts under **Settings > Content Sources > Podcasts**. Each one
+appears on the home screen with a podcast icon (a **Podcasts** row on TV) and opens
+onto an episode grid laid out like a YouTube channel. Episodes stream from the
+podcast's host with resume, ±15/30-second skips and lock-screen controls on phones.
+Feeds are cached on the device, so episode lists open offline; playback needs
+internet. Adding a podcast approves every episode, current and future: podcasts
+aren't AI-screened, and ads that hosts insert into the audio can't be screened or
+skipped. See [podcast setup and rules](docs/PODCASTS.md).
 
 ## Quality
 
@@ -265,6 +292,9 @@ come from inside the app (parent settings → Check for updates).
   channel names and durations; the pre-play deep check additionally sends that
   video's public description, tags and captions. **Watch history is never
   sent**, and pointing it at a local server keeps everything in the house.
+- **Podcasts** are fetched straight from each show's host, which sees the
+  device's IP address; many hosts count listens through analytics redirects.
+  Nothing about the kid or their history is sent.
 - **Sponsor skipping** queries SponsorBlock's public database using only a
   4-character hash prefix of the video ID, so the service can't tell which
   video is actually being watched.
@@ -409,3 +439,4 @@ persists across retries and app restarts.
 - [x] Offline downloads with parent approval
 - [x] Donations / sustainability
 - [x] Settings split into pages, with a page per kid
+- [x] RSS podcasts, outside screen time, mixable with videos in Up next

@@ -3,6 +3,8 @@
 Content groups limit how much of a child's session can be spent on a particular
 collection. They can combine YouTube channels/playlists and network catalogs.
 They do not replace the child's overall session, daily budget or blocked times.
+Podcasts can't be added to a group: they sit outside screen time entirely (see
+[Podcasts](PODCASTS.md)).
 
 ## Setup
 
