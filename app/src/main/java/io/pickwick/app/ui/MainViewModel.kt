@@ -145,6 +145,9 @@ class MainViewModel(
         }
         // A TV can sit on the home screen for hours — poll for whitelist edits.
         viewModelScope.launch {
+            // Index push once on open too: a parent checking in for a minute
+            // never reaches the first 5-minute tick.
+            syncIndex()
             while (true) {
                 kotlinx.coroutines.delay(5 * 60 * 1000L)
                 // Keyed per-kid ViewModels outlive a profile switch in the
@@ -301,46 +304,22 @@ class MainViewModel(
         }
     }
 
-    /**
-     * Master-only: push index sources whose content hash differs from what each
-     * paired device reports. Compared per source, so a one-channel delta ships
-     * one small file, not the family's whole index.
-     */
+    /** Master-only: push changed index sources to paired devices ([IndexSync]). */
     @Volatile
     private var indexSyncInFlight = false
 
     fun syncIndex() {
         val index = channelIndex ?: return
-        val devices = pairingStore?.paired().orEmpty()
-        if (devices.isEmpty() || indexSyncInFlight) return
+        val store = pairingStore ?: return
+        if (indexSyncInFlight) return
         indexSyncInFlight = true
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val me = pairingStore?.deviceToken()
+                if (store.paired().isEmpty()) return@launch
+                val me = store.deviceToken()
                 val master = configStore?.load()?.masterDeviceToken
-                if (me == null || master != me) return@launch
-                devices.forEach { device ->
-                    val remoteStatus = LanClient.indexStatus(device) ?: return@forEach
-                    val remote = runCatching { org.json.JSONObject(remoteStatus) }
-                        .getOrNull() ?: return@forEach
-                    index.allStates().forEach { (sourceId, state) ->
-                        // contentHash is count:newest only, so a completeness
-                        // flip with no new videos (exhaustion accepted after
-                        // repeated probes, or a harvest un-completing) would
-                        // never ship on the hash alone — compare the flag too.
-                        // Deliberately not folded into the hash: the formula is
-                        // wire format shared with old builds. A source the
-                        // remote lacks entirely yields null for both reads and
-                        // still pushes, as before.
-                        val remoteEntry = remote.optJSONObject(sourceId)
-                        if (remoteEntry?.optInt("hash") != state.contentHash() ||
-                            remoteEntry?.optBoolean("complete") != state.complete
-                        ) {
-                            val body = index.exportSourceWithState(sourceId) ?: return@forEach
-                            LanClient.pushIndexSource(device, sourceId, body)
-                        }
-                    }
-                }
+                if (master != me) return@launch
+                io.pickwick.app.data.IndexSync.pushToPeers(index, store)
             } finally {
                 indexSyncInFlight = false
             }
@@ -365,24 +344,38 @@ class MainViewModel(
             held = 0, searchScreening = null, error = null
         )
         val visibleIds = withContext(Dispatchers.IO) {
-            visibleSources(sources).map { it.id }.toSet()
+            // A channel added as @handle / user/ / c/ is canonicalized to its
+            // UC id here, but IndexCrawlWorker indexes it under the whitelist
+            // entry's own id (it never resolves channels). Search both keys, or
+            // the deep crawl of every handle-added channel is invisible and
+            // only the 30-video page-1 harvest under the UC id ever matches.
+            val entryIdByUrl = configStore?.load()?.sources
+                ?.associate { it.url to it.id }.orEmpty()
+            visibleSources(sources)
+                .flatMap { listOfNotNull(it.id, entryIdByUrl[it.url]) }
+                .toSet()
         }
         val hits = withContext(Dispatchers.IO) { index.search(q, visibleIds) }
-        val terms = q.lowercase().split(Regex("\\s+")).filter { it.isNotEmpty() }
-        // Dedup: the same video indexed under two sources is one result. The
-        // index has no relevance ranking, so impose one: title hits above
-        // channel-name-only hits (stable sort keeps newest-first within each
-        // band) — the first screening window should be the results a kid
-        // actually searched for, not whatever source iterated first.
+        // Dedup: the same video indexed under two sources is one result. Hits
+        // arrive relevance-ranked, which matters beyond looks: the first
+        // screening window should be the results a kid actually searched for.
         searchMatches = hits.map { it.toVideo() }.distinctBy { it.url }
             .filter { it.videoId !in blockedVideoIds && !tooShort(it) }
-            .sortedBy { v -> if (terms.all { it in v.title.lowercase() }) 0 else 1 }
         searchWindow = 0
         searchSent = 0
         // Everything already cleared (or screening off) paints immediately —
         // the back catalog's unscreened bulk trickles in behind it.
         rawVideos = withContext(Dispatchers.IO) {
             searchMatches.filter { screener?.isVisible(it) != false }
+        }
+        // Where a thin result list loses its hits differs per device (index
+        // sync, verdicts, profile scope) and none of it is visible on screen.
+        withContext(Dispatchers.IO) {
+            android.util.Log.i("Pickwick", "search: sources=${visibleIds.size} " +
+                "indexed=${visibleIds.sumOf { index.state(it)?.count ?: 0 }} hits=${hits.size} " +
+                "unblocked=${searchMatches.size} cleared=${rawVideos.size} " +
+                "unscreened=${searchMatches.count { screener?.needsScreening(it) == true }} " +
+                "screening=${screener?.config?.let { "${it.enabled}/${it.model}" }}")
         }
         _state.value = _state.value.copy(loading = false, videos = annotated(includeFinished = true))
         screenMoreSearch()

@@ -284,33 +284,51 @@ object AiScreener {
                 .put("cache_control", JSONObject().put("type", "ephemeral")))
         } else system
 
+    /**
+     * Models that 400 on `temperature` (newer Claude models removed sampling
+     * parameters; some reasoning models elsewhere reject anything but the
+     * default). Learned from the error rather than a hard-coded list, so a
+     * model released after this build is handled the same way. Process-local:
+     * one wasted round trip per model per process is cheap.
+     */
+    private val rejectsTemperature: MutableSet<String> =
+        java.util.concurrent.ConcurrentHashMap.newKeySet()
+
     /** One chat-completions round trip; returns the assistant's text content. */
     private suspend fun chatCompletion(cfg: AiConfig, system: String, user: String): String =
         withContext(Dispatchers.IO) {
             requireSafeEndpoint(cfg)
-            val body = JSONObject()
-                .put("model", cfg.model)
-                .put("temperature", 0)
-                .put("messages", JSONArray()
-                    .put(JSONObject().put("role", "system").put("content", systemContent(cfg, system)))
-                    .put(JSONObject().put("role", "user").put("content", user)))
-                .toString()
+            fun post(withTemperature: Boolean): Pair<Int, String> {
+                val body = JSONObject()
+                    .put("model", cfg.model)
+                    // Deterministic verdicts where the model still allows it.
+                    .apply { if (withTemperature) put("temperature", 0) }
+                    .put("messages", JSONArray()
+                        .put(JSONObject().put("role", "system").put("content", systemContent(cfg, system)))
+                        .put(JSONObject().put("role", "user").put("content", user)))
+                    .toString()
 
-            val request = Request.Builder()
-                .url(cfg.baseUrl.trimEnd('/') + "/chat/completions")
-                .header("X-Title", "Pickwick")
-                .header("anthropic-version", ANTHROPIC_VERSION)
-                .apply { if (cfg.apiKey.isNotBlank()) header("Authorization", "Bearer ${cfg.apiKey}") }
-                .post(body.toRequestBody("application/json".toMediaType()))
-                .build()
+                val request = Request.Builder()
+                    .url(cfg.baseUrl.trimEnd('/') + "/chat/completions")
+                    .header("X-Title", "Pickwick")
+                    .header("anthropic-version", ANTHROPIC_VERSION)
+                    .apply { if (cfg.apiKey.isNotBlank()) header("Authorization", "Bearer ${cfg.apiKey}") }
+                    .post(body.toRequestBody("application/json".toMediaType()))
+                    .build()
 
-            val reply = llmClient.newCall(request).execute().use { resp ->
-                val text = resp.body?.string().orEmpty()
-                check(resp.isSuccessful) {
-                    "HTTP ${resp.code}: ${text.take(200)}"
+                return llmClient.newCall(request).execute().use { resp ->
+                    resp.code to resp.body?.string().orEmpty()
                 }
-                text
             }
+
+            var (code, reply) = post(withTemperature = cfg.model !in rejectsTemperature)
+            if (code == 400 && reply.contains("temperature", ignoreCase = true) &&
+                cfg.model !in rejectsTemperature
+            ) {
+                rejectsTemperature += cfg.model
+                post(withTemperature = false).let { code = it.first; reply = it.second }
+            }
+            check(code in 200..299) { "HTTP $code: ${reply.take(200)}" }
             JSONObject(reply)
                 .getJSONArray("choices").getJSONObject(0)
                 .getJSONObject("message").getString("content")

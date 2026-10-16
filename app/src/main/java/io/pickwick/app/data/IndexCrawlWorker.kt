@@ -54,6 +54,9 @@ class IndexCrawlWorker(
             // Still stamp the diagnostics line: a fully-crawled catalog should
             // read "ran, nothing to do", not "hasn't run since the last page".
             index.recordRun(0, failed = false)
+            // Still push: a finished catalog may never have reached a device
+            // that was off, or that re-harvested over it since.
+            runCatching { IndexSync.pushToPeers(index, pairingStore) }
             return Result.success()
         }
 
@@ -94,6 +97,11 @@ class IndexCrawlWorker(
         // Failed = we attempted a source and it threw without yielding a page —
         // the red dot in settings. A run that simply had nothing to do is green.
         index.recordRun(pages, failed = failures > 0 && pages == 0)
+        // Ship what this run crawled now, not whenever a parent next leaves
+        // the app open long enough for the in-app poll. Best effort: a device
+        // that's off just gets it on a later run.
+        runCatching { IndexSync.pushToPeers(index, pairingStore) }
+            .onFailure { android.util.Log.w("Pickwick", "index sync failed", it) }
         return Result.success()
     }
 
