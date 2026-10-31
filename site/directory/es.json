@@ -22,9 +22,16 @@
       "name": "Plaza Sésamo",
       "kind": "channel",
       "channelId": "UC2H_ikinZV8cHVGawVENHpg",
-      "ages": [],
-      "topics": [],
-      "note": "",
+      "ages": [
+        "2-4",
+        "5-7"
+      ],
+      "topics": [
+        "Preschool",
+        "Feelings & social skills",
+        "Reading & language"
+      ],
+      "note": "Elmo, Abby y sus amigos enseñan letras, números y emociones con canciones y episodios completos en español.",
       "added": "2026-10-31"
     }
   ]
