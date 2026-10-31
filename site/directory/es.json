@@ -22,9 +22,16 @@
       "name": "Peppa Pig Español Latino - Canal Oficial",
       "kind": "channel",
       "channelId": "UCrreHSUa5rnuCVDeO8dX4eA",
-      "ages": [],
-      "topics": [],
-      "note": "",
+      "ages": [
+        "2-4",
+        "5-7"
+      ],
+      "topics": [
+        "Cartoons & shows",
+        "Stories",
+        "Preschool"
+      ],
+      "note": "Episodios oficiales de Peppa Pig en español latino: historias cortas y divertidas sobre la familia, los amigos y el día a día.",
       "added": "2026-10-31"
     }
   ]
