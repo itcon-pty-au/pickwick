@@ -1,6 +1,6 @@
 {
   "language": "es",
-  "updated": "2026-08-08",
+  "updated": "2026-10-31",
   "entries": [
     {
       "url": "https://www.youtube.com/c/SuperSimpleEspanol",
@@ -16,6 +16,16 @@
       "note": "Super simple is great for Spanish kids content",
       "added": "2026-08-08",
       "channelId": "UCyY3Wd5x85o8AKXjYSoxFAQ"
+    },
+    {
+      "url": "https://www.youtube.com/@PeppaPigEspanolLatinoOficial",
+      "name": "Peppa Pig Español Latino - Canal Oficial",
+      "kind": "channel",
+      "channelId": "UCrreHSUa5rnuCVDeO8dX4eA",
+      "ages": [],
+      "topics": [],
+      "note": "",
+      "added": "2026-10-31"
     }
   ]
 }
