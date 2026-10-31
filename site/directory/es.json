@@ -22,9 +22,16 @@
       "name": "El Payaso Plim Plim",
       "kind": "channel",
       "channelId": "UCYQo8CdhXD22qfwUBUw591Q",
-      "ages": [],
-      "topics": [],
-      "note": "",
+      "ages": [
+        "2-4",
+        "5-7"
+      ],
+      "topics": [
+        "Preschool",
+        "Music",
+        "Cartoons & shows"
+      ],
+      "note": "Canciones, bailes y juegos didácticos con el payaso Plim Plim para aprender colores, partes del cuerpo y valores de amistad.",
       "added": "2026-10-31"
     }
   ]
