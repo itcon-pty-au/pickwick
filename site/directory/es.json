@@ -22,9 +22,16 @@
       "name": "Pocoyo – Español Latino (Canal Oficial)",
       "kind": "channel",
       "channelId": "UCsgF-BQ-ZotYbLA6QeJuRVw",
-      "ages": [],
-      "topics": [],
-      "note": "",
+      "ages": [
+        "2-4",
+        "5-7"
+      ],
+      "topics": [
+        "Cartoons & shows",
+        "Preschool",
+        "Stories"
+      ],
+      "note": "Las aventuras animadas de Pocoyó y sus amigos: historias cortas y divertidas que invitan a los más pequeños a reír, imaginar y descubrir.",
       "added": "2026-10-31"
     }
   ]
