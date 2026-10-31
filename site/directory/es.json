@@ -1,6 +1,6 @@
 {
   "language": "es",
-  "updated": "2026-08-08",
+  "updated": "2026-10-31",
   "entries": [
     {
       "url": "https://www.youtube.com/c/SuperSimpleEspanol",
@@ -16,6 +16,23 @@
       "note": "Super simple is great for Spanish kids content",
       "added": "2026-08-08",
       "channelId": "UCyY3Wd5x85o8AKXjYSoxFAQ"
+    },
+    {
+      "url": "https://www.youtube.com/@elcanaldeplimplim",
+      "name": "El Payaso Plim Plim",
+      "kind": "channel",
+      "channelId": "UCYQo8CdhXD22qfwUBUw591Q",
+      "ages": [
+        "2-4",
+        "5-7"
+      ],
+      "topics": [
+        "Preschool",
+        "Music",
+        "Cartoons & shows"
+      ],
+      "note": "Canciones, bailes y juegos didácticos con el payaso Plim Plim para aprender colores, partes del cuerpo y valores de amistad.",
+      "added": "2026-10-31"
     }
   ]
 }
