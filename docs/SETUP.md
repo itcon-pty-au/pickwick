@@ -17,7 +17,12 @@ you flip a permission switch first.
 **What you need:**
 
 - Your Google TV / Android TV device (Chromecast with Google TV, or a TV
-  running Google TV)
+  running Google TV) — or a **Fire TV** (Cube, Stick or Fire TV set on Fire OS 6
+  or newer). On Fire TV, install **Downloader** from the Amazon Appstore, then
+  allow it to install unknown apps under **Settings → My Fire TV → Developer
+  options** (the switch is called "Apps from Unknown Sources" on older Fire OS;
+  if Developer options is missing, open **About** and select the device name
+  seven times) — Part 1 below is otherwise the same
 - The parent's Android phone
 - Both on the same home Wi-Fi
 
