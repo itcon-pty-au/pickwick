@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Pre-API-26 fallback: <adaptive-icon> only exists in mipmap-anydpi-v26, so
+     Fire OS 6 (API 25) would otherwise get no launcher icon. Same layers,
+     flattened; the 108dp foreground is scaled to fit rather than masked. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/ic_launcher_background" />
+    <item android:drawable="@drawable/ic_launcher_foreground" />
+</layer-list>

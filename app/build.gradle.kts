@@ -29,7 +29,10 @@ android {
     defaultConfig {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         applicationId = "io.pickwick.app"
-        minSdk = 26 // adaptive icons; every realistic target device is far above this
+        // 25 is Fire OS 6 (Android 7.1), the last release the 1st-gen Fire TV
+        // Cube and 3rd-gen Fire TV get. API-26+ calls need an SDK_INT guard or
+        // a desugared library API (see coreLibraryDesugaring below).
+        minSdk = 25
         targetSdk = 34
         versionCode = 33
         versionName = "0.10.0"
@@ -91,6 +94,10 @@ android {
     }
     testBuildType = "release"
     compileOptions {
+        // Backports java.time, java.util.stream and friends to Fire OS 6/7
+        // (API 25/28), whose runtimes lack them. NewPipeExtractor leans on
+        // these, so a missing method surfaces as a channel-load crash there.
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -118,6 +125,21 @@ android {
     }
 }
 
+// Backport Java 10 URLDecoder/URLEncoder Charset overloads (API 33) into the
+// app and all dependencies; see buildSrc/.../JavaApiBackports.kt for why.
+androidComponents {
+    onVariants { variant ->
+        variant.instrumentation.transformClassesWith(
+            JavaApiBackports::class.java,
+            com.android.build.api.instrumentation.InstrumentationScope.ALL,
+        ) {}
+        // Same-descriptor call swap: existing frames stay valid.
+        variant.instrumentation.setAsmFramesComputationMode(
+            com.android.build.api.instrumentation.FramesComputationMode.COPY_FRAMES,
+        )
+    }
+}
+
 // Fail release *packaging* — not configuration, so CI's assembleDebug on a
 // keyless runner still works — when the real key is absent. Without this the
 // APK would come out unsigned and uninstallable, discovered only on-device.
@@ -138,6 +160,7 @@ gradle.taskGraph.whenReady {
 }
 
 dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
     implementation("com.hierynomus:smbj:0.14.0")
     implementation("com.rapid7.client:dcerpc:0.12.13") {
         exclude(group = "com.google.guava", module = "guava")
