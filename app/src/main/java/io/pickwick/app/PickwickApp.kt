@@ -17,6 +17,11 @@ class PickwickApp : Application(), ImageLoaderFactory {
         NewPipe.init(OkHttpDownloader(), Localization("en", "US"), ContentCountry("US"))
         // Thumbnail/playback quality targets from connection + device type.
         io.pickwick.app.data.QualityTargets.configure(this)
+        // The LAN server belongs to the process, not to MainActivity: a process
+        // woken by IndexCrawlWorker, a boot broadcast or LanService has no
+        // activity, and a parent's push must still land. Off the main thread —
+        // it reads prefs and binds a socket, and cold start is measured.
+        Thread({ io.pickwick.app.ui.LanServerHolder.ensureStarted(this) }, "lan-start").start()
     }
 
     /** Coil singleton: aggressive thumbnail caching — YouTube thumb URLs are immutable. */

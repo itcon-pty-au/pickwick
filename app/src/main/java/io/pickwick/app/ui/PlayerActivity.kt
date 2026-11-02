@@ -6,11 +6,13 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,6 +22,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -134,11 +137,19 @@ class PlayerActivity : ComponentActivity() {
     private val trackCursor = mutableIntStateOf(0)
     private val selectedAudioTrack = mutableIntStateOf(0)
     private val selectedSubtitleTrack = mutableIntStateOf(-1)
+    /**
+     * Sticky quality choice: 0 = Auto (the connection/device target), else a
+     * video height. Applied when a video resolves; the picker changes it live.
+     */
+    private val qualityPref = mutableIntStateOf(0)
     /** Community-marked promo stretches for the current video (see SponsorBlock). */
     private val sponsorSegments =
         mutableStateOf<List<io.pickwick.app.data.SponsorBlock.Segment>>(emptyList())
-    /** Parent's SponsorBlock switch, read off-main on first use; null = not read yet. */
-    private var sponsorSkipOn: Boolean? = null
+    /**
+     * Categories the parent wants skipped (empty = switched off), read
+     * off-main on first use; null = not read yet.
+     */
+    private var sponsorChoice: Set<String>? = null
 
     // Queue position, resolved streams, and terminal error, hoisted out of the
     // composition. Deliberate: recomposition needs display frames, which stop
@@ -283,6 +294,7 @@ class PlayerActivity : ComponentActivity() {
         }
 
         captionsOn = getSharedPreferences("player", MODE_PRIVATE).getBoolean("captions", false)
+        qualityPref.intValue = getSharedPreferences("player", MODE_PRIVATE).getInt("quality", 0)
 
         if (!isTv && listenPercent == null) {
             // Listen mode is a phone feature; off-main because ConfigStore is a
@@ -651,8 +663,14 @@ class PlayerActivity : ComponentActivity() {
                             selectedAudioTrack.intValue,
                             selectedSubtitleTrack.intValue,
                             captionsOn,
+                            qualityPref.intValue,
                             onVisibilityChanged = { playerControlsVisible.value = it }
                         ) { player }
+                    }
+                    if (!isTv && playerControlsVisible.value && timeUp == null && contentBlocked.value == null &&
+                        error == null && playback?.hasQualityPicker() == true
+                    ) {
+                        PhoneQualityButton(playback!!, qualityPref.intValue) { selectQuality(it) }
                     }
                     if (timeUp == null) NoticeOverlay(notice, if (contentRemaining.value != null && playerControlsVisible.value) 72.dp else 28.dp)
                     if (playerControlsVisible.value && contentBlocked.value == null && timeUp == null) contentRemaining.value?.let { (group, left) ->
@@ -726,11 +744,12 @@ class PlayerActivity : ComponentActivity() {
             // job, so advancing the queue cancels a stale fetch.
             io.pickwick.app.data.SponsorBlock.videoIdOf(queue[i])?.let { vid ->
                 launch(kotlinx.coroutines.Dispatchers.IO) {
-                    val on = sponsorSkipOn
-                        ?: io.pickwick.app.data.ConfigStore(this@PlayerActivity)
-                            .load().sponsorSkip.also { sponsorSkipOn = it }
-                    if (!on) return@launch
-                    val segments = io.pickwick.app.data.SponsorBlock.segmentsFor(vid)
+                    val choice = sponsorChoice
+                        ?: io.pickwick.app.data.ConfigStore(this@PlayerActivity).load()
+                            .let { (if (it.sponsorSkip) it.sponsorCategories else emptySet()) }
+                            .also { sponsorChoice = it }
+                    if (choice.isEmpty()) return@launch
+                    val segments = io.pickwick.app.data.SponsorBlock.segmentsFor(vid, choice)
                     // The blocking fetch outlives cancellation — isActive
                     // keeps a late answer from tagging the *next* video.
                     if (segments.isNotEmpty() && isActive) sponsorSegments.value = segments
@@ -788,7 +807,8 @@ class PlayerActivity : ComponentActivity() {
                 }
                 val resolved = local ?: repo.resolvePlayback(
                     queue[i],
-                    io.pickwick.app.data.QualityTargets.playbackMaxHeight
+                    qualityPref.intValue.takeIf { it > 0 }
+                        ?: io.pickwick.app.data.QualityTargets.playbackMaxHeight
                 )
                 // First play of a streamed video: the once-per-video deep check
                 // (description + tags + transcript), riding the StreamInfo we
@@ -1187,21 +1207,33 @@ class PlayerActivity : ComponentActivity() {
             TvTrackPanel.Hidden -> false
             TvTrackPanel.Toolbar -> when (keyCode) {
                 android.view.KeyEvent.KEYCODE_DPAD_LEFT -> {
-                    trackCursor.intValue = 0; true
+                    trackCursor.intValue = (trackCursor.intValue - 1).coerceAtLeast(0); true
                 }
                 android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                    trackCursor.intValue = 1; true
+                    trackCursor.intValue = (trackCursor.intValue + 1)
+                        .coerceAtMost(if (pb.hasQualityPicker()) 2 else 1)
+                    true
                 }
                 android.view.KeyEvent.KEYCODE_DPAD_CENTER,
                 android.view.KeyEvent.KEYCODE_ENTER -> {
-                    trackPanel.value = if (trackCursor.intValue == 0) {
-                        trackCursor.intValue = selectedAudioTrack.intValue
-                        TvTrackPanel.Audio
-                    } else {
-                        trackCursor.intValue = if (captionsOn) {
-                            selectedSubtitleTrack.intValue + 1
-                        } else 0
-                        TvTrackPanel.Subtitles
+                    trackPanel.value = when (trackCursor.intValue) {
+                        0 -> {
+                            trackCursor.intValue = selectedAudioTrack.intValue
+                            TvTrackPanel.Audio
+                        }
+                        1 -> {
+                            trackCursor.intValue = if (captionsOn) {
+                                selectedSubtitleTrack.intValue + 1
+                            } else 0
+                            TvTrackPanel.Subtitles
+                        }
+                        else -> {
+                            // Row 0 is Auto, then the offered heights tallest-first.
+                            trackCursor.intValue = pb.videoOptions
+                                .indexOfFirst { it.height == qualityPref.intValue }
+                                .let { if (qualityPref.intValue == 0 || it < 0) 0 else it + 1 }
+                            TvTrackPanel.Quality
+                        }
                     }
                     true
                 }
@@ -1229,6 +1261,14 @@ class PlayerActivity : ComponentActivity() {
                 notice.value = Notice(
                     "Audio: " + (pb.audioTracks.getOrNull(chosen)?.name ?: "Original")
                 )
+            }
+            TvTrackPanel.Quality -> handleOptionKey(
+                keyCode, (1 + pb.videoOptions.size).coerceAtLeast(1), toolbarCursor = 2
+            ) {
+                if (pb.videoOptions.isNotEmpty()) {
+                    val chosen = trackCursor.intValue.coerceIn(0, pb.videoOptions.size)
+                    selectQuality(if (chosen == 0) 0 else pb.videoOptions[chosen - 1].height)
+                }
             }
             TvTrackPanel.Subtitles -> handleOptionKey(
                 keyCode, pb.subtitles.size + 1, toolbarCursor = 1
@@ -1319,6 +1359,28 @@ class PlayerActivity : ComponentActivity() {
             audioTracks = embeddedAudio.map { YouTubeRepository.AudioTrack("", it.language, it.name, false) },
             subtitles = currentSubtitles
         )
+    }
+
+    /**
+     * Switches the playing video to [pref] (0 = Auto, else a height) and
+     * remembers it. No re-resolve: every height was offered in the original
+     * StreamInfo, so only the video source swaps and playback resumes in place.
+     */
+    private fun selectQuality(pref: Int) {
+        val pb = currentPlayback ?: return
+        qualityPref.intValue = pref
+        getSharedPreferences("player", MODE_PRIVATE).edit().putInt("quality", pref).apply()
+        val cap = pref.takeIf { it > 0 } ?: io.pickwick.app.data.QualityTargets.playbackMaxHeight
+        // Options are tallest-first, so the first one under the cap is the best fit.
+        val pick = (if (cap != null) pb.videoOptions.firstOrNull { it.height <= cap } else null)
+            ?: pb.videoOptions.lastOrNull()
+        val label = pick?.height ?: pb.videoHeight
+        notice.value = Notice(if (pref == 0) "Quality: Auto (${label}p)" else "Quality: ${label}p")
+        if (pick == null || pick.url == pb.videoUrl) return
+        val next = pb.copy(videoUrl = pick.url, videoHeight = pick.height)
+        currentPlayback = next
+        playbackState.value = next
+        attachSources(next, audioOnly = false, resumeMs = player?.currentPosition)
     }
 
     private fun toggleCaptions() {
@@ -1429,7 +1491,10 @@ class PlayerActivity : ComponentActivity() {
 /** A transient kid-facing message; `at` gives repeats a fresh identity. */
 private data class Notice(val text: String, val at: Long = System.currentTimeMillis())
 
-private enum class TvTrackPanel { Hidden, Toolbar, Audio, Subtitles }
+private enum class TvTrackPanel { Hidden, Toolbar, Audio, Subtitles, Quality }
+
+/** A picker is worth showing only when we know what's playing (not for local files or shares). */
+private fun YouTubeRepository.Playback.hasQualityPicker() = videoOptions.isNotEmpty() || videoHeight > 0
 
 /** Top-center pill that shows a notice for a few seconds, then fades away. */
 @Composable
@@ -1462,6 +1527,7 @@ private fun BoxScope.TvControlsOverlay(
     selectedAudio: Int,
     selectedSubtitle: Int,
     captionsOn: Boolean,
+    qualityPref: Int,
     onVisibilityChanged: (Boolean) -> Unit,
     playerProvider: () -> ExoPlayer?
 ) {
@@ -1492,14 +1558,15 @@ private fun BoxScope.TvControlsOverlay(
         onDispose { onVisibilityChanged(false) }
     }
     if (controlsShown) {
-        if (panel == TvTrackPanel.Audio || panel == TvTrackPanel.Subtitles) {
+        if (panel == TvTrackPanel.Audio || panel == TvTrackPanel.Subtitles || panel == TvTrackPanel.Quality) {
             TvTrackSheet(
                 panel = panel,
                 cursor = cursor,
                 playback = playback,
                 selectedAudio = selectedAudio,
                 selectedSubtitle = selectedSubtitle,
-                captionsOn = captionsOn
+                captionsOn = captionsOn,
+                qualityPref = qualityPref
             )
         }
         Column(
@@ -1532,6 +1599,14 @@ private fun BoxScope.TvControlsOverlay(
                             "Subtitles",
                             panel == TvTrackPanel.Toolbar && cursor == 1
                         )
+                        if (playback?.hasQualityPicker() == true) {
+                            Spacer(Modifier.width(16.dp))
+                            TvTrackIcon(
+                                TvTrackGlyph.Quality,
+                                "Quality",
+                                panel == TvTrackPanel.Toolbar && cursor == 2
+                            )
+                        }
                         Spacer(Modifier.width(24.dp))
                     }
                 }
@@ -1598,7 +1673,48 @@ private fun BoxScope.TvControlsOverlay(
     }
 }
 
-private enum class TvTrackGlyph { Audio, Captions }
+/** Phone: a small "720p" pill in the controller's top-right corner that opens the quality list. */
+@Composable
+private fun BoxScope.PhoneQualityButton(
+    playback: YouTubeRepository.Playback,
+    pref: Int,
+    onPick: (Int) -> Unit
+) {
+    var open by remember { mutableStateOf(false) }
+    Box(Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 12.dp)) {
+        Text(
+            "${playback.videoHeight}p",
+            color = Color.White,
+            style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier
+                .background(Color(0xCC000000), RoundedCornerShape(16.dp))
+                .clickable { open = true }
+                .padding(horizontal = 14.dp, vertical = 8.dp)
+        )
+        androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            if (playback.videoOptions.isEmpty()) {
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text("${playback.videoHeight}p") },
+                    leadingIcon = { Icon(Icons.Filled.Check, contentDescription = null) },
+                    onClick = { open = false }
+                )
+            } else {
+                val rows = listOf(0 to "Auto") + playback.videoOptions.map { it.height to "${it.height}p" }
+                rows.forEach { (value, label) ->
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text(label + if (value == 0) "  ·  ${playback.videoHeight}p" else "") },
+                        leadingIcon = {
+                            if (pref == value) Icon(Icons.Filled.Check, contentDescription = null)
+                        },
+                        onClick = { open = false; onPick(value) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+private enum class TvTrackGlyph { Audio, Captions, Quality }
 
 @Composable
 private fun TvTrackIcon(glyph: TvTrackGlyph, label: String, selected: Boolean) {
@@ -1654,6 +1770,18 @@ private fun TvTrackIcon(glyph: TvTrackGlyph, label: String, selected: Boolean) {
                     style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold)
                 )
             }
+            TvTrackGlyph.Quality -> Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(width = 30.dp, height = 22.dp)
+                    .border(2.dp, ink, RoundedCornerShape(3.dp))
+            ) {
+                Text(
+                    "HD",
+                    color = ink,
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold)
+                )
+            }
         }
     }
 }
@@ -1665,7 +1793,8 @@ private fun BoxScope.TvTrackSheet(
     playback: YouTubeRepository.Playback?,
     selectedAudio: Int,
     selectedSubtitle: Int,
-    captionsOn: Boolean
+    captionsOn: Boolean,
+    qualityPref: Int
 ) {
     val options = if (panel == TvTrackPanel.Audio) {
         playback?.audioTracks.orEmpty().mapIndexed { index, track ->
@@ -1675,6 +1804,21 @@ private fun BoxScope.TvTrackSheet(
                 index
             )
         }.ifEmpty { listOf(Triple("Original", true, 0)) }
+    } else if (panel == TvTrackPanel.Quality) {
+        val offered = playback?.videoOptions.orEmpty()
+        if (offered.isEmpty()) {
+            listOf(Triple("${playback?.videoHeight ?: 0}p", true, 0))
+        } else {
+            listOf(
+                Triple(
+                    "Auto" + if (qualityPref == 0) "  ·  ${playback?.videoHeight ?: 0}p" else "",
+                    qualityPref == 0,
+                    0
+                )
+            ) + offered.mapIndexed { index, option ->
+                Triple("${option.height}p", qualityPref == option.height, index + 1)
+            }
+        }
     } else {
         listOf(Triple("Off", !captionsOn, 0)) +
             playback?.subtitles.orEmpty().mapIndexed { index, track ->
@@ -1685,12 +1829,22 @@ private fun BoxScope.TvTrackSheet(
         modifier = Modifier
             .align(Alignment.BottomStart)
             .padding(start = 48.dp, bottom = 118.dp)
-            .width(330.dp)
+            // Audio/subtitle names vary a lot, so those keep a fixed width; the
+            // quality list is short and uniform, so it hugs its content.
+            .then(
+                if (panel == TvTrackPanel.Quality) {
+                    Modifier.width(IntrinsicSize.Max).widthIn(min = 160.dp)
+                } else Modifier.width(330.dp)
+            )
             .background(Color(0xE6000000), RoundedCornerShape(8.dp))
             .padding(vertical = 8.dp)
     ) {
         Text(
-            if (panel == TvTrackPanel.Audio) "Audio" else "Subtitles",
+            when (panel) {
+                TvTrackPanel.Audio -> "Audio"
+                TvTrackPanel.Quality -> "Quality"
+                else -> "Subtitles"
+            },
             color = Color.White,
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)

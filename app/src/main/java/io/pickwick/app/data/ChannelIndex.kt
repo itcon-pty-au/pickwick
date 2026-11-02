@@ -75,21 +75,22 @@ class ChannelIndex(private val dir: File) {
     // ---- query -----------------------------------------------------------
 
     /**
-     * Token match over title + channel name, restricted to [visibleSourceIds]
-     * (the active kid's whitelist view + parent rulings applied by the caller).
-     * Pure in-memory — fast enough to run per keystroke if we ever want to.
+     * Whole-word match over title + channel name (see [SearchMatcher]),
+     * restricted to [visibleSourceIds] (the active kid's whitelist view +
+     * parent rulings applied by the caller), best matches first. The sort is
+     * stable, so equally relevant hits keep each source's newest-first order.
      */
     fun search(query: String, visibleSourceIds: Set<String>): List<IndexedVideo> {
-        val terms = query.trim().lowercase().split(Regex("\\s+")).filter { it.isNotEmpty() }
+        val terms = SearchMatcher.words(query)
         if (terms.isEmpty()) return emptyList()
-        val out = mutableListOf<IndexedVideo>()
+        val out = mutableListOf<Pair<IndexedVideo, Int>>()
         for (sourceId in visibleSourceIds) {
             for (v in loadSource(sourceId)) {
-                val hay = (v.title + " " + v.channelName).lowercase()
-                if (terms.all { it in hay }) out += v
+                val s = SearchMatcher.score(terms, v.title, v.channelName)
+                if (s > 0) out += v to s
             }
         }
-        return out
+        return out.sortedByDescending { it.second }.map { it.first }
     }
 
     // ---- storage ---------------------------------------------------------
@@ -260,9 +261,26 @@ class ChannelIndex(private val dir: File) {
         return if (f.exists()) f.readText() else null
     }
 
-    /** Apply a pushed source file (from the master). Replaces ours wholesale. */
+    /**
+     * Apply a pushed source file (from the master). Replaces ours wholesale.
+     * Parsed once to prove it's the shape [loadSource] expects, then the
+     * received text is written as-is: rebuilding it through a second JSONArray
+     * doubled the peak heap per push, and on a 2 GB Chromecast a burst of big
+     * channels (BBC Earth alone is ~800 KB) got the app thrashed and then
+     * killed by lowmemorykiller mid-sync.
+     */
     fun importSource(sourceId: String, json: String, state: SourceState) {
-        saveSource(sourceId, parseSource(json, sourceId))
+        val count = runCatching { JSONArray(json).let { arr ->
+            (0 until arr.length()).forEach { i ->
+                arr.getJSONObject(i).let { it.getString("id"); it.getString("t") }
+            }
+            arr.length()
+        } }.getOrNull() ?: return
+        if (count != state.count) {
+            android.util.Log.w("Pickwick", "index import $sourceId: $count videos, state says ${state.count}")
+        }
+        dir.mkdirs()
+        sourceFile(sourceId).writeText(json)
         states = states + (sourceId to state)
         saveManifest()
     }

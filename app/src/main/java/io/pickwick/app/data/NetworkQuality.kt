@@ -53,5 +53,6 @@ object QualityTargets {
             NetworkQuality.Tier.MEDIUM -> if (tv) 720 else 480
             NetworkQuality.Tier.LOW -> null // muxed fallback
         }
+        println("Pickwick: quality tier=$tier tv=$tv playbackMaxHeight=$playbackMaxHeight")
     }
 }

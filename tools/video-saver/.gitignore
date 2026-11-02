@@ -3,3 +3,4 @@ native/config.json
 native/host.json
 native/launch.cmd
 native/__pycache__/
+dist/

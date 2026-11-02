@@ -202,6 +202,12 @@ data class Whitelist(
      */
     val sponsorSkip: Boolean = true,
     /**
+     * Which kinds of marked stretch [sponsorSkip] jumps over (SponsorBlock
+     * category ids). Defaults to [SponsorBlock.DEFAULT_CATEGORIES]: ads only,
+     * not intros/outros.
+     */
+    val sponsorCategories: Set<String> = SponsorBlock.DEFAULT_CATEGORIES,
+    /**
      * Family-wide screen-off listening rate, percent (one of
      * [LISTEN_MULTIPLIERS]). Null = the feature is off: locking the phone
      * pauses playback, exactly the pre-listen behavior — no hidden default

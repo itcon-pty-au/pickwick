@@ -513,12 +513,12 @@ class LanServer(
             }
             method == "GET" && path == "/index-status" -> respond(200, indexStatusProvider())
             method == "GET" && path == "/index" -> {
-                val id = Regex("source=([A-Za-z0-9_-]+)").find(target)?.groupValues?.get(1)
+                val id = indexSourceParam(target)
                 val json = id?.let(indexSourceProvider)
                 if (json != null) respond(200, json) else respond(404, "unknown source")
             }
             method == "POST" && path == "/index" -> {
-                val id = Regex("source=([A-Za-z0-9_-]+)").find(target)?.groupValues?.get(1)
+                val id = indexSourceParam(target)
                 if (id == null) {
                     respond(400, "bad source")
                 } else {
@@ -637,6 +637,22 @@ class LanServer(
         private const val CORE_WORKERS = 2
         private const val MAX_WORKERS = 8
         private const val MAX_QUEUED = 16
+
+        /**
+         * The `source=` query value, URL-decoded. Index keys are whitelist
+         * entry ids, and channels added by link keep theirs — "@natgeokids",
+         * "user/scishowkids" — so a bare [A-Za-z0-9_-] match 400'd every one of
+         * them and their deep crawl never left the master. Still a closed
+         * charset after decoding (ChannelIndex.sourceFile flattens the rest
+         * for the filename) and bounded, since this faces the LAN.
+         */
+        internal fun indexSourceParam(target: String): String? {
+            val raw = Regex("[?&]source=([^&\\s]{1,600})").find(target)?.groupValues?.get(1)
+                ?: return null
+            val id = runCatching { java.net.URLDecoder.decode(raw, "UTF-8") }.getOrNull()
+                ?: return null
+            return id.takeIf { Regex("[A-Za-z0-9_@./-]{1,200}").matches(it) && ".." !in it }
+        }
 
         private fun reason(code: Int): String = when (code) {
             200 -> "OK"
@@ -947,8 +963,13 @@ object LanClient {
     suspend fun indexStatus(device: PairedDevice): String? = withContext(Dispatchers.IO) {
         runCatching {
             request(device, "GET", "/index-status", null).use { resp ->
+                if (!resp.isSuccessful) android.util.Log.w("Pickwick",
+                    "index-status from ${device.name}: HTTP ${resp.code}")
                 if (resp.isSuccessful) resp.body?.string() else null
             }
+        }.onFailure {
+            android.util.Log.w("Pickwick", "index-status from ${device.name} " +
+                "(${device.host}:${device.port}): $it")
         }.getOrNull()
     }
 
@@ -956,7 +977,14 @@ object LanClient {
     suspend fun pushIndexSource(device: PairedDevice, sourceId: String, body: String): Boolean =
         withContext(Dispatchers.IO) {
             runCatching {
-                request(device, "POST", "/index?source=$sourceId", body).use { it.isSuccessful }
+                val encoded = java.net.URLEncoder.encode(sourceId, "UTF-8")
+                request(device, "POST", "/index?source=$encoded", body).use { resp ->
+                    if (!resp.isSuccessful) android.util.Log.w("Pickwick",
+                        "index push $sourceId (${body.length} B): HTTP ${resp.code}")
+                    resp.isSuccessful
+                }
+            }.onFailure {
+                android.util.Log.w("Pickwick", "index push $sourceId (${body.length} B): $it")
             }.getOrDefault(false)
         }
 

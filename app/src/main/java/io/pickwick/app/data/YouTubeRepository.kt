@@ -23,6 +23,31 @@ import org.schabi.newpipe.extractor.search.SearchInfo
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 
+/**
+ * Small LRU for the info memos. Eviction is by size, not age: the TTL check
+ * only runs when an entry is read, so nothing else would ever drop one.
+ */
+internal class BoundedCache<T>(private val maxEntries: Int) {
+    private val map = object : LinkedHashMap<String, Pair<Long, T>>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Pair<Long, T>>?) =
+            size > maxEntries
+    }
+
+    @Synchronized operator fun get(key: String): Pair<Long, T>? = map[key]
+
+    @Synchronized operator fun set(key: String, value: Pair<Long, T>) { map[key] = value }
+}
+
+/**
+ * A plain copy of a channel tab's link handler. The extractor hands out a
+ * ReadyChannelTabListLinkHandler whose lambda captures the whole parsed channel
+ * page; a cursor or UI state holding one keeps that alive long after the first
+ * page is read. Paging only needs the id/filters (this is also how persisted
+ * cursors are rebuilt — see IndexCrawler.deserializeCursor).
+ */
+private fun ListLinkHandler.detached() =
+    ListLinkHandler(originalUrl, url, id, contentFilters, sortFilter)
+
 /** A tile on the home screen: a whitelisted channel or playlist. */
 data class Source(
     val id: String,
@@ -64,9 +89,13 @@ class YouTubeRepository {
     companion object {
         private const val INFO_TTL_MS = 10 * 60 * 1000L
         // Shared across instances so MainActivity and PlayerActivity reuse fetches.
-        private val channelInfoCache = ConcurrentHashMap<String, Pair<Long, ChannelInfo>>()
-        private val playlistInfoCache = ConcurrentHashMap<String, Pair<Long, PlaylistInfo>>()
-        private val channelTabCache = ConcurrentHashMap<String, Pair<Long, ChannelTabInfo>>()
+        // Bounded on purpose: a ChannelInfo keeps its extractor's whole parsed
+        // channel page reachable (several MB each), and the background warm
+        // walks every source. Unbounded, 47 channels held ~165 MB and OOM'd a
+        // 192 MB-heap Fire TV Cube; the TTL below is only checked on read.
+        private val channelInfoCache = BoundedCache<ChannelInfo>(6)
+        private val playlistInfoCache = BoundedCache<PlaylistInfo>(12)
+        private val channelTabCache = BoundedCache<ChannelTabInfo>(12)
 
         /**
          * Two priority lanes: user taps never queue behind background warming.
@@ -121,7 +150,7 @@ class YouTubeRepository {
     /** TTL memo + in-flight dedup + rate limiting, shared by all info fetches. */
     private suspend fun <T> memoized(
         key: String,
-        cache: ConcurrentHashMap<String, Pair<Long, T>>,
+        cache: BoundedCache<T>,
         limiter: Semaphore,
         what: String,
         fetch: () -> T
@@ -228,7 +257,7 @@ class YouTubeRepository {
                     }
                     UploadsPage(
                         videos = tab.relatedItems.filterIsInstance<StreamInfoItem>().map { it.toVideo() },
-                        handle = FeedHandle.ChannelTab(videosTab),
+                        handle = FeedHandle.ChannelTab(videosTab.detached()),
                         nextPage = tab.nextPage
                     )
                 }
@@ -379,8 +408,16 @@ class YouTubeRepository {
          *  the StreamInfo fetch already paid for them. Empty for local files. */
         val description: String = "",
         val tags: List<String> = emptyList(),
-        val uploaderUrl: String? = null
+        val uploaderUrl: String? = null,
+        /** One video-only stream per height the video offers, tallest first —
+         *  the player's quality picker. Empty when YouTube offered nothing to
+         *  choose between (muxed fallback, local files, network shares). */
+        val videoOptions: List<VideoOption> = emptyList(),
+        /** Height of the stream in [videoUrl]; 0 when unknown (local files). */
+        val videoHeight: Int = 0
     )
+
+    data class VideoOption(val height: Int, val url: String)
 
     /** Human-authored tracks first — auto-captions are a fallback, not a default. */
     private fun subtitlesOf(info: StreamInfo): List<Subtitle> =
@@ -457,10 +494,28 @@ class YouTubeRepository {
                     }
                 val bestAudio = audioTracks.firstOrNull()
                 if (bestVideo != null && bestAudio != null) {
+                    println(
+                        "Pickwick: stream '${info.name}' max=$maxHeight picked " +
+                            "${bestVideo.height}p ${bestVideo.format} ${bestVideo.bitrate / 1000}kbps; " +
+                            "offered ${info.videoOnlyStreams.map { it.height }.distinct().sorted()}"
+                    )
+                    // Every height on offer (not just those under maxHeight) so
+                    // the viewer can pick above or below the automatic target.
+                    val options = info.videoOnlyStreams
+                        .filter { it.content != null && it.height > 0 }
+                        .groupBy { it.height }
+                        .map { (height, streams) ->
+                            val best = streams.firstOrNull {
+                                it.format == org.schabi.newpipe.extractor.MediaFormat.MPEG_4
+                            } ?: streams.first()
+                            VideoOption(height, best.content)
+                        }
+                        .sortedByDescending { it.height }
                     return@withContext Playback(
                         info.name, bestVideo.content, bestAudio.url, subtitlesOf(info), audioTracks,
                         description = info.description?.content.orEmpty(),
-                        tags = info.tags.orEmpty(), uploaderUrl = info.uploaderUrl
+                        tags = info.tags.orEmpty(), uploaderUrl = info.uploaderUrl,
+                        videoOptions = options, videoHeight = bestVideo.height
                     )
                 }
             }
@@ -468,10 +523,17 @@ class YouTubeRepository {
                 .filter { !it.isVideoOnly }
                 .maxByOrNull { it.height }
                 ?: error("No playable stream found")
+            println(
+                "Pickwick: stream '${info.name}' max=$maxHeight fell back to muxed " +
+                    "${muxed.height}p (video-only offered " +
+                    "${info.videoOnlyStreams.map { it.height }.distinct().sorted()}, " +
+                    "audio tracks ${info.audioStreams.size})"
+            )
             Playback(
                 info.name, muxed.content, null, subtitlesOf(info),
                 description = info.description?.content.orEmpty(),
-                tags = info.tags.orEmpty(), uploaderUrl = info.uploaderUrl
+                tags = info.tags.orEmpty(), uploaderUrl = info.uploaderUrl,
+                videoHeight = muxed.height
             )
         }
 

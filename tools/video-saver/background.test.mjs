@@ -18,6 +18,7 @@ function setup(initialGrant = false, tabUrl = "https://www.pokeflix.tv/v/episode
   let onMessage;
   let onUpdated;
   const chrome = {
+    sidePanel: { setPanelBehavior: async options => { assert.equal(options.openPanelOnActionClick, true); } },
     permissions: {
       contains: async () => granted,
       onAdded: { addListener: fn => { changes.add = fn; } },
@@ -82,14 +83,22 @@ test("worker restart restores listener when permission already granted", async (
   assert.equal(app.count(), 1);
 });
 
-test("auto-capture ignores unrelated websites and lookalike hosts", async () => {
-  for (const url of ["https://example.com", "https://pokeflix.tv.evil.example", "https://notpokeflix.tv"]) {
+test("auto-capture works on arbitrary HTTP(S) websites", async () => {
+  for (const url of ["https://example.com", "http://media.example.org/watch", "https://another.example/video"]) {
     const app = setup(true, url);
     await app.flush();
     app.media();
     await app.flush();
-    assert.equal((await app.list()).state, null);
+    assert.equal((await app.list()).state.items.length, 1);
   }
+});
+
+test("browser-internal pages are not captured", async () => {
+  const app = setup(true, "chrome://extensions");
+  await app.flush();
+  app.media();
+  await app.flush();
+  assert.equal((await app.list()).state, null);
 });
 
 test("navigation clears old episode sources and repeated ranges are deduplicated", async () => {

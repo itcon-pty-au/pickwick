@@ -10,7 +10,7 @@
   <sub>Free forever &amp; open source — donations fund the upkeep that keeps playback working.</sub>
 </p>
 
-A kid-safe, whitelist-only video player for Android phones, tablets and Google TV —
+A kid-safe, whitelist-only video player for Android phones, tablets, Google TV and Fire TV —
 **parents choose the YouTube channels, playlists, podcasts and home-network video folders kids can access.**
 No ads, no Shorts, no comments, no recommendations, no rabbit holes, no accounts, no cloud.
 
@@ -72,14 +72,17 @@ with no ads.
   phone, so car trips and dead Wi-Fi still work
 - A fullscreen player with no ads and nothing to escape into; playlists
   auto-play in order, and in-video sponsor segments are skipped automatically
-  (via SponsorBlock's community data)
+  (via SponsorBlock's community data) — parents choose which kinds to skip:
+  sponsor reads, self-promotion and "like & subscribe" pleas by default, with
+  intros, outros, recaps and filler opt-in
 - **NEW badges** when an allowed channel has fresh uploads
 - **Source icons** on tiles — YouTube, network share or podcast — so a mixed
   home screen stays easy to read
 - **Time price tags** on tiles (0.5x … FREE, or 1.5x for "junk food" channels) —
   cheaper channels drain the clock slower, so kids can spend their time knowingly
-- **Subtitles, audio language and quality** on demand — CC button on phones,
-  ▼ on the TV remote opens the track controls; choices stick
+- **Subtitles, audio language and quality** on demand — CC button on phones and
+  a quality pill (e.g. "720p"), ▼ on the TV remote opens the track controls
+  (Audio, CC and **HD**); choices stick
 - Gentle **"5 minutes left" / "1 minute left"** warnings before time runs out
 - Friendly screens when time is up: "Time for a break! ⏰", "It's bedtime! 🌙"
 
@@ -266,6 +269,19 @@ ranged chunks the way official clients do — defeating server-side throttling �
 with a five-minute read-ahead buffer, so a Wi-Fi dip drains the buffer instead
 of stalling playback.
 
+**Choosing a quality.** The player's HD control (on the TV remote: press ▼, then
+move to **HD**; on phones: the pill at the top right) lists **Auto** plus every
+height the video offers. Picking one swaps the picture in place and resumes where
+it was; the choice is remembered. Step down to 720p if a TV box is struggling.
+
+**Videos made for kids play at 360p.** In testing, YouTube's "made for kids"
+videos came back from the extractor with only a single 360p stream with sound —
+no separate HD video or audio — so that is all Pickwick can play, and the picker
+shows just that one height. Other videos offered the full range. This looks like
+a YouTube-side limit rather than a setting; it may improve when NewPipeExtractor
+works around it (see
+[When YouTube extraction breaks](#when-youtube-extraction-breaks)).
+
 Network videos play the original file without transcoding or automatic quality
 changes. Supported formats depend on the playback device's codecs, and sustained
 playback depends on the share and local network. Content-group time remaining is
@@ -280,8 +296,16 @@ technical background assumed.
 The short version: grab the APK from
 [Releases](https://github.com/itcon-pty-au/pickwick/releases)
 (or build it yourself, below). Phone/tablet — open the APK and install;
-Google TV — install via the Downloader app (code **1037466**). After that, updates
-come from inside the app (parent settings → Check for updates).
+Google TV and Fire TV — install via the Downloader app (code **1037466**). After
+that, updates come from inside the app (parent settings → Check for updates).
+
+**Fire TV** (Fire TV Cube, Stick and Fire TV sets on Fire OS 6 or newer, i.e.
+Android 7.1+) works the same way: install **Downloader** from the Amazon
+Appstore, allow it to install unknown apps (Settings → My Fire TV → Developer
+options; the switch is called "Apps from Unknown Sources" on older Fire OS), then
+enter the code above. These boxes have less memory than a
+Chromecast, and the app is tuned for that, but a busy Fire TV can still stutter
+on 1080p — drop to 720p with the HD control if it does.
 
 ## Privacy & good-citizen notes
 
@@ -376,9 +400,34 @@ after each install:
 adb shell cmd package compile -m speed -f io.pickwick.app
 ```
 
-minSdk 26 · Kotlin + Jetpack Compose · Media3/ExoPlayer · NewPipeExtractor · GPL-3.0
+minSdk 25 · Kotlin + Jetpack Compose · Media3/ExoPlayer · NewPipeExtractor · GPL-3.0
 · profile avatars from [Fluent Emoji](https://github.com/microsoft/fluentui-emoji)
 (MIT — see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md))
+
+## Older devices (Android 7.1 / Fire OS 6)
+
+`minSdk` is 25 so the 1st-gen Fire TV Cube and other Fire OS 6 boxes can run
+Pickwick. Things that matter when changing code:
+
+- **Newer JDK methods don't exist there.** Core library desugaring is on, which
+  covers `java.time`, streams and most collections. It does *not* cover
+  `URLDecoder.decode(String, Charset)` / `URLEncoder.encode(String, Charset)`
+  (API 33), which NewPipeExtractor calls. `buildSrc` holds an ASM transform
+  (`JavaApiBackports`) that rewrites those calls — in the app *and* every
+  dependency — to `compat/UrlCodecCompat`, so it survives extractor upgrades.
+  Without it every YouTube lookup dies with `NoSuchMethodError`.
+- **Bitmaps live in the Java heap before Android 8**, and Fire OS 6 gives apps
+  only ~192 MB. Anything cached per channel must be bounded: a `ChannelInfo`
+  keeps its extractor's whole parsed page reachable (several MB), so
+  `YouTubeRepository`'s info caches are size-limited LRUs and pagination handles
+  are plain copies. Check a change with `dumpsys meminfo` on a real box.
+- **Thumbnails need API 27** (`getScaledFrameAtTime`); below that, network-share
+  metadata is duration only and is not re-scanned on every visit.
+- **Launcher art.** Fire TV's launcher uses the manifest `banner` and `icon`:
+  both are raster mipmaps at every density (`mipmap-*/banner.png`, 320×180 at
+  xhdpi; `mipmap-*/ic_launcher.png` for pre-26 icons). The launcher caches tile
+  art per package, so after changing it reinstall and, if the old tile sticks,
+  reboot the box.
 
 ## Releasing updates (self-update)
 
@@ -440,3 +489,5 @@ persists across retries and app restarts.
 - [x] Donations / sustainability
 - [x] Settings split into pages, with a page per kid
 - [x] RSS podcasts, outside screen time, mixable with videos in Up next
+- [x] Fire TV / Fire OS 6 support (Android 7.1+), with memory tuned for small heaps
+- [x] In-player quality picker; parents choose which SponsorBlock kinds to skip
