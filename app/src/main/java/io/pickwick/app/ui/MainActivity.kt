@@ -80,84 +80,11 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             it.profiles = initialConfig.profiles
             it.allowedOverrides = initialConfig.aiAllowedVideoIds
         }
-        // Whose device this is: its dedicated assignment, else the last pick
-        // that still names a real kid. A remembered pick can outlive its kid
-        // (deleted on the phone, picker not used since) and suffixFor would
-        // auto-register an orphan namespace, so it's validated against the
-        // config it came with.
-        fun kidHere(f: Whitelist): String? =
-            if (f.profiles.isEmpty()) null
-            else f.deviceProfiles[pairingStore.deviceToken()]
-                ?: activeProfiles.activeId()?.takeIf { f.profile(it) != null }
-        // Every device runs the LAN server now, not just TVs: a kid's phone or
-        // tablet is pairable too (config pushes, grants, index sync). Same
-        // token-gated listener as before, just no longer gated on form factor.
-        if (LanServerHolder.server == null) {
-            LanServerHolder.server = LanServer(
-                configStore,
-                grantHandler = { minutes, profileId ->
-                    // Route the grant to the named kid's guard; unnamed grants
-                    // (older admin phones) land on whoever this device shows.
-                    // An explicit id stays unvalidated on purpose — a grant can
-                    // arrive moments before the config push that introduces its
-                    // (new) kid.
-                    val here = kidHere(ConfigStore(appContext).load())
-                    val target = profileId ?: here
-                    SessionGuard(appContext, profileNs.suffixFor(target))
-                        .grantExtraMinutes(minutes)
-                    // Only the kid the minutes belong to hears about them —
-                    // a grant aimed at their sibling is not their news.
-                    if (target == here) KidNotices.post(KidNotices.grant(minutes))
-                },
-                takeBackHandler = { minutes, profileId ->
-                    val here = kidHere(ConfigStore(appContext).load())
-                    val target = profileId ?: here
-                    SessionGuard(appContext, profileNs.suffixFor(target))
-                        .takeBackExtraMinutes(minutes)
-                    if (target == here) KidNotices.post(KidNotices.takeBack(minutes))
-                },
-                pairingStore,
-                statsProvider = { profileId -> io.pickwick.app.data.Stats.build(appContext, profileId) },
-                watchStateProvider = { WatchSync.exportJson(appContext) },
-                watchStateMerger = { json ->
-                    if (WatchSync.mergeJson(appContext, json)) {
-                        // Refresh keep-watching / hearts on the TV right away.
-                        ConfigEvents.onConfigChanged?.invoke()
-                    }
-                },
-                verdictsProvider = {
-                    io.pickwick.app.data.ScreeningStore(appContext)
-                        .exportJson(ConfigStore(appContext).load().ai.rulesVersion)
-                },
-                verdictsMerger = { json ->
-                    val imported = io.pickwick.app.data.ScreeningStore(appContext)
-                        .importJson(json, ConfigStore(appContext).load().ai.rulesVersion)
-                    // Imported ALLOWs reveal videos this device hadn't screened yet.
-                    if (imported > 0) ConfigEvents.onConfigChanged?.invoke()
-                },
-                indexStatusProvider = {
-                    io.pickwick.app.data.ChannelIndex(appContext).statusJson()
-                },
-                indexSourceProvider = { sourceId ->
-                    io.pickwick.app.data.ChannelIndex(appContext).exportSourceWithState(sourceId)
-                },
-                indexMerger = { sourceId, body ->
-                    io.pickwick.app.data.ChannelIndex(appContext).importSourceWithState(sourceId, body)
-                },
-                onConfigApplied = { before, after ->
-                    // The pill is the only thing that says a rule moved;
-                    // otherwise the kid finds out by hitting it. Judged on this
-                    // device's own kid, so a change to their sibling's rules
-                    // stays quiet here.
-                    val kid = kidHere(after)
-                    val fresh = after.limitsFor(kid)
-                    KidNotices.configChange(
-                        before.limitsFor(kid), fresh,
-                        SessionGuard(appContext, profileNs.suffixFor(kid)).remainingTodayMin(fresh)
-                    )?.let { KidNotices.post(it) }
-                }
-            ).also { it.start() }
-        }
+        // The LAN server itself starts with the process (PickwickApp); on a kid
+        // device this promotes the process to a foreground service so the
+        // cached-app freezer can't stop it once Pickwick leaves the screen.
+        // Started here, while visible — background starts are refused.
+        LanService.startIfKid(this)
         handlePairIntent(intent)
         val prefetchThumbs: suspend (List<String>) -> Unit = { urls ->
             val loader = coil.Coil.imageLoader(appContext)

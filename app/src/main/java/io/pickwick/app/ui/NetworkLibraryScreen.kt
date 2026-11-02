@@ -120,7 +120,7 @@ internal fun NetworkLibraryScreen(profileId: String?, vm: MainViewModel? = null,
             if (shouldFetch) files = withContext(Dispatchers.IO) { library.list(c, path) }
             loading = false
             // Listing freshness does not mean thumbnail extraction finished before leaving.
-            val pending = files.filter { !it.directory && (it.duration == 0L || it.thumbnail == null) }
+            val pending = files.filter { SmbLibrary.needsMetadata(it) }
             detailsCompleted = 0
             detailsTotal = pending.size
             readingDetails = pending.isNotEmpty()

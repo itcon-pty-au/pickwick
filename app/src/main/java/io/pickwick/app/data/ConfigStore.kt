@@ -249,6 +249,12 @@ class ConfigStore(context: Context) {
                 // Appended only when switched off, so every existing config
                 // keeps its hash across the build that introduced the flag.
                 if (!w.sponsorSkip) append(";SB:off")
+                // Same rule for the category choice: only a departure from the
+                // shipped set is appended, and it must move the hash or the
+                // offline reconcile would never carry it to a sleeping TV.
+                if (w.sponsorCategories != SponsorBlock.DEFAULT_CATEGORIES) {
+                    append(";SBC:"); append(w.sponsorCategories.sorted().joinToString(","))
+                }
                 // Append-only-when-set, same reasoning — and it must be in the
                 // hash so the offline reconcile re-pushes a rate change.
                 w.listenPercent?.let { append(";LN:"); append(it) }
@@ -358,6 +364,11 @@ class ConfigStore(context: Context) {
             // Written only when off — absent means on, including in configs
             // saved by builds that predate the flag.
             if (!w.sponsorSkip) root.put("sponsorSkip", false)
+            // Written only when it differs from the shipped set; an empty
+            // array is a real choice (nothing selected), not "absent".
+            if (w.sponsorCategories != SponsorBlock.DEFAULT_CATEGORIES) {
+                root.put("sponsorCategories", JSONArray(w.sponsorCategories.sorted()))
+            }
             // Written only when set — absent means listening off (see Whitelist).
             w.listenPercent?.let { root.put("listen", it) }
             return root.toString(2)
@@ -591,6 +602,10 @@ class ConfigStore(context: Context) {
                 deviceProfiles = deviceProfiles,
                 masterDeviceToken = root.optString("master").ifEmpty { null },
                 sponsorSkip = root.optBoolean("sponsorSkip", true),
+                sponsorCategories = root.optJSONArray("sponsorCategories")?.let { a ->
+                    // Bounded: this payload can arrive from the LAN.
+                    (0 until minOf(a.length(), 32)).map { a.optString(it) }.toSet()
+                } ?: SponsorBlock.DEFAULT_CATEGORIES,
                 listenPercent = if (root.has("listen")) root.getInt("listen") else null,
                 networkCatalogs = root.optJSONArray("networkCatalogs")?.let { a ->
                     (0 until a.length()).map { SmbCatalog.fromJson(a.getJSONObject(it)) }.distinctBy { it.id }

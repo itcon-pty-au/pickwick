@@ -13,6 +13,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <!-- Listen mode: audio keeps playing while the phone screen is off. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- Kid devices: keeps the LAN server answering a parent's phone while
+         Pickwick is off screen (see LanService), including after a reboot. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- Google TV / Android TV: no touchscreen required, leanback optional so the
@@ -87,6 +91,26 @@
             android:name=".ui.ListenService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
+
+        <!-- Kid devices: holds the process out of the cached-app freezer so
+             the LAN server keeps accepting pushes, grants and index sync. -->
+        <service
+            android:name=".ui.LanService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Local-network endpoint for the paired parent device that administers this one" />
+        </service>
+
+        <receiver
+            android:name=".ui.LanStartReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
 
         <!-- Serves the downloaded update APK to the system installer. -->
         <provider

@@ -121,12 +121,12 @@ class SmbLibrary(private val context: Context) {
     }
 
     fun metadata(c: SmbCatalog, f: NetworkFile): NetworkFile {
-        if (f.directory || (f.duration > 0 && f.thumbnail != null)) return f
+        if (!needsMetadata(f)) return f
         return SmbConnection(c).use { metadata(c, f, it) }
     }
 
     fun metadata(c: SmbCatalog, f: NetworkFile, smb: SmbConnection): NetworkFile {
-        if (f.directory || (f.duration > 0 && f.thumbnail != null)) return f
+        if (!needsMetadata(f)) return f
         return smb.open(f.path).use { file ->
             val retriever = MediaMetadataRetriever()
             try {
@@ -192,6 +192,16 @@ class SmbLibrary(private val context: Context) {
 
     companion object {
         private val CACHE_LOCK = Any()
+
+        /**
+         * Thumbnails need getScaledFrameAtTime (API 27). Below that every file
+         * keeps `thumbnail == null` forever, so a "missing thumbnail" test alone
+         * would re-run the SMB metadata pass over the whole folder on every
+         * visit — on Fire OS 6 that scan is what exhausts the heap.
+         */
+        fun needsMetadata(f: NetworkFile): Boolean = !f.directory &&
+            (f.duration == 0L || (f.thumbnail == null && android.os.Build.VERSION.SDK_INT >= 27))
+
         fun shares(c: SmbCatalog): List<String> = SmbConnection(c).use { smb ->
             val transport = com.rapid7.client.dcerpc.transport.SMBTransportFactories.SRVSVC.getTransport(smb.session)
             com.rapid7.client.dcerpc.mssrvs.ServerService(transport).shares0

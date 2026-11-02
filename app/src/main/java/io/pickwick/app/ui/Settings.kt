@@ -38,12 +38,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Holds the TV's running LAN server so the settings QR can reference it. */
-object LanServerHolder {
-    @Volatile
-    var server: LanServer? = null
-}
-
 /**
  * Parent-gated admin: biometrics on phones, PIN pad on TVs, then a form-based
  * editor — channel search, screen-time steppers, grants, pairing, updates.
@@ -368,6 +362,7 @@ private fun AdminScreen(
     var deviceProfiles by remember(initial) { mutableStateOf(initial.deviceProfiles) }
     var masterToken by remember(initial) { mutableStateOf(initial.masterDeviceToken) }
     var sponsorSkip by remember(initial) { mutableStateOf(initial.sponsorSkip) }
+    var sponsorCategories by remember(initial) { mutableStateOf(initial.sponsorCategories) }
     var listenPercent by remember(initial) { mutableStateOf(initial.listenPercent) }
     val migratedNetwork = remember(initial) { initial.migrateNetworkShares() }
     var networkCatalogs by remember(initial) { mutableStateOf(migratedNetwork.networkCatalogs) }
@@ -453,6 +448,7 @@ private fun AdminScreen(
             deviceProfiles.filterValues { it in validIds },
             masterDeviceToken = masterToken,
             sponsorSkip = sponsorSkip,
+            sponsorCategories = sponsorCategories,
             listenPercent = listenPercent,
             networkCatalogs = networkCatalogs.map { it.copy(profileIds = it.profileIds.intersect(validIds)) },
             networkShares = networkShares,
@@ -625,6 +621,15 @@ private fun AdminScreen(
                             newIds = newIds + e.id
                         }
                     }
+                    SectionTitle("Sponsors & promos")
+                    SettingsCard {
+                        SponsorSkipSection(
+                            enabled = sponsorSkip,
+                            categories = sponsorCategories,
+                            onEnabled = { sponsorSkip = it },
+                            onCategories = { sponsorCategories = it }
+                        )
+                    }
                 }
                 HubPage.Devices -> {
                     SectionTitle("Kid devices")
@@ -668,26 +673,6 @@ private fun AdminScreen(
                     SettingsCard { LocalVideosSection(profiles) }
                 }
                 HubPage.Playback -> {
-                    SectionTitle("Playback")
-                    SettingsCard {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Skip sponsors & intros", modifier = Modifier.weight(1f))
-                            Switch(
-                                modifier = Modifier.tvFocusHighlight(),
-                                checked = sponsorSkip,
-                                onCheckedChange = { sponsorSkip = it }
-                            )
-                        }
-                        Text(
-                            "Skips the parts of a video the SponsorBlock community has marked: " +
-                                "sponsor messages, merch plugs, intros/outros and \"like and " +
-                                "subscribe\" reminders. Marked parts show in green on the TV's " +
-                                "playback bar. Lookups send only an anonymous fingerprint of the " +
-                                "video, never what is being watched.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
                     SectionTitle("Listening")
                     SettingsCard { ListenRateRow(listenPercent) { listenPercent = it } }
                 }
@@ -777,12 +762,13 @@ private fun AdminScreen(
             SettingsDivider()
             HubRow(
                 "🛡️", "Content screening",
-                if (ai.enabled) "AI screening on · review queue, discover" else "AI screening off"
+                (if (ai.enabled) "AI screening on · review queue, discover" else "AI screening off") +
+                    " · sponsor skipping"
             ) { page = HubPage.Screening }
             SettingsDivider()
             HubRow("📱", "Devices", "Kid devices, downloads, search index") { page = HubPage.Devices }
             SettingsDivider()
-            HubRow("▶️", "Playback", "Sponsor skipping, listening") { page = HubPage.Playback }
+            HubRow("▶️", "Playback", "Screen-off listening") { page = HubPage.Playback }
             SettingsDivider()
             HubRow("💾", "Backup & app", "Import, export, updates") { page = HubPage.Backup }
         }

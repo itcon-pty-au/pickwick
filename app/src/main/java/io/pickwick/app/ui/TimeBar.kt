@@ -41,7 +41,12 @@ fun TodayTimeBar(
     bonusMin: Int,
     modifier: Modifier = Modifier
 ) {
-    val total = (baseMin + bonusMin).coerceAtLeast(1)
+    // A negative bonus is time taken back out of the base quota: the teal
+    // part simply ends sooner. Nothing taken is drawn — the bar is what the
+    // kid has today, not what the rules would have given.
+    val baseLeft = (baseMin + minOf(0, bonusMin)).coerceAtLeast(0)
+    val extra = bonusMin.coerceAtLeast(0)
+    val total = (baseLeft + extra).coerceAtLeast(1)
     val base = MaterialTheme.colorScheme.primary
     Canvas(
         modifier
@@ -50,14 +55,14 @@ fun TodayTimeBar(
             .clip(RoundedCornerShape(7.dp))
     ) {
         val unit = size.width / total
-        val baseW = baseMin * unit
-        val bonusW = bonusMin * unit
+        val baseW = baseLeft * unit
+        val bonusW = extra * unit
         val watchedW = (watchedMin.coerceIn(0, total)) * unit
         segment(0f, baseW, base, watchedW)
         segment(baseW, bonusW, BonusTimeOrange, watchedW)
         // A hairline where the bonus starts, so "how much did I add" can be
         // read off the bar even once it is all solid.
-        if (bonusMin > 0 && baseMin > 0) drawRect(
+        if (extra > 0 && baseLeft > 0) drawRect(
             color = Color.Black.copy(alpha = 0.35f),
             topLeft = Offset(baseW - 1f, 0f), size = Size(2f, size.height)
         )
@@ -92,7 +97,9 @@ fun TodayTimeLegend(baseMin: Int, bonusMin: Int) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Swatch(MaterialTheme.colorScheme.primary)
         Text(
-            "$baseMin min today",
+            // Say what was taken, or the shorter bar reads as the rules changing.
+            if (bonusMin < 0) "${(baseMin + bonusMin).coerceAtLeast(0)} min today (${-bonusMin} taken back)"
+            else "$baseMin min today",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
