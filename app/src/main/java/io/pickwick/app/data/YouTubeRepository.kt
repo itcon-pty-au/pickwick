@@ -57,7 +57,9 @@ data class Source(
     val avatarUrl: String?,
     val kind: SourceKind,
     /** Screen-time drain rate in percent (100 = normal, 0 = FREE), from the whitelist entry. */
-    val timeMultiplierPercent: Int = 100
+    val timeMultiplierPercent: Int = 100,
+    /** The picked videos of a [SourceKind.CUSTOM] source; empty for everything else. */
+    val customVideos: List<Video> = emptyList()
 )
 
 data class Video(
@@ -228,6 +230,7 @@ class YouTubeRepository {
                         info.thumbnails.pick(QualityTargets.videoThumbMinWidth), entry.kind,
                         entry.timeMultiplierPercent)
                 }
+                SourceKind.CUSTOM -> entry.toCustomSource()
             }
         }
 
@@ -269,6 +272,8 @@ class YouTubeRepository {
                         nextPage = info.nextPage
                     )
                 }
+                // Local list, no paging: the videos live on the source itself.
+                SourceKind.CUSTOM -> UploadsPage(source.customVideos, null, null)
             }
         }
 
@@ -536,6 +541,22 @@ class YouTubeRepository {
                 videoHeight = muxed.height
             )
         }
+
+    /** One video's tile data for a parent's custom list; null when it can't be looked up. */
+    suspend fun videoDetails(videoId: String): CustomVideo? = withContext(Dispatchers.IO) {
+        val url = "https://www.youtube.com/watch?v=$videoId"
+        val info = runCatching {
+            interactiveFetches.withPermit { retrying("video $videoId") { StreamInfo.getInfo(youtube, url) } }
+        }.getOrNull() ?: return@withContext null
+        CustomVideo(
+            id = videoId,
+            title = info.name.orEmpty(),
+            channel = info.uploaderName.orEmpty(),
+            thumb = info.thumbnails.pick(QualityTargets.videoThumbMinWidth),
+            // Live streams report a negative duration.
+            durationSeconds = info.duration.coerceAtLeast(0)
+        )
+    }
 
     private fun StreamInfoItem.toVideo() = Video(
         url = url,

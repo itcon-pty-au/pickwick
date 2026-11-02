@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import io.pickwick.app.data.CustomVideo
 import io.pickwick.app.data.SourceKind
 import io.pickwick.app.data.TIME_MULTIPLIERS
 import io.pickwick.app.data.WhitelistEntry
@@ -52,6 +53,8 @@ internal fun ChannelsSection(
     var pendingAdd by remember { mutableStateOf<WhitelistEntry?>(null) }
     /** The entry whose AI note dialog is open. */
     var noteEntry by remember { mutableStateOf<WhitelistEntry?>(null) }
+    /** A pasted video link, resolved and waiting for the "which playlist?" answer. */
+    var pendingVideoId by remember { mutableStateOf<String?>(null) }
 
     fun displayName(entry: WhitelistEntry) =
         entry.label ?: resolvedNames[entry.url] ?: entry.id
@@ -76,41 +79,155 @@ internal fun ChannelsSection(
         )
     }
 
-    noteEntry?.let { entry ->
-        var text by remember(entry.id) { mutableStateOf(entry.aiNote.orEmpty()) }
+    pendingVideoId?.let { videoId ->
+        val customLists = entries.filter { it.kind == SourceKind.CUSTOM }
+        var newName by remember(videoId) { mutableStateOf("") }
+        // The extractor takes a few seconds; the dialog is up straight away and
+        // its buttons wake when the title and thumbnail have arrived.
+        var lookup by remember(videoId) { mutableStateOf<CustomVideo?>(null) }
+        var lookupFailed by remember(videoId) { mutableStateOf(false) }
+        LaunchedEffect(videoId) {
+            lookup = yt.videoDetails(videoId)
+            lookupFailed = lookup == null
+        }
+        val video = lookup
         AlertDialog(
-            onDismissRequest = { noteEntry = null },
-            title = { Text("AI instructions — ${displayName(entry)}") },
+            onDismissRequest = { pendingVideoId = null },
+            title = { Text("Add to a custom playlist") },
             text = {
                 Column {
                     Text(
-                        "Rules for this channel only, applied on top of the family " +
-                            "rules (and winning where they clash). This channel's " +
-                            "videos are re-checked under the new instructions; " +
-                            "already-blocked ones stay blocked.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = text,
-                        onValueChange = { text = it },
-                        minLines = 3,
-                        placeholder = {
-                            Text(
-                                "e.g. Mild cartoon slapstick is fine here. " +
-                                    "Block anything filmed as a \"prank\"."
-                            )
+                        when {
+                            video != null -> video.title.ifBlank { video.id }
+                            lookupFailed -> "Couldn't look that video up."
+                            else -> "Looking up the video…"
                         },
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (lookupFailed) MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        "A single video can only go into a playlist you make — " +
+                            "never into a channel you've added.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    )
+                    customLists.forEach { list ->
+                        val has = list.customVideos.any { it.id == videoId }
+                        TextButton(
+                            enabled = video != null && !has,
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = {
+                                video ?: return@TextButton
+                                onChanged(entries.map {
+                                    if (it.id == list.id) it.copy(customVideos = it.customVideos + video)
+                                    else it
+                                })
+                                pendingVideoId = null
+                            }
+                        ) {
+                            Text(
+                                (list.label ?: "Custom playlist") + if (has) "  ✓ already in it" else "",
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                    OutlinedTextField(
+                        value = newName,
+                        onValueChange = { newName = it },
+                        singleLine = true,
+                        label = { Text("New playlist name") },
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
             },
             confirmButton = {
+                Button(
+                    enabled = video != null && newName.isNotBlank(),
+                    onClick = {
+                        video ?: return@Button
+                        val id = "custom-" + java.util.UUID.randomUUID().toString().take(8)
+                        add(
+                            WhitelistEntry(
+                                id = id, url = "pickwick://custom/$id", label = newName.trim(),
+                                kind = SourceKind.CUSTOM, customVideos = listOf(video),
+                                // Hand-picked: skips the AI until the parent switches it on.
+                                aiCheck = false
+                            )
+                        )
+                        pendingVideoId = null
+                    }
+                ) { Text("Create") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingVideoId = null }) { Text("Cancel") }
+            }
+        )
+    }
+
+    noteEntry?.let { entry ->
+        var text by remember(entry.id) { mutableStateOf(entry.aiNote.orEmpty()) }
+        var check by remember(entry.id) { mutableStateOf(entry.aiCheck) }
+        // Exemption matches by uploader name, so it only works for channels.
+        val canToggle = entry.kind != SourceKind.PLAYLIST
+        val what = if (entry.kind == SourceKind.CUSTOM) "playlist" else "channel"
+        AlertDialog(
+            onDismissRequest = { noteEntry = null },
+            title = { Text("AI instructions — ${displayName(entry)}") },
+            text = {
+                Column {
+                    if (canToggle) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "Check this $what with AI",
+                                modifier = Modifier.weight(1f)
+                            )
+                            Switch(checked = check, onCheckedChange = { check = it })
+                        }
+                        Spacer(Modifier.height(8.dp))
+                    }
+                    if (check) {
+                        Text(
+                            "Rules for this $what only, applied on top of the family " +
+                                "rules (and winning where they clash). This $what's " +
+                                "videos are re-checked under the new instructions; " +
+                                "already-blocked ones stay blocked.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = text,
+                            onValueChange = { text = it },
+                            minLines = 3,
+                            placeholder = {
+                                Text(
+                                    "e.g. Mild cartoon slapstick is fine here. " +
+                                        "Block anything filmed as a \"prank\"."
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    } else {
+                        Text(
+                            "Videos from this $what skip AI screening and show " +
+                                "up as if you had allowed them. Your blocked list " +
+                                "still applies.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            },
+            confirmButton = {
                 Button(onClick = {
+                    // The note is kept while AI is off, so switching back restores it.
                     val note = text.trim().ifEmpty { null }
                     onChanged(entries.map {
-                        if (it.id == entry.id) it.copy(aiNote = note) else it
+                        if (it.id == entry.id) it.copy(aiNote = note, aiCheck = check) else it
                     })
                     noteEntry = null
                 }) { Text("Save") }
@@ -154,6 +271,8 @@ internal fun ChannelsSection(
         // three-kid family into a broken layout.
         Card(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
         Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+        // A custom list's name tap opens its videos (other names marquee instead).
+        var open by remember(entry.id) { mutableStateOf(false) }
         Row(verticalAlignment = Alignment.CenterVertically) {
             TimeMultiplierChip(entry.timeMultiplierPercent) { pct ->
                 onChanged(entries.map {
@@ -184,11 +303,15 @@ internal fun ChannelsSection(
                             androidx.compose.foundation.interaction.MutableInteractionSource()
                         },
                         indication = null
-                    ) { marquee = !marquee }
+                    ) { if (entry.kind == SourceKind.CUSTOM) open = !open else marquee = !marquee }
             ) {
                 Text(
                     displayName(entry) +
-                        if (entry.kind == SourceKind.PLAYLIST) "  (playlist)" else "",
+                        when (entry.kind) {
+                            SourceKind.PLAYLIST -> "  (playlist)"
+                            SourceKind.CUSTOM -> if (open) "  ▴" else "  ▾"
+                            else -> ""
+                        },
                     maxLines = 1,
                     // Forces one-line intrinsic measurement; otherwise the
                     // paragraph is re-broken against the marquee's unbounded
@@ -228,7 +351,7 @@ internal fun ChannelsSection(
                     "📝",
                     // alpha, not text color: emoji glyphs ignore the latter.
                     modifier = Modifier
-                        .alpha(if (entry.aiNote.isNullOrBlank()) 0.35f else 1f)
+                        .alpha(if (entry.aiNote.isNullOrBlank() && entry.aiCheck) 0.35f else 1f)
                         .semantics {
                             contentDescription = "AI instructions for ${displayName(entry)}"
                         }
@@ -254,6 +377,26 @@ internal fun ChannelsSection(
                     })
                 }
             )
+        }
+        if (entry.kind == SourceKind.CUSTOM && open) {
+            entry.customVideos.forEach { v ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        v.title.ifBlank { v.id },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = {
+                        onChanged(entries.map {
+                            if (it.id == entry.id) it.copy(customVideos = it.customVideos - v) else it
+                        })
+                    }) {
+                        Icon(Icons.Filled.Delete, contentDescription = "Remove ${v.title} from the playlist")
+                    }
+                }
+            }
         }
         }
         }
@@ -321,13 +464,20 @@ internal fun ChannelsSection(
         OutlinedTextField(
             value = pasteText,
             onValueChange = { pasteText = it },
-            placeholder = { Text("Or paste a channel/playlist link") },
+            placeholder = { Text("Or paste a channel, playlist or video link") },
             singleLine = true,
             modifier = Modifier.weight(1f)
         )
         Spacer(Modifier.width(8.dp))
         CompactButton(
             onClick = {
+                val videoId = WhitelistParser.videoIdFromLink(pasteText)
+                if (videoId != null) {
+                    pasteError = null
+                    pasteText = ""
+                    pendingVideoId = videoId
+                    return@CompactButton
+                }
                 val parsed = WhitelistParser.parse(pasteText.trim()).sources.firstOrNull()
                 if (parsed == null) {
                     pasteError = "Couldn't recognise that link"

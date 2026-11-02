@@ -69,6 +69,9 @@ class MainViewModel(
     val state: StateFlow<UiState> = _state
     private var sources: List<Source> = emptyList()
     private var blockedVideoIds: Set<String> = emptySet()
+    /** Parent's choice: do custom playlists auto-advance like YouTube playlists? */
+    var customAutoplay: Boolean = false
+        private set
     /** This kid's "hide videos shorter than" rule, in seconds; 0 = no rule. */
     private var minVideoSeconds: Long = 0
 
@@ -560,6 +563,7 @@ class MainViewModel(
                 blockedVideoIds = list.blockedVideoIds +
                     list.blockedFor.filterValues { activeProfileId in it }.keys
                 minVideoSeconds = (list.limitsFor(activeProfileId).minVideoMinutes ?: 0) * 60L
+                customAutoplay = list.customAutoplay
                 screener?.config = list.ai
                 screener?.profiles = list.profiles
                 screener?.activeProfileId = activeProfileId
@@ -603,9 +607,15 @@ class MainViewModel(
                 fun notes(sourcesList: List<Source>) {
                     screener?.channelNotes =
                         io.pickwick.app.data.DeepCheck.notesByChannelName(list.sources, sourcesList)
+                    screener?.videoNotes =
+                        io.pickwick.app.data.DeepCheck.customNotesByVideoId(list.sources)
+                    screener?.aiOffChannels =
+                        io.pickwick.app.data.DeepCheck.aiOffChannelNames(list.sources, sourcesList)
                 }
                 val provisional = list.sources.map { e ->
-                    cachedByUrl[e.url] ?: Source(e.id, e.url, e.label ?: e.id, null, e.kind)
+                    // A custom list is the entry itself — a cached tile would carry no videos.
+                    if (e.kind == SourceKind.CUSTOM) e.toCustomSource()
+                    else cachedByUrl[e.url] ?: Source(e.id, e.url, e.label ?: e.id, null, e.kind)
                 }
                 names(provisional)
                 notes(provisional)
@@ -633,7 +643,8 @@ class MainViewModel(
                     // Don't cache failed resolutions (null avatar) over previous good ones.
                     // distinctBy: entries in different forms may canonicalize to one channel.
                     val best = resolved.map { s ->
-                        if (s.avatarUrl == null) cachedByUrl[s.url]?.takeIf { it.avatarUrl != null } ?: s
+                        if (s.kind == SourceKind.CUSTOM) s
+                        else if (s.avatarUrl == null) cachedByUrl[s.url]?.takeIf { it.avatarUrl != null } ?: s
                         else s
                     }.distinctBy { it.id }
                     names(best)
@@ -926,7 +937,10 @@ class MainViewModel(
         pagesThisPump = 0
 
         // Paint instantly from the last visit; refresh silently underneath.
-        val cachedVideos = withContext(Dispatchers.IO) { videoCache.load(source.id) }
+        // A custom list is read straight off the source: a disk copy could only
+        // resurrect a video the parent has since removed.
+        val cachedVideos = if (source.kind == SourceKind.CUSTOM) emptyList()
+        else withContext(Dispatchers.IO) { videoCache.load(source.id) }
         if (cachedVideos.isNotEmpty()) {
             rawVideos = cachedVideos
             usage.setLastSeenLatest(source.id, cachedVideos.first().url)
@@ -1123,6 +1137,22 @@ class MainViewModel(
 
     /** Hold-to-save: toggles a video in the kid's Favorites. */
     fun toggleWatchlist(item: VideoItem) = toggleSaved(item, watchlistStore, Screen.Watchlist)
+
+    /**
+     * The kid asks for [item] to be held. It disappears from every grid right
+     * away and lands in the parent's "Waiting for your OK" queue; only the
+     * parent can bring it back.
+     */
+    fun reportVideo(item: VideoItem) {
+        val scr = screener ?: return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                scr.report(item.video, scr.profiles.firstOrNull { it.id == scr.activeProfileId }?.name)
+            }
+            io.pickwick.app.data.KidNotices.post("Thanks — a grown-up will take a look.")
+            reapplyScreening()
+        }
+    }
 
     /** Hold-to-save: toggles a video in the kid's Watch later list. */
     fun toggleWatchLater(item: VideoItem) = toggleSaved(item, watchLaterStore, Screen.WatchLater)

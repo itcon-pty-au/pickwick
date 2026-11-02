@@ -398,7 +398,8 @@ internal fun AiReviewSection(
                 channel = f.channel,
                 thumb = f.thumbnailUrl,
                 rulesVersion = ai.rulesVersion,
-                at = f.at
+                at = f.at,
+                reported = f.reported
             )
         }
     val flagged = (localFlagged + remoteOnly).sortedByDescending { it.second.at }
@@ -441,6 +442,8 @@ internal fun AiReviewSection(
                                 fine.takeIf { it.isNotEmpty() }
                                     ?.joinToString(", ") { it.name }?.let { "fine for $it" }
                             ).joinToString(" · ")
+                        } else if (e.reported) {
+                            "reported by a kid"
                         } else if (e.verdict == io.pickwick.app.data.AiScreener.Verdict.REVIEW) {
                             "AI unsure"
                         } else "AI blocked"
@@ -457,7 +460,7 @@ internal fun AiReviewSection(
                 if (e.reason.isNotBlank()) {
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "AI: ${e.reason}",
+                        if (e.reported) e.reason else "AI: ${e.reason}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary
                     )
@@ -526,8 +529,8 @@ internal fun AiReviewSection(
 
     if (review.isEmpty()) {
         Text(
-            "Nothing waiting for you. Videos the AI is unsure about " +
-                "appear here for your decision." + screeningNote,
+            "Nothing waiting for you. Videos the AI is unsure about, or that " +
+                "your kids report, appear here for your decision." + screeningNote,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

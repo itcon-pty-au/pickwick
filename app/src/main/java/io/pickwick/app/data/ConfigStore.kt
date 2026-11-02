@@ -189,6 +189,12 @@ class ConfigStore(context: Context) {
                     if (!it.aiNote.isNullOrBlank()) {
                         append("|n"); append(it.aiNote.trim().replace('\n', ' '))
                     }
+                    // Append-only-when-off: on is the default and keeps old hashes.
+                    if (!it.aiCheck) append("|a0")
+                    // The picked videos are content: adding or removing one must push.
+                    if (it.customVideos.isNotEmpty()) {
+                        append("|c"); append(it.customVideos.joinToString(",") { v -> v.id })
+                    }
                     append('\n')
                 }
                 append("B:"); append(w.blockedVideoIds.sorted().joinToString(","))
@@ -249,6 +255,8 @@ class ConfigStore(context: Context) {
                 // Appended only when switched off, so every existing config
                 // keeps its hash across the build that introduced the flag.
                 if (!w.sponsorSkip) append(";SB:off")
+                // Appended only when on, same rule: the default keeps old hashes.
+                if (w.customAutoplay) append(";CA:on")
                 // Same rule for the category choice: only a departure from the
                 // shipped set is appended, and it must move the hash or the
                 // offline reconcile would never carry it to a sleeping TV.
@@ -318,6 +326,16 @@ class ConfigStore(context: Context) {
                         // Omitted when visible to everyone, same reasoning.
                         if (e.profileIds.isNotEmpty()) put("profiles", JSONArray(e.profileIds.toList()))
                         if (!e.aiNote.isNullOrBlank()) put("note", e.aiNote.trim())
+                        if (!e.aiCheck) put("aiCheck", false)
+                        if (e.customVideos.isNotEmpty()) put("videos", JSONArray().apply {
+                            e.customVideos.forEach { v ->
+                                put(JSONObject().apply {
+                                    put("id", v.id); put("t", v.title); put("c", v.channel)
+                                    v.thumb?.let { put("th", it) }
+                                    if (v.durationSeconds > 0) put("d", v.durationSeconds)
+                                })
+                            }
+                        })
                     })
                 }
             })
@@ -364,6 +382,7 @@ class ConfigStore(context: Context) {
             // Written only when off — absent means on, including in configs
             // saved by builds that predate the flag.
             if (!w.sponsorSkip) root.put("sponsorSkip", false)
+            if (w.customAutoplay) root.put("customAutoplay", true)
             // Written only when it differs from the shipped set; an empty
             // array is a real choice (nothing selected), not "absent".
             if (w.sponsorCategories != SponsorBlock.DEFAULT_CATEGORIES) {
@@ -540,7 +559,19 @@ class ConfigStore(context: Context) {
                     profileIds = pidArr?.let { arrPids ->
                         (0 until arrPids.length()).map { arrPids.getString(it) }.toSet()
                     } ?: emptySet(),
-                    aiNote = o.optString("note").ifEmpty { null }
+                    aiNote = o.optString("note").ifEmpty { null },
+                    aiCheck = o.optBoolean("aiCheck", true),
+                    customVideos = o.optJSONArray("videos")?.let { va ->
+                        (0 until va.length()).mapNotNull { i ->
+                            val v = va.getJSONObject(i)
+                            val vid = v.optString("id").takeIf { it.isNotEmpty() }
+                                ?: return@mapNotNull null
+                            CustomVideo(
+                                vid, v.optString("t"), v.optString("c"),
+                                v.optString("th").ifEmpty { null }, v.optLong("d")
+                            )
+                        }
+                    } ?: emptyList()
                 )
             }
             val blocked = mutableSetOf<String>()
@@ -602,6 +633,7 @@ class ConfigStore(context: Context) {
                 deviceProfiles = deviceProfiles,
                 masterDeviceToken = root.optString("master").ifEmpty { null },
                 sponsorSkip = root.optBoolean("sponsorSkip", true),
+                customAutoplay = root.optBoolean("customAutoplay", false),
                 sponsorCategories = root.optJSONArray("sponsorCategories")?.let { a ->
                     // Bounded: this payload can arrive from the LAN.
                     (0 until minOf(a.length(), 32)).map { a.optString(it) }.toSet()

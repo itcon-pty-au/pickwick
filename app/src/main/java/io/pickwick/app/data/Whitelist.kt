@@ -5,7 +5,28 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 
-enum class SourceKind { CHANNEL, PLAYLIST }
+enum class SourceKind {
+    CHANNEL, PLAYLIST,
+    /** A parent-made list of individually picked videos; never fetched from YouTube. */
+    CUSTOM
+}
+
+/** One video saved into a [SourceKind.CUSTOM] entry, with what the tile needs to render. */
+data class CustomVideo(
+    val id: String,
+    val title: String,
+    val channel: String,
+    val thumb: String?,
+    val durationSeconds: Long
+) {
+    fun toVideo() = Video(
+        url = "https://www.youtube.com/watch?v=$id",
+        title = title,
+        channelName = channel,
+        thumbnailUrl = thumb,
+        durationSeconds = durationSeconds
+    )
+}
 
 data class WhitelistEntry(
     /** Stable key for caches: the YouTube ID when known, else the URL path form. */
@@ -35,8 +56,22 @@ data class WhitelistEntry(
      * source's videos — except already-blocked ones, which stay blocked: the
      * note exists to catch more junk, not to relitigate old blocks.
      */
-    val aiNote: String? = null
+    val aiNote: String? = null,
+    /**
+     * Whether AI screening judges this source's videos. Off exempts them the
+     * way a parent allow does. Matched by uploader name like [aiNote], so it is
+     * a channel feature — a playlist's videos carry their own uploaders' names.
+     */
+    val aiCheck: Boolean = true,
+    /** The picked videos, in the order added — [SourceKind.CUSTOM] entries only. */
+    val customVideos: List<CustomVideo> = emptyList()
 ) {
+    /** The tile for a custom list, built from the entry itself — never from a cache. */
+    fun toCustomSource() = Source(
+        id, url, label ?: "Custom playlist", customVideos.firstOrNull()?.thumb, kind,
+        timeMultiplierPercent, customVideos.map { it.toVideo() }
+    )
+
     fun visibleTo(profileId: String?): Boolean =
         profileIds.isEmpty() || profileId == null || profileId in profileIds
 }
@@ -201,6 +236,8 @@ data class Whitelist(
      * a parent switch in settings.
      */
     val sponsorSkip: Boolean = true,
+    /** Play the next video by itself after one ends in a custom playlist. Off by default. */
+    val customAutoplay: Boolean = false,
     /**
      * Which kinds of marked stretch [sponsorSkip] jumps over (SponsorBlock
      * category ids). Defaults to [SponsorBlock.DEFAULT_CATEGORIES]: ads only,
@@ -244,8 +281,18 @@ data class Whitelist(
 
     /** Parent allow-overrides that apply to this kid (feeds the screener). */
     fun allowedIdsFor(profileId: String?): Set<String> =
-        if (profileId == null) aiAllowedVideoIds
-        else aiAllowedVideoIds + allowedFor.filterValues { profileId in it }.keys
+        (if (profileId == null) aiAllowedVideoIds
+        else aiAllowedVideoIds + allowedFor.filterValues { profileId in it }.keys) +
+            pickedVideoIdsFor(profileId)
+
+    /**
+     * Videos a parent picked one by one into a custom list this kid can see,
+     * unless the list's AI check is switched on. Choosing a video by hand is the
+     * allow, so the AI leaves it alone (a parent's block, held separately, still wins).
+     */
+    fun pickedVideoIdsFor(profileId: String?): Set<String> =
+        sources.filter { it.kind == SourceKind.CUSTOM && !it.aiCheck && it.visibleTo(profileId) }
+            .flatMap { e -> e.customVideos.map { it.id } }.toSet()
 }
 
 /**
@@ -273,6 +320,22 @@ object WhitelistParser {
     private val YT_HOST = Regex("^(https?://)?((www|m|music)\\.)?youtube\\.com/", RegexOption.IGNORE_CASE)
     private val V_PARAM = Regex("[?&]v=([A-Za-z0-9_-]{11})")
     private val LIST_PARAM = Regex("[?&]list=([A-Za-z0-9_-]+)")
+
+    private val SHORT_LINK = Regex(
+        "(?:youtu\\.be/|youtube\\.com/(?:shorts|live|embed)/)([A-Za-z0-9_-]{11})",
+        RegexOption.IGNORE_CASE
+    )
+
+    /**
+     * The video a pasted link points at, or null. A link that also names a list
+     * (watch?v=…&list=PL…) is a playlist link and stays one — see [parse].
+     */
+    fun videoIdFromLink(text: String): String? {
+        val t = text.trim()
+        if (LIST_PARAM.containsMatchIn(t)) return null
+        if (YT_HOST.containsMatchIn(t)) V_PARAM.find(t)?.let { return it.groupValues[1] }
+        return SHORT_LINK.find(t)?.groupValues?.get(1)
+    }
 
     fun parse(text: String): Whitelist {
         val sources = mutableListOf<WhitelistEntry>()
@@ -368,6 +431,13 @@ object WhitelistExporter {
         append("# or paste entries one by one under \"Channels & playlists\".\n\n")
 
         w.sources.forEach { e ->
+            // Custom lists have no URL a text file could be re-read from.
+            if (e.kind == SourceKind.CUSTOM) {
+                append("# Custom playlist \"").append(e.label.orEmpty().filterNot { it == '\n' })
+                    .append("\": ").append(e.customVideos.size)
+                    .append(" video(s), kept in the app\n")
+                return@forEach
+            }
             append(e.url)
             // '#' starts a comment and '|' separates the label — keep labels clear of both.
             e.label?.filterNot { it == '#' || it == '|' }?.trim()?.ifEmpty { null }

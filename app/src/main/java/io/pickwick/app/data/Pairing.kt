@@ -664,12 +664,36 @@ class LanServer(
             else -> "OK"
         }
 
+        /** An IPv4 on a live, non-loopback, non-tunnel interface, as [pickLanIp] input. */
+        data class IpCandidate(val ifaceName: String, val ip: String)
+
         /** The TV's LAN IPv4, for the pairing QR. */
-        fun localIp(): String? =
-            NetworkInterface.getNetworkInterfaces().asSequence()
-                .flatMap { it.inetAddresses.asSequence() }
-                .firstOrNull { it.isSiteLocalAddress && it is java.net.Inet4Address }
-                ?.hostAddress
+        fun localIp(): String? = pickLanIp(
+            runCatching {
+                NetworkInterface.getNetworkInterfaces().asSequence()
+                    .filter { it.isUp && !it.isLoopback && !it.isPointToPoint }
+                    .flatMap { nif ->
+                        nif.inetAddresses.asSequence()
+                            .filterIsInstance<java.net.Inet4Address>()
+                            .filter { it.isSiteLocalAddress }
+                            .map { IpCandidate(nif.name, it.hostAddress ?: "") }
+                    }
+                    .toList()
+            }.getOrDefault(emptyList()),
+        )
+
+        /**
+         * Enumeration order is arbitrary, and some Fire OS builds expose a second
+         * private interface (10.0.2.15, the emulator-style NAT range) that is not
+         * reachable from the LAN. Taking the first site-local address put that
+         * into the QR and the phone could never connect. Prefer real Wi-Fi /
+         * Ethernet, and the 10.0.2.x range only as a last resort.
+         */
+        fun pickLanIp(candidates: List<IpCandidate>): String? =
+            candidates.filter { it.ip.isNotEmpty() }.minByOrNull { c ->
+                val lan = c.ifaceName.startsWith("wlan") || c.ifaceName.startsWith("eth")
+                (if (lan) 0 else 1) + (if (c.ip.startsWith("10.0.2.")) 2 else 0)
+            }?.ip
     }
 }
 
