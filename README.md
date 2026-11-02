@@ -53,6 +53,9 @@ with no ads.
 - **❤️ Favorites** and **🕒 Watch later** — two lists they fill by holding a
   tile (long-press / hold OK on the remote): one for the videos they love,
   one for the ones they mean to get to
+- **🚩 Report a video** — hold OK on a tile and choose *Report this video*: it
+  vanishes for every kid on that device at once and waits under *Waiting for
+  your OK* until a parent allows or blocks it (works with AI screening off)
 - **Unwatched first** — a channel opens on what they haven't seen; everything
   already watched moves behind a **Watched** tile at the end, so a favourite
   is still one tap away without cluttering the row

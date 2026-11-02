@@ -155,6 +155,12 @@ Save button for the settings page.
    your OK under *Waiting for your OK*; anything it blocks is listed under
    *Blocked videos*, where Allow overrules it.
 
+   A kid can also report a video (hold OK on a tile). It is hidden for every kid
+   on that device and lands in *Waiting for your OK*, even with AI screening
+   off. Tap **Allow** to bring it back for everyone, or hold Allow/Block to
+   choose which kids (needs two or more kid profiles). The YouTube icon on each
+   card opens the video so you can watch it before deciding.
+
    **When the pre-play check is incomplete** defaults to **Allow playback**:
    the AI uses whatever information is available, and failures allow that attempt.
    Choose **Block playback and ask for parent review** to hold videos in
