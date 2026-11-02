@@ -3,6 +3,7 @@ export class DownloadQueue {
     this.api = api;
     this.jobs = [];
     this.limit = 3;
+    this.workers = 2;
     this.ports = new Map();
     this.pending = this.initialize();
   }
@@ -10,7 +11,8 @@ export class DownloadQueue {
   async initialize() {
     const saved = (await this.api.storage.local.get("downloadQueue")).downloadQueue;
     this.jobs = saved?.jobs || [];
-    this.limit = Math.max(1, Math.min(4, saved?.limit || 3));
+    this.limit = Number.isSafeInteger(saved?.limit) && saved.limit > 0 ? saved.limit : 3;
+    this.workers = Number.isInteger(saved?.workers) && saved.workers >= 1 && saved.workers <= 16 ? saved.workers : 2;
     for (const job of this.jobs) {
       if (job.state === "running") {
         job.state = "interrupted";
@@ -26,19 +28,19 @@ export class DownloadQueue {
     return result;
   }
 
-  snapshot() { return { jobs: this.jobs, limit: this.limit }; }
+  snapshot() { return { jobs: this.jobs, limit: this.limit, workers: this.workers }; }
   persist() { return this.api.storage.local.set({ downloadQueue: this.snapshot() }); }
 
   add(request) {
     return this.serial(async () => {
       const existing = this.jobs.find(job => ["queued", "running"].includes(job.state)
-        && job.request.url === request.url && job.request.partner === request.partner);
-      if (existing) return existing.id;
+        && job.request.url === request.url && job.request.partner === request.partner && (job.request.mode || "video") === (request.mode || "video"));
+      if (existing) return { id: existing.id, duplicate: true };
       if (this.jobs.length >= 200) throw new Error("Queue history is full. Clear finished downloads first.");
-      const job = { id: crypto.randomUUID(), title: request.title, request: structuredClone(request), state: "queued", status: "Queued", createdAt: Date.now() };
+      const job = { id: crypto.randomUUID(), title: request.title || new URL(request.url).hostname, request: structuredClone(request), state: "queued", status: "Queued", createdAt: Date.now() };
       this.jobs.push(job);
       await this.pump();
-      return job.id;
+      return { id: job.id, duplicate: false };
     });
   }
 
@@ -59,9 +61,17 @@ export class DownloadQueue {
 
   setLimit(limit) {
     return this.serial(async () => {
-      if (!Number.isInteger(limit) || limit < 1 || limit > 4) throw new Error("Choose 1 to 4 parallel downloads.");
+      if (!Number.isSafeInteger(limit) || limit < 1) throw new Error("Choose a positive whole number of parallel downloads.");
       this.limit = limit;
       await this.pump();
+    });
+  }
+
+  setWorkers(workers) {
+    return this.serial(async () => {
+      if (!Number.isInteger(workers) || workers < 1 || workers > 16) throw new Error("Choose 1 to 16 fragment connections per download.");
+      this.workers = workers;
+      await this.persist();
     });
   }
 
@@ -109,7 +119,7 @@ export class DownloadQueue {
             await this.pump();
           });
         });
-        port.postMessage(job.request);
+        port.postMessage({ ...job.request, fragment_workers: this.workers });
       } catch (error) {
         const port = this.ports.get(job.id);
         this.ports.delete(job.id);
