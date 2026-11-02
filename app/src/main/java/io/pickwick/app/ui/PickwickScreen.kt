@@ -272,6 +272,45 @@ fun PickwickScreen(
                             modifier = Modifier.padding(bottom = 8.dp)
                         )
                     }
+                    // One search, both answers: the channels and podcasts whose
+                    // names match sit above the matching videos. Same lists the
+                    // home shelves draw from, so a kid's scope and the parent's
+                    // blocks already apply.
+                    (state.screen as? Screen.SearchResults)?.let { s ->
+                        val words = remember(s.query) {
+                            s.query.lowercase().split(Regex("\\s+")).filter { it.isNotBlank() }
+                        }
+                        fun matches(name: String) = name.lowercase().let { n -> words.all { it in n } }
+                        val channelHits = remember(words, state.channels) {
+                            state.channels.filter { matches(it.name) }
+                        }
+                        val podcastHits = remember(words, state.podcasts) {
+                            state.podcasts.filter { matches(it.name) }
+                        }
+                        if (channelHits.isNotEmpty() || podcastHits.isNotEmpty()) {
+                            androidx.compose.foundation.lazy.LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                            ) {
+                                items(channelHits.size) { i ->
+                                    val c = channelHits[i]
+                                    AssistChip(
+                                        onClick = { vm.openChannel(c) },
+                                        label = { Text(c.name, maxLines = 1) },
+                                        modifier = Modifier.tvFocusHighlight()
+                                    )
+                                }
+                                items(podcastHits.size) { i ->
+                                    val p = podcastHits[i]
+                                    AssistChip(
+                                        onClick = { podcastOpen = p.id },
+                                        label = { Text("🎙️ ${p.name}", maxLines = 1) },
+                                        modifier = Modifier.tvFocusHighlight()
+                                    )
+                                }
+                            }
+                        }
+                    }
                     if (state.screen is Screen.Queue) {
                         QueueList(
                             state.videos,
