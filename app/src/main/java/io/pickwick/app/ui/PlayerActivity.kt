@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -1266,8 +1268,6 @@ class PlayerActivity : ComponentActivity() {
                 if (pb.videoOptions.isNotEmpty()) {
                     val chosen = trackCursor.intValue.coerceIn(0, pb.videoOptions.size)
                     selectQuality(if (chosen == 0) 0 else pb.videoOptions[chosen - 1].height)
-                } else {
-                    notice.value = Notice("Only ${pb.videoHeight}p is available for this video")
                 }
             }
             TvTrackPanel.Subtitles -> handleOptionKey(
@@ -1694,9 +1694,9 @@ private fun BoxScope.PhoneQualityButton(
         androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             if (playback.videoOptions.isEmpty()) {
                 androidx.compose.material3.DropdownMenuItem(
-                    text = { Text("Only ${playback.videoHeight}p is available for this video") },
-                    enabled = false,
-                    onClick = {}
+                    text = { Text("${playback.videoHeight}p") },
+                    leadingIcon = { Icon(Icons.Filled.Check, contentDescription = null) },
+                    onClick = { open = false }
                 )
             } else {
                 val rows = listOf(0 to "Auto") + playback.videoOptions.map { it.height to "${it.height}p" }
@@ -1807,8 +1807,7 @@ private fun BoxScope.TvTrackSheet(
     } else if (panel == TvTrackPanel.Quality) {
         val offered = playback?.videoOptions.orEmpty()
         if (offered.isEmpty()) {
-            // Nothing to choose between — say why, rather than hide the control.
-            listOf(Triple("${playback?.videoHeight ?: 0}p  ·  only option for this video", true, 0))
+            listOf(Triple("${playback?.videoHeight ?: 0}p", true, 0))
         } else {
             listOf(
                 Triple(
@@ -1830,7 +1829,13 @@ private fun BoxScope.TvTrackSheet(
         modifier = Modifier
             .align(Alignment.BottomStart)
             .padding(start = 48.dp, bottom = 118.dp)
-            .width(330.dp)
+            // Audio/subtitle names vary a lot, so those keep a fixed width; the
+            // quality list is short and uniform, so it hugs its content.
+            .then(
+                if (panel == TvTrackPanel.Quality) {
+                    Modifier.width(IntrinsicSize.Max).widthIn(min = 160.dp)
+                } else Modifier.width(330.dp)
+            )
             .background(Color(0xE6000000), RoundedCornerShape(8.dp))
             .padding(vertical = 8.dp)
     ) {
