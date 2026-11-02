@@ -476,7 +476,13 @@ internal fun AiReviewSection(
                                 )
                             )
                         }
-                    }) { Text("View in YouTube") }
+                    }) {
+                        androidx.compose.foundation.Image(
+                            painter = androidx.compose.ui.res.painterResource(io.pickwick.app.R.drawable.ic_source_youtube),
+                            contentDescription = "View in YouTube",
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
                     Spacer(Modifier.weight(1f))
                     // Tap rules for everyone; with 2+ kids a long-press picks who —
                     // TextButton owns its click, so these are hand-rolled buttons.
