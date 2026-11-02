@@ -32,4 +32,21 @@ class WindowPassTest {
         assertEquals(now - min, SessionGuard.shrinkPass(now - min, now, 15))
         assertEquals(0L, SessionGuard.shrinkPass(0L, now, 15))
     }
+
+    @Test fun `taking back eats the bonus first, then the base quota`() {
+        val base = 60 * min
+        assertEquals(10 * min, SessionGuard.shrinkBonus(25 * min, base, 15))
+        assertEquals(-15 * min, SessionGuard.shrinkBonus(0L, base, 15))
+        assertEquals(-5 * min, SessionGuard.shrinkBonus(10 * min, base, 15))
+    }
+
+    @Test fun `taking back never goes past an empty day`() {
+        val base = 60 * min
+        assertEquals(-base, SessionGuard.shrinkBonus(0L, base, 90))
+        assertEquals(-base, SessionGuard.shrinkBonus(-base, base, 15))
+    }
+
+    @Test fun `with no budget set there is no quota to take from`() {
+        assertEquals(0L, SessionGuard.shrinkBonus(10 * min, null, 15))
+    }
 }

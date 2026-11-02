@@ -108,6 +108,13 @@ class HelperTests(unittest.TestCase):
                 probe = subprocess.run([ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=height", "-of", "json", str(result)], check=True, capture_output=True, text=True)
                 self.assertEqual(json.loads(probe.stdout)["streams"][0]["height"], 180)
                 self.assertTrue(events[-1]["done"])
+                audio = save_media({"url": base + "master.m3u8", "mode": "audio", "title": "Original audio"}, config, events.append)
+                verify_av(audio, ffprobe, audio_only=True)
+                mp3 = save_media({"url": base + "audio.m3u8", "mode": "mp3", "title": "MP3 audio"}, config, events.append)
+                self.assertEqual(mp3.suffix, ".mp3")
+                verify_av(mp3, ffprobe, audio_only=True)
+                resolved = save_media({"url": base + "master.m3u8", "source": "page", "mode": "video"}, config, events.append)
+                verify_av(resolved, ffprobe)
                 timings = {}
                 for workers in (1, 8):
                     started = time.monotonic()

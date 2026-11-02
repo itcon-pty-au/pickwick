@@ -1,18 +1,42 @@
-body { width: 360px; margin: 0; padding: 16px; box-sizing: border-box; font: 14px system-ui, sans-serif; color: #202322; background: #f7f8fa; letter-spacing: 0; }
-h1 { font-size: 19px; margin: 0 0 14px; }
-h2 { font-size: 15px; margin: 16px 0 8px; }
-#queue { max-height: 250px; }
-#queue button { margin-right: 6px; }
-.toolbar { display: flex; gap: 8px; }
-button { border: 1px solid #bac2c6; background: white; color: #202322; border-radius: 4px; padding: 8px; cursor: pointer; }
-button:hover { background: #e7f3ee; }
-button:disabled { opacity: .6; cursor: default; }
-#status { color: #475461; line-height: 1.4; }
-ul { list-style: none; padding: 0; margin: 0; max-height: 360px; overflow-y: auto; }
-li { padding: 12px 0; border-top: 1px solid #d6dce0; }
-strong, small { display: block; overflow-wrap: anywhere; margin-bottom: 6px; }
-small { color: #59636b; }
-#job { overflow-wrap: anywhere; line-height: 1.4; }
-.toolbar { align-items: center; justify-content: space-between; }
-label { display: block; font-size: 12px; color: #475461; }
-select { display: block; box-sizing: border-box; width: 100%; margin: 5px 0 10px; padding: 7px; border: 1px solid #bac2c6; border-radius: 4px; background: white; color: #202322; }
+:root { color-scheme: dark; font: 14px/1.5 system-ui, sans-serif; color: #e7ecf3; background: #10151e; }
+* { box-sizing: border-box; }
+body { margin: 0; padding: 20px; min-width: 260px; }
+header, .section-heading, .settings { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.eyebrow { font-size: 10px; letter-spacing: .19em; color: #8a9bb3; font-weight: 700; }
+h1 { margin: 2px 0 0; font-size: 23px; letter-spacing: -.7px; }
+h2 { margin: 0; font-size: 16px; }
+section { margin-top: 20px; }
+strong, small { display: block; overflow-wrap: anywhere; }
+small, #tab-title, footer { color: #a6b3c6; font-size: 12px; }
+button, input, select { font: inherit; border: 1px solid #3a485d; border-radius: 7px; padding: 9px 11px; color: #e7ecf3; background: #1b2432; }
+button { cursor: pointer; }
+button:hover { border-color: #7bbbac; background: #253844; }
+button:disabled { opacity: .5; cursor: not-allowed; }
+button.primary { color: #0c2623; background: #90ddc4; border-color: #90ddc4; font-weight: 650; }
+button.quiet { background: transparent; font-size: 12px; padding: 5px 8px; }
+input, select { display: block; width: 100%; margin: 5px 0 10px; }
+label { font-size: 12px; color: #bbc6d6; }
+.settings { align-items: flex-start; }
+.settings label { min-width: 0; flex: 1; }
+ul { list-style: none; padding: 0; margin: 12px 0 0; }
+li { border: 1px solid #2d394b; background: #171f2b; padding: 12px; margin: 8px 0; border-radius: 10px; }
+li strong { margin-bottom: 5px; }
+li small { margin-bottom: 8px; }
+li button { margin: 4px 6px 0 0; }
+li[data-state="completed"] { border-left: 3px solid #90ddc4; }
+li[data-state="failed"], li[data-state="interrupted"] { border-left: 3px solid #efa291; }
+#status { position: fixed; left: 12px; right: 12px; bottom: 12px; z-index: 1; margin: 0; padding: 10px 12px; border-radius: 10px; border: 1px solid #3a485d; background: #1b2432; color: #e7ecf3; box-shadow: 0 6px 24px #0008; overflow-wrap: anywhere; animation: rise .18s ease-out; }
+#status[data-tone="success"] { border-color: #90ddc4; background: #16302d; }
+#status[data-tone="error"] { border-color: #efa291; background: #33201d; color: #f6d3ca; }
+#status:empty { display: none; }
+button[data-result="success"] { color: #0c2623; background: #c6f0e1; border-color: #c6f0e1; opacity: 1; }
+button[data-result="error"] { color: #33201d; background: #efa291; border-color: #efa291; opacity: 1; }
+li.fresh { animation: fresh 2.4s ease-out; }
+@keyframes fresh { from { background: #24524a; border-color: #90ddc4; } }
+@keyframes rise { from { transform: translateY(8px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { #status, li.fresh { animation: none; } }
+#queue-status, #empty { color: #a6b3c6; font-size: 13px; }
+details { margin-top: 12px; }
+summary { cursor: pointer; font-size: 12px; color: #bccfe2; padding: 4px 0; }
+footer { margin: 24px 0 64px; border-top: 1px solid #2d394b; padding-top: 14px; }
+:focus-visible { outline: 2px solid #90ddc4; outline-offset: 3px; }

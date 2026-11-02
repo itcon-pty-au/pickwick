@@ -33,6 +33,9 @@ internal fun rememberPodcastCovers(feeds: List<PodcastFeed>): Map<String, String
     return covers
 }
 
+/** Where the Listened tile sits: after about one YouTube uploads page, as on a channel. */
+private const val PODCAST_SHELF_AT = 30
+
 @Composable
 internal fun PodcastScreen(feedId: String, profileId: String?, vm: MainViewModel? = null, onBack: () -> Unit) {
     val context = LocalContext.current
@@ -40,15 +43,22 @@ internal fun PodcastScreen(feedId: String, profileId: String?, vm: MainViewModel
         (context.getSystemService(android.content.Context.UI_MODE_SERVICE) as android.app.UiModeManager)
             .currentModeType == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
     }
-    BackHandler { onBack() }
+    // The Listened shelf is this screen's second level: back from it returns
+    // to the podcast, not home — same as a channel's Watched shelf.
+    var onShelf by remember { mutableStateOf(false) }
+    var scrollTo by remember { mutableStateOf<Int?>(null) }
     val library = remember { PodcastLibrary(context) }
     var feed by remember { mutableStateOf<PodcastFeed?>(null) }
     var configLoaded by remember { mutableStateOf(false) }
     var channel by remember { mutableStateOf<PodcastChannel?>(null) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    var progress by remember { mutableStateOf<Map<String, WatchProgress>>(emptyMap()) }
+    var progress by remember { mutableStateOf<Map<String, WatchProgress>?>(null) }
     var resume by remember { mutableIntStateOf(0) }
+    // Frozen at open, like MainViewModel's finishedOnArrival: an episode the
+    // kid finishes and comes straight back from stays where they left it and
+    // moves on the next visit. Only "Mark as listened" moves it at once.
+    val finishedOnArrival = remember { mutableMapOf<String, Boolean>() }
     val profileSuffix by produceState<String?>(null, profileId) {
         value = withContext(Dispatchers.IO) { ProfileNamespace(context).suffixFor(profileId) }
     }
@@ -93,9 +103,28 @@ internal fun PodcastScreen(feedId: String, profileId: String?, vm: MainViewModel
     // Same tiles, grid and header as a YouTube channel: episodes are VideoItems
     // under their synthetic podcast URL, so progress bars and watched dimming
     // come for free.
-    val items = if (f == null) emptyList() else episodes.map { e ->
+    val keyOf = mutableMapOf<String, String>()
+    val all = if (f == null) emptyList() else episodes.map { e ->
         val url = PodcastPaths.url(f.id, e.key)
-        VideoItem(Video(url, e.title, showName, e.imageUrl, e.durationSeconds), progress[url]?.fraction)
+        keyOf[url] = e.key
+        VideoItem(Video(url, e.title, showName, e.imageUrl, e.durationSeconds), progress?.get(url)?.fraction)
+    }
+    // Until progress has loaded nothing can be judged finished, and judging
+    // early would freeze every episode as unlistened.
+    val (unlistened, listened) = if (progress == null) all to emptyList()
+        else splitWatched(all) { item ->
+            finishedOnArrival.getOrPut(item.video.url) { (item.progress ?: 0f) >= 0.98f }
+        }
+    val items = if (onShelf) listened else unlistened
+    // Pinned like the channel tile: a screenful-ish from the top, not behind
+    // hundreds of older episodes.
+    val shelfAt = minOf(unlistened.size, PODCAST_SHELF_AT)
+    BackHandler {
+        if (onShelf) {
+            onShelf = false
+            // Land back on the tile they left through.
+            scrollTo = shelfAt
+        } else onBack()
     }
     Surface(Modifier.fillMaxSize()) {
         @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
@@ -107,7 +136,7 @@ internal fun PodcastScreen(feedId: String, profileId: String?, vm: MainViewModel
         ) {
         Column(Modifier.fillMaxSize().padding(16.dp)) {
             Text(
-                showName.ifEmpty { "Podcast" },
+                showName.ifEmpty { "Podcast" }.let { if (onShelf) "✔ Listened · $it" else it },
                 style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                 modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
             )
@@ -120,7 +149,9 @@ internal fun PodcastScreen(feedId: String, profileId: String?, vm: MainViewModel
                     context.startActivity(
                         Intent(context, PodcastPlayerActivity::class.java)
                             .putExtra(PodcastPlayerActivity.EXTRA_FEED_ID, feedId)
-                            .putStringArrayListExtra(PodcastPlayerActivity.EXTRA_EPISODES, ArrayList(episodes.map { it.key }))
+                            // The grid on screen is the queue, so the index lines up and
+                            // playback runs on through what the kid is looking at.
+                            .putStringArrayListExtra(PodcastPlayerActivity.EXTRA_EPISODES, ArrayList(items.mapNotNull { keyOf[it.video.url] }))
                             .putExtra(PodcastPlayerActivity.EXTRA_INDEX, items.indexOf(item).coerceAtLeast(0))
                             .putExtra(PodcastPlayerActivity.EXTRA_PROFILE_ID, profileId)
                             .putExtra(PodcastPlayerActivity.EXTRA_PROFILE_SUFFIX, suffix)
@@ -128,6 +159,7 @@ internal fun PodcastScreen(feedId: String, profileId: String?, vm: MainViewModel
                 },
                 emptyText = when {
                     configLoaded && f == null -> "This podcast is no longer available."
+                    onShelf -> "Nothing listened to here yet."
                     error != null -> error!!
                     channel == null -> "Loading episodes…"
                     else -> "No episodes yet."
@@ -144,18 +176,37 @@ internal fun PodcastScreen(feedId: String, profileId: String?, vm: MainViewModel
                     // Same rewind-not-delete rule as MainViewModel.toggleWatched,
                     // which can't refresh this screen's own progress map.
                     scope.launch {
-                        withContext(Dispatchers.IO) {
+                        val nowFinished = withContext(Dispatchers.IO) {
                             val history = WatchHistoryStore(context, ProfileNamespace(context).suffixFor(profileId))
                             val existing = history.progress(item.video.url)
                             val duration = existing?.durationMs?.takeIf { it > 0 }
                                 ?: (item.video.durationSeconds * 1000).takeIf { it > 0 } ?: 1_000L
                             history.save(item.video.url, if (existing?.isFinished == true) 0L else duration, duration)
+                            existing?.isFinished != true
                         }
+                        // An explicit choice, so unlike finishing in the player
+                        // this one moves the tile at once.
+                        finishedOnArrival[item.video.url] = nowFinished
                         resume++
                         vm?.syncWatchState()
                     }
                 },
-                grabFocus = isTv
+                grabFocus = isTv,
+                // Only once there is something behind it — an empty shelf is a dead end.
+                extraTileAt = shelfAt.takeIf { !onShelf && listened.isNotEmpty() },
+                extraTile = if (!onShelf && listened.isNotEmpty()) {
+                    { focus ->
+                        WatchedShelfTile(
+                            count = listened.size,
+                            focusRequester = focus,
+                            label = "Listened",
+                            subtitle = "Ones you've heard",
+                            onOpen = { onShelf = true; scrollTo = 0 }
+                        )
+                    }
+                } else null,
+                scrollTo = scrollTo,
+                onScrolled = { scrollTo = null }
             )
         }
         }

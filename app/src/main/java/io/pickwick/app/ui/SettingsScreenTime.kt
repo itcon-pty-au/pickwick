@@ -767,7 +767,8 @@ internal fun GrantTimeSection(
     }
 
     // Same stepper styling as the screen-time rows; Grant applies the amount,
-    // Take back removes it again (the undo for a tap too many).
+    // Take back removes it — from any bonus first, then from today's own
+    // quota — until midnight.
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 2.dp)) {
         Text("Bonus watch time", modifier = Modifier.weight(1f))
         CompactButton(

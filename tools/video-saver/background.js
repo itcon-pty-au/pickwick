@@ -10,9 +10,10 @@ function serial(task) {
 }
 const key = id => `tab:${id}`;
 const autoSite = url => {
-  try { return /(^|\.)pokeflix\.tv$/.test(new URL(url).hostname); } catch { return false; }
+  try { return ["http:", "https:"].includes(new URL(url).protocol); } catch { return false; }
 };
 const downloads = new DownloadQueue(chrome);
+chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
 
 function onMediaHeaders(details) {
   if (details.tabId < 0 || details.method !== "GET" || details.statusCode < 200 || details.statusCode >= 300) return;
@@ -54,33 +55,44 @@ chrome.tabs.onUpdated.addListener((tabId, change) => {
   if (change.url || change.status === "loading") void serial(() => chrome.storage.session.remove(key(tabId)));
 });
 
-function download(state, item, partner) {
-  if (!partner) item = preferredMaster(item, state.items);
+function download(state, item, partner, mode) {
+  if (!partner && item.kind !== "audio") item = preferredMaster(item, state.items);
   const candidates = state.items.filter(other => other.frameId === item.frameId && other.url !== item.url).slice(0, 12).map(other => other.url);
-  return downloads.add({ url: item.url, title: state.title, partner: partner?.url, candidates });
+  return downloads.add({ url: item.url, title: state.title, partner: partner?.url, candidates, mode });
 }
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (sender.id !== chrome.runtime.id || (sender.tab && sender.url !== chrome.runtime.getURL("popup.html"))) return;
   serial(async () => {
     const id = key(message.tabId);
+    let added;
     if (message.type === "download") {
       const state = (await chrome.storage.session.get(id))[id];
       const item = state?.items[message.index];
       if (!item) throw new Error("No media selected.");
+      if (item.url !== message.url) throw new Error("This page changed. Refresh the sources and try again.");
       const partner = message.partnerIndex === undefined ? undefined : state?.items[message.partnerIndex];
       if (message.partnerIndex !== undefined && (!partner || partner === item)) throw new Error("Select a different companion feed.");
-      await download(state, item, partner);
+      if (partner && message.mode !== "video") throw new Error("Manual pairing is only available for video downloads.");
+      if (!["video", "audio", "mp3"].includes(message.mode)) throw new Error("Select video, original audio, or MP3.");
+      added = await download(state, item, partner, message.mode);
+    } else if (message.type === "downloadUrl") {
+      const url = new URL(message.url);
+      if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error("Enter an HTTP(S) URL without embedded credentials.");
+      if (!["video", "audio", "mp3"].includes(message.mode)) throw new Error("Select video, original audio, or MP3.");
+      added = await downloads.add({ url: url.href, title: "", mode: message.mode, source: "page", candidates: [] });
     } else if (message.type === "queueAction") {
       await downloads.update(message.id, message.action);
     } else if (message.type === "parallel") {
       await downloads.setLimit(message.limit);
+    } else if (message.type === "fragments") {
+      await downloads.setWorkers(message.workers);
     } else if (message.type === "clearFinished") {
       await downloads.clearFinished();
     } else if (message.type !== "list") {
       throw new Error("Unknown request.");
     }
     await downloads.pending;
-    return { state: (await chrome.storage.session.get(id))[id] || null, queue: downloads.snapshot() };
+    return { state: (await chrome.storage.session.get(id))[id] || null, queue: downloads.snapshot(), added };
   }).then(respond, error => respond({ error: error.message }));
   return true;
 });

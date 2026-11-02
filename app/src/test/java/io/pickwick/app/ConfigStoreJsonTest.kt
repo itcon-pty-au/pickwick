@@ -2,6 +2,7 @@ package io.pickwick.app
 
 import io.pickwick.app.data.ConfigStore
 import io.pickwick.app.data.SourceKind
+import io.pickwick.app.data.SponsorBlock
 import io.pickwick.app.data.Whitelist
 import io.pickwick.app.data.WhitelistEntry
 import io.pickwick.app.data.WhitelistExporter
@@ -129,6 +130,42 @@ class ConfigStoreJsonTest {
         assertNotEquals(
             ConfigStore.fingerprint(plain),
             ConfigStore.fingerprint(plain.copy(sponsorSkip = false))
+        )
+    }
+
+    @Test
+    fun `sponsor categories default to the shipped set and only serialize when changed`() {
+        val plain = Whitelist(listOf(entry("UCa")), emptySet())
+        assertFalse(ConfigStore.toJson(plain).contains("sponsorCategories"))
+        assertEquals(
+            SponsorBlock.DEFAULT_CATEGORIES,
+            ConfigStore.fromJson(ConfigStore.toJson(plain)).sponsorCategories
+        )
+        // A parent who keeps intros and outros: the choice round-trips…
+        val chosen = setOf("sponsor", "selfpromo")
+        assertEquals(
+            chosen,
+            ConfigStore.fromJson(ConfigStore.toJson(plain.copy(sponsorCategories = chosen)))
+                .sponsorCategories
+        )
+        // …and "nothing selected" stays nothing rather than snapping back.
+        assertEquals(
+            emptySet<String>(),
+            ConfigStore.fromJson(ConfigStore.toJson(plain.copy(sponsorCategories = emptySet())))
+                .sponsorCategories
+        )
+    }
+
+    @Test
+    fun `changing sponsor categories changes the fingerprint, the default does not`() {
+        val plain = Whitelist(listOf(entry("UCa")), emptySet())
+        assertEquals(
+            ConfigStore.fingerprint(plain),
+            ConfigStore.fingerprint(plain.copy(sponsorCategories = SponsorBlock.DEFAULT_CATEGORIES))
+        )
+        assertNotEquals(
+            ConfigStore.fingerprint(plain),
+            ConfigStore.fingerprint(plain.copy(sponsorCategories = setOf("sponsor")))
         )
     }
 

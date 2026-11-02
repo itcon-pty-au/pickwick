@@ -51,14 +51,17 @@ def safe_title(value):
     return value
 
 
-def verify_av(path, ffprobe):
+def verify_av(path, ffprobe, audio_only=False):
     result = subprocess.run(
         [ffprobe, "-v", "error", "-show_entries", "stream=codec_type", "-of", "json", str(path)],
         capture_output=True, text=True, timeout=60, check=True,
         creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
     )
     types = {stream.get("codec_type") for stream in json.loads(result.stdout).get("streams", [])}
-    if not {"audio", "video"}.issubset(types):
+    if audio_only:
+        if "audio" not in types or "video" in types:
+            raise ValueError("The output is not an audio-only file.")
+    elif not {"audio", "video"}.issubset(types):
         raise ValueError("The output is missing audio or video. Choose the matching companion feed and retry.")
 
 
@@ -131,6 +134,9 @@ def save_media(request, config, report=send):
     from yt_dlp import YoutubeDL
 
     url = validate_url(request.get("url"))
+    mode = request.get("mode", "video")
+    if mode not in ("video", "audio", "mp3"):
+        raise ValueError("Unsupported output mode.")
     output = Path(config["output"]).resolve()
     output.mkdir(parents=True, exist_ok=True)
     # A unique staging directory prevents overwriting episodes and hides incomplete files.
@@ -174,12 +180,15 @@ def save_media(request, config, report=send):
         "socket_timeout": 30,
         "retries": 3,
         "fragment_retries": 3,
-        "concurrent_fragment_downloads": max(1, min(8, int(config.get("fragment_workers", 8)))),
+        "concurrent_fragment_downloads": max(1, min(16, int(request.get("fragment_workers", config.get("fragment_workers", 2))))),
         "skip_unavailable_fragments": False,
         "allow_unplayable_formats": False,
         "geo_bypass": False,
+        "hls_prefer_native": True,
         "cachedir": False,
     }
+    if mode in ("audio", "mp3") or request.get("source") == "page":
+        return save_extracted(request, config, options, staging, job, report)
     report({"status": "Selecting highest-resolution video and best available audio..."})
     master_info = None
     if not request.get("partner") and urlsplit(url).path.endswith((".m3u8", ".mpd")):
@@ -236,12 +245,42 @@ def save_media(request, config, report=send):
         )
     else:
         download_combined(url, options, YoutubeDL, master_info)
-    candidates = [p for p in staging.iterdir() if p.is_file() and p.suffix.lower() in (".mkv", ".mp4", ".webm", ".mov", ".m4v") and not re.search(r"\.f\d", p.name)]
+    candidates = [p for p in staging.iterdir() if p.is_file() and p.suffix.lower() not in (".part", ".ytdl", ".json", ".temp") and not re.search(r"\.f\d", p.name)]
     if len(candidates) != 1:
         raise ValueError("Could not identify a single merged output. Incomplete files were kept for diagnosis.")
     result = candidates[0]
     verify_av(result, config["ffprobe"])
     destination = output / (safe_title(request.get("title", "video")) + " - " + job + result.suffix)
+    result.rename(destination)
+    report({"done": True, "path": str(destination)})
+    return destination
+
+
+def save_extracted(request, config, options, staging, job, report):
+    """Accept a page URL via yt-dlp, or extract audio from a captured media URL."""
+    from yt_dlp import YoutubeDL
+    audio_only = request.get("mode") in ("audio", "mp3")
+    if audio_only:
+        options = {**options, "format": "ba/b", "postprocessors": [{
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": "mp3" if request["mode"] == "mp3" else "best",
+            "preferredquality": "192",
+        }]}
+    report({"status": "Resolving media and selecting audio..." if audio_only else "Resolving page and selecting video..."})
+    with YoutubeDL(options) as downloader:
+        info = downloader.extract_info(validate_url(request["url"]), download=False)
+        if not info or info.get("_type") in ("playlist", "multi_video") or info.get("entries") is not None:
+            raise ValueError("Use a single media URL, not a playlist or channel.")
+        if info.get("is_live") or info.get("has_drm"):
+            raise ValueError("Protected media and live streams are not supported.")
+        downloader.process_info(info)
+    files = [p for p in staging.iterdir() if p.is_file() and p.suffix.lower() not in (".part", ".ytdl", ".json", ".temp")]
+    # Verify streams, rather than assuming a file is usable based on its extension.
+    if len(files) != 1:
+        raise ValueError("Could not identify a single completed media file.")
+    result = files[0]
+    verify_av(result, config["ffprobe"], audio_only=audio_only)
+    destination = Path(config["output"]).resolve() / (safe_title(request.get("title") or info.get("title") or "media") + " - " + job + result.suffix)
     result.rename(destination)
     report({"done": True, "path": str(destination)})
     return destination
@@ -272,10 +311,15 @@ def main():
         config = json.loads(Path(__file__).with_name("config.json").read_text(encoding="utf-8-sig"))
         if len(sys.argv) < 2 or sys.argv[1] != f"chrome-extension://{config['extension_id']}/":
             raise ValueError("Unrecognized extension")
-        save_media(read_message(sys.stdin.buffer), config)
+        request = read_message(sys.stdin.buffer)
+        validate_url(request.get("url"))
+        send({"status": "Starting download..."})
+        save_media(request, config)
     except Exception as error:
         # Signed media URLs may contain credentials. Never send extractor exceptions to the UI.
-        text = str(error) if isinstance(error, ValueError) else "Download failed. The source may be protected, expired, unavailable, or require browser-only access. Try the master manifest after reloading."
+        text = ("Local helper dependencies are missing. Rerun native/install.ps1, then reload the extension."
+                if isinstance(error, ModuleNotFoundError) else str(error) if isinstance(error, ValueError)
+                else "Download failed. The source may be protected, expired, unavailable, or require browser-only access. Try the master manifest after reloading.")
         send({"error": text})
 
 

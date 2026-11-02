@@ -7,8 +7,10 @@ export function classify(url, contentType = "") {
   } catch { return null; }
   const mime = contentType.split(";")[0].trim().toLowerCase();
   if (/\.(m3u8|mpd)$/.test(path) || /mpegurl|dash\+xml/.test(mime)) return "segmented";
-  if (/\.(m4a|aac|mp3|ogg|opus)$/.test(path) || mime.startsWith("audio/")) return "audio";
-  if (/\.(mp4|webm|m4v|mov)$/.test(path) || ["video/mp4", "video/webm", "video/quicktime", "video/x-m4v"].includes(mime)) return "file";
+  if (/\.(m4a|aac|mp3|ogg|opus|wav|flac|aiff|wma)$/.test(path) || mime.startsWith("audio/")) return "audio";
+  // Transport-stream fragments are not whole videos. The HLS manifest handles them.
+  if (mime === "video/mp2t" || /\.(ts|m4s)$/.test(path)) return null;
+  if (/\.(mp4|webm|m4v|mov|mkv|avi|flv|wmv|mpeg|mpg|ogv)$/.test(path) || mime.startsWith("video/")) return "file";
   return null;
 }
 

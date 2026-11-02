@@ -1,16 +1,31 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><title>Pickwick Video Saver</title><link rel="stylesheet" href="popup.css"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Pickwick Video Saver</title><link rel="stylesheet" href="popup.css"></head>
 <body>
-  <h1>Video Saver</h1>
-  <div class="toolbar"><span>Pokeflix auto-capture</span><button id="refresh" title="Refresh media list" aria-label="Refresh media list">&#8635;</button></div>
-  <p id="status" role="status"></p>
-  <h2>Downloads</h2>
-  <div class="toolbar"><label>Parallel downloads<select id="parallel"><option>1</option><option>2</option><option selected>3</option><option>4</option></select></label><button id="clear">Clear finished</button></div>
-  <p id="queue-status" role="status"></p>
-  <ul id="queue"></ul>
-  <h2>This Tab's Sources</h2>
-  <ul id="items"></ul>
+  <header><div><span class="eyebrow">PICKWICK</span><h1>Video Saver</h1></div></header>
+  <p id="status" role="status" aria-live="polite"></p>
+  <section>
+    <div class="section-heading"><h2>This tab</h2><button id="refresh" class="quiet">Refresh</button></div>
+    <small id="tab-title">Looking for the active tab…</small>
+    <label for="mode">Save as</label>
+    <select id="mode"><option value="video">Best video + audio</option><option value="audio">Audio · best available</option><option value="mp3">MP3</option></select>
+    <ul id="items" aria-label="Detected media"></ul>
+    <p id="empty">Play media on this page to detect its sources, or add a URL below.</p>
+    <details><summary>Add a page or media URL</summary>
+      <form id="url-form"><label for="url">HTTP(S) URL</label><input id="url" type="url" required placeholder="https://example.com/video" autocomplete="off"><button class="primary" type="submit">Add to queue</button></form>
+      <small>Page support depends on the site's player. DRM, restricted access, and live streams are not supported.</small>
+    </details>
+  </section>
+  <section>
+    <div class="section-heading"><h2>Download queue</h2><button id="clear" class="quiet">Clear finished</button></div>
+    <p id="queue-status" aria-live="polite"></p>
+    <details><summary>Queue settings</summary>
+      <div class="settings"><label>Parallel downloads<input id="parallel" type="number" min="1" step="1" value="3"></label><label>Fragments per download<input id="fragments" type="number" min="1" max="16" step="1" value="2"></label></div>
+      <small id="connections"></small><small>Start with 3 downloads and 2 fragments each. High values can slow everything down or trigger server throttling. New settings apply to new jobs.</small>
+    </details>
+    <ul id="queue" aria-label="Downloads"></ul>
+  </section>
+  <footer>Local processing · Save media you own or have permission to download.</footer>
   <script src="popup.js" type="module"></script>
 </body>
 </html>

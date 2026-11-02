@@ -266,7 +266,8 @@ internal fun VideoGrid(
                             onClick = { onToggleWatched(item); menuFor = null },
                             modifier = Modifier.fillMaxWidth().tvFocusHighlight()
                         ) {
-                            Text(if (seen) "↩️  Move back to not watched" else "✔️  Mark as watched")
+                            val verb = if (podcast) "listened" else "watched"
+                            Text(if (seen) "↩️  Move back to not $verb" else "✔️  Mark as $verb")
                         }
                     }
                     if (onToggleDownload != null && !io.pickwick.app.data.SmbPaths.isNetwork(item.video.url) && !podcast) {
@@ -378,6 +379,9 @@ internal fun WatchedShelfTile(
     count: Int,
     /** Set only when the tile leads the grid — see [VideoGrid]'s TV focus. */
     focusRequester: androidx.compose.ui.focus.FocusRequester? = null,
+    /** Podcasts say "Listened": nothing on that shelf was watched. */
+    label: String = "Watched",
+    subtitle: String = "Ones you've finished",
     onOpen: () -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -407,9 +411,9 @@ internal fun WatchedShelfTile(
                 )
             }
             Column(Modifier.padding(8.dp)) {
-                MarqueeTitle("Watched ($count)", focused)
+                MarqueeTitle("$label ($count)", focused)
                 Text(
-                    "Ones you've finished",
+                    subtitle,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodySmall,

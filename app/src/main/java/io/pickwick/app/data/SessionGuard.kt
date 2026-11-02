@@ -84,6 +84,17 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
         fun shrinkPass(existingUntil: Long, now: Long, minutes: Int): Long =
             if (existingUntil <= now) existingUntil
             else maxOf(now, existingUntil - minutes * 60_000L)
+
+        /**
+         * Today's signed adjustment after a parent takes [minutes] back. It
+         * eats any granted bonus first and then the base quota, going
+         * negative, but never past [baseMs] — a budget below zero means
+         * nothing more than zero does, and the excess would silently cancel
+         * a later grant. With no budget set ([baseMs] null) there is no
+         * quota to dip into, so the bonus floors at zero as before.
+         */
+        fun shrinkBonus(bonusMs: Long, baseMs: Long?, minutes: Int): Long =
+            (bonusMs - minutes * 60_000L).coerceAtLeast(-(baseMs ?: 0L))
     }
 
     // ---- limits config (persisted at whitelist refresh) ----
@@ -146,12 +157,19 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
     }
 
 
-    /** Daily watch budget in ms (incl. parent-granted bonus), or null when not configured. */
-    private fun dailyBudgetMs(l: Limits): Long? {
+    /** Today's quota from the rules alone, before any grant or take-back. */
+    private fun baseBudgetMs(l: Limits): Long? {
         val perSession = l.sessionMinutes ?: return null
         val count = (if (isWeekend()) l.weekendSessions else l.weekdaySessions) ?: return null
-        return perSession * count * 60_000L + prefs.getLong("bonusMs", 0)
+        return perSession * count * 60_000L
     }
+
+    /**
+     * Daily watch budget in ms (incl. today's parent adjustment, which a
+     * take-back can make negative), or null when not configured.
+     */
+    private fun dailyBudgetMs(l: Limits): Long? =
+        baseBudgetMs(l)?.let { (it + prefs.getLong("bonusMs", 0)).coerceAtLeast(0) }
 
     /**
      * Parent grant: adds minutes to today's budget, ends any break lock, starts a
@@ -178,9 +196,10 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
     }
 
     /**
-     * The undo for [grantExtraMinutes]: today's bonus shrinks (never below
-     * zero — base minutes are the rules' business) and the window pass with
-     * it. Nothing else is restored: a break lock the grant ended is over, and
+     * The opposite of [grantExtraMinutes]: today's budget shrinks — granted
+     * bonus first, then the base quota (see [shrinkBonus]) — and the window
+     * pass with it. Like a grant it lasts until midnight; the rules
+     * themselves are untouched. Nothing else is restored: a break lock the grant ended is over, and
      * the sitting it started is the one the kid is in. If the kid has already
      * watched past the new budget the next tick stops the video — the parent
      * chose that when they took the time back.
@@ -189,7 +208,7 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
         rolloverIfNewDay()
         val now = System.currentTimeMillis()
         prefs.edit()
-            .putLong("bonusMs", (prefs.getLong("bonusMs", 0) - minutes * 60_000L).coerceAtLeast(0))
+            .putLong("bonusMs", shrinkBonus(prefs.getLong("bonusMs", 0), baseBudgetMs(limits()), minutes))
             .putLong("windowPassUntil", shrinkPass(prefs.getLong("windowPassUntil", 0), now, minutes))
             .apply()
     }
@@ -389,9 +408,7 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
     fun remainingTodayMin(l: Limits): Int? {
         rolloverIfNewDay()
         if (isPaused(l)) return 0
-        val perSession = l.sessionMinutes ?: return null
-        val count = (if (isWeekend()) l.weekendSessions else l.weekdaySessions) ?: return null
-        val budget = perSession * count * 60_000L + prefs.getLong("bonusMs", 0)
+        val budget = dailyBudgetMs(l) ?: return null
         return ((budget - prefs.getLong("dailyWatchedMs", 0)).coerceAtLeast(0) / 60_000L).toInt()
     }
 
