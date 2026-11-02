@@ -475,7 +475,10 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         if (screen is Screen.ChannelVideos) intent.putExtra(PlayerActivity.EXTRA_SOURCE_URL, screen.source.url)
                         if (screen is Screen.WatchedVideos) intent.putExtra(PlayerActivity.EXTRA_SOURCE_URL, screen.source.url)
                         // Playlist sources auto-advance: hand the player the visible queue.
-                        if (screen is Screen.ChannelVideos && screen.source.kind == SourceKind.PLAYLIST) {
+                        if (screen is Screen.ChannelVideos &&
+                            (screen.source.kind == SourceKind.PLAYLIST ||
+                                (screen.source.kind == SourceKind.CUSTOM && vm.customAutoplay))
+                        ) {
                             intent.putStringArrayListExtra(
                                 PlayerActivity.EXTRA_QUEUE,
                                 ArrayList(s.videos.map { it.video.url })

@@ -882,8 +882,14 @@ class PlayerActivity : ComponentActivity() {
         if (!ai.enabled || ai.model.isBlank()) return@withContext false
         // A parent's explicit allow beats every AI verdict, deep ones included.
         if (id in cfg.allowedIdsFor(gateProfileId)) return@withContext false
+        // The parent switched AI checking off for this channel.
+        if (currentChannel in io.pickwick.app.data.DeepCheck.aiOffChannelNames(
+                cfg.sources, io.pickwick.app.data.SourceCache(this@PlayerActivity).load()
+            )
+        ) return@withContext false
 
-        val note = (channelNotes ?: io.pickwick.app.data.DeepCheck.notesByChannelName(
+        val note = io.pickwick.app.data.DeepCheck.customNotesByVideoId(cfg.sources)[id]
+            ?: (channelNotes ?: io.pickwick.app.data.DeepCheck.notesByChannelName(
             cfg.sources, io.pickwick.app.data.SourceCache(this@PlayerActivity).load()
         ).also { channelNotes = it })[currentChannel]
 

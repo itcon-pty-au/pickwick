@@ -50,13 +50,15 @@ object DownloadChecker {
                     // Screening off (or turned off since the tap), no id to
                     // check, or a parent override: straight to the parent.
                     if (!ai.enabled || ai.model.isBlank() || id == null ||
-                        id in cfg.allowedIdsFor(profileId)
+                        id in cfg.allowedIdsFor(profileId) ||
+                        video.channelName in DeepCheck.aiOffChannelNames(cfg.sources, sourceCache.load())
                     ) {
                         downloads.setStatus(video.url, DownloadStatus.REQUESTED)
                         continue
                     }
 
-                    val note = DeepCheck.notesByChannelName(cfg.sources, sourceCache.load())[video.channelName]
+                    val note = DeepCheck.customNotesByVideoId(cfg.sources)[id]
+                        ?: DeepCheck.notesByChannelName(cfg.sources, sourceCache.load())[video.channelName]
                     val verdict = DeepCheck.cached(
                         screeningStore, id, ai.rulesVersion, AiScreener.noteHash(note)
                     )

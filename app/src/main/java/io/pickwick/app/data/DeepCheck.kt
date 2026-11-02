@@ -137,4 +137,22 @@ object DeepCheck {
         if (byUrl.isEmpty()) return emptyMap()
         return sources.mapNotNull { s -> byUrl[s.url]?.let { s.name to it } }.toMap()
     }
+
+    /** Video id → note, for custom playlists whose AI check is on and carry instructions. */
+    fun customNotesByVideoId(entries: List<WhitelistEntry>): Map<String, String> =
+        entries
+            .filter { it.kind == SourceKind.CUSTOM && it.aiCheck && !it.aiNote.isNullOrBlank() }
+            .flatMap { e -> e.customVideos.map { it.id to e.aiNote!!.trim() } }
+            .toMap()
+
+    /** Uploader names of channels the parent switched AI checking off for —
+     *  resolved by URL exactly like [notesByChannelName]. */
+    fun aiOffChannelNames(
+        entries: List<WhitelistEntry>,
+        sources: List<Source>
+    ): Set<String> {
+        val offUrls = entries.filter { !it.aiCheck }.map { it.url }.toSet()
+        if (offUrls.isEmpty()) return emptySet()
+        return sources.filter { it.url in offUrls }.map { it.name }.toSet()
+    }
 }

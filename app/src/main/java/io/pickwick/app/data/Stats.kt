@@ -77,7 +77,9 @@ object Stats {
         /** "BLOCK" or "REVIEW" (unsure). */
         val verdict: String,
         val reason: String,
-        val at: Long
+        val at: Long,
+        /** A kid reported it, rather than the AI holding it. */
+        val reported: Boolean = false
     )
 
     data class Payload(
@@ -214,6 +216,7 @@ object Stats {
                                 .put("thumb", e.thumb ?: "")
                                 .put("verdict", e.verdict.name)
                                 .put("why", e.reason)
+                                .apply { if (e.reported) put("reported", true) }
                                 .put("at", e.at))
                         }
                 }))
@@ -269,7 +272,8 @@ object Stats {
                 thumbnailUrl = o.optString("thumb").ifEmpty { null },
                 verdict = o.optString("verdict"),
                 reason = o.optString("why"),
-                at = o.optLong("at")
+                at = o.optLong("at"),
+                reported = o.optBoolean("reported")
             )
         }
 

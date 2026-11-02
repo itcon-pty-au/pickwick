@@ -309,6 +309,7 @@ fun PickwickScreen(
                         queued = state.queued,
                         onToggleQueue = vm::toggleQueue,
                         onToggleWatched = vm::toggleWatched,
+                        onReport = vm::reportVideo,
                         grabFocus = isTv,
                         onNearEnd = when (state.screen) {
                             is Screen.ChannelVideos -> vm::loadMoreUploads

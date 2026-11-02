@@ -207,6 +207,8 @@ private suspend fun verifySuggestion(
             )
         }
     }
+    // The AI only suggests channels and playlists, never a parent's own list.
+    SourceKind.CUSTOM -> null
 }
 
 // --- Community directory ------------------------------------------------------

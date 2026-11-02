@@ -167,6 +167,8 @@ internal fun VideoGrid(
     onToggleQueue: ((VideoItem) -> Unit)? = null,
     /** Hold-menu row that marks a video watched, or puts it back. */
     onToggleWatched: ((VideoItem) -> Unit)? = null,
+    /** Hold-menu row where a kid asks for a video to be held for the parent. */
+    onReport: ((VideoItem) -> Unit)? = null,
     grabFocus: Boolean = false,
     onNearEnd: (() -> Unit)? = null,
     /**
@@ -207,6 +209,33 @@ internal fun VideoGrid(
     // menu is also more forgiving than the old silent long-press toggle: an
     // accidental hold now shows choices instead of quietly unsaving a video.
     var menuFor by remember { mutableStateOf<VideoItem?>(null) }
+    // Asked twice on purpose: a report hides the video until a parent rules on it.
+    var reportFor by remember { mutableStateOf<VideoItem?>(null) }
+    reportFor?.let { item ->
+        AlertDialog(
+            onDismissRequest = { reportFor = null },
+            shape = androidx.compose.ui.graphics.RectangleShape,
+            title = { Text("Report this video?") },
+            text = {
+                Text(
+                    "It will be hidden until a grown-up decides whether it's okay.",
+                    modifier = Modifier.ignoreSelectUntilRelease()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { onReport?.invoke(item); reportFor = null },
+                    modifier = Modifier.tvFocusHighlight()
+                ) { Text("Report") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { reportFor = null },
+                    modifier = Modifier.tvFocusHighlight()
+                ) { Text("Cancel") }
+            }
+        )
+    }
     menuFor?.let { item ->
         val firstAction = remember { androidx.compose.ui.focus.FocusRequester() }
         LaunchedEffect(item) { runCatching { firstAction.requestFocus() } }
@@ -269,6 +298,16 @@ internal fun VideoGrid(
                             val verb = if (podcast) "listened" else "watched"
                             Text(if (seen) "↩️  Move back to not $verb" else "✔️  Mark as $verb")
                         }
+                    }
+                    // Only YouTube videos: local, network and podcast items have
+                    // no id the parent's review queue could act on.
+                    if (onReport != null && item.video.videoId?.length == 11 &&
+                        !io.pickwick.app.data.SmbPaths.isNetwork(item.video.url) && !podcast
+                    ) {
+                        TextButton(
+                            onClick = { reportFor = item; menuFor = null },
+                            modifier = Modifier.fillMaxWidth().tvFocusHighlight()
+                        ) { Text("🚩  Report this video") }
                     }
                     if (onToggleDownload != null && !io.pickwick.app.data.SmbPaths.isNetwork(item.video.url) && !podcast) {
                         val url = item.video.url

@@ -364,6 +364,7 @@ private fun AdminScreen(
     var sponsorSkip by remember(initial) { mutableStateOf(initial.sponsorSkip) }
     var sponsorCategories by remember(initial) { mutableStateOf(initial.sponsorCategories) }
     var listenPercent by remember(initial) { mutableStateOf(initial.listenPercent) }
+    var customAutoplay by remember(initial) { mutableStateOf(initial.customAutoplay) }
     val migratedNetwork = remember(initial) { initial.migrateNetworkShares() }
     var networkCatalogs by remember(initial) { mutableStateOf(migratedNetwork.networkCatalogs) }
     var networkShares by remember(initial) { mutableStateOf(migratedNetwork.networkShares) }
@@ -450,6 +451,7 @@ private fun AdminScreen(
             sponsorSkip = sponsorSkip,
             sponsorCategories = sponsorCategories,
             listenPercent = listenPercent,
+            customAutoplay = customAutoplay,
             networkCatalogs = networkCatalogs.map { it.copy(profileIds = it.profileIds.intersect(validIds)) },
             networkShares = networkShares,
             contentGroups = contentGroups,
@@ -595,7 +597,8 @@ private fun AdminScreen(
                 HubPage.Screening -> {
                     SectionTitle("AI content screening")
                     SettingsCard { AiScreeningSection(ai, profiles, onChanged = { ai = it }) }
-                    if (ai.enabled) {
+                    // Kid reports land here too, so the queue is there with AI off.
+                    run {
                         SectionTitle("Waiting for your OK")
                         SettingsCard {
                             AiReviewSection(
@@ -675,6 +678,22 @@ private fun AdminScreen(
                 HubPage.Playback -> {
                     SectionTitle("Listening")
                     SettingsCard { ListenRateRow(listenPercent) { listenPercent = it } }
+                    SectionTitle("Custom playlists")
+                    SettingsCard {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Play the next video automatically")
+                                Text(
+                                    "Off: each video ends back on the playlist, so the kid " +
+                                        "picks the next one. Applies to playlists you build " +
+                                        "from single videos; YouTube playlists always continue.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(checked = customAutoplay, onCheckedChange = { customAutoplay = it })
+                        }
+                    }
                 }
                 HubPage.Backup -> {
                     SectionTitle("App")
