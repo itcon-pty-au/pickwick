@@ -25,7 +25,7 @@ internal fun SearchField(
         value = query,
         onValueChange = { query = it },
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-        placeholder = { Text("Search your channels") },
+        placeholder = { Text("Search channels, podcasts and videos") },
         singleLine = true,
         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
             imeAction = androidx.compose.ui.text.input.ImeAction.Search
