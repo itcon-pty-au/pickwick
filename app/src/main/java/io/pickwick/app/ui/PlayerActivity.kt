@@ -1580,7 +1580,9 @@ private fun BoxScope.TvControlsOverlay(
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .background(Color(0x80000000))
-                .padding(horizontal = 32.dp, vertical = 18.dp)
+                // Slim on purpose: the bar sits over the picture, so it takes only
+                // what the controls themselves need.
+                .padding(horizontal = 32.dp, vertical = 8.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1588,7 +1590,8 @@ private fun BoxScope.TvControlsOverlay(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    formatClock(positionMs / 1000) + " / " + formatClock(durationMs / 1000),
+                    formatClock(positionMs / 1000) + " / " + formatClock(durationMs / 1000) +
+                        "  ·  −" + formatClock((durationMs - positionMs).coerceAtLeast(0) / 1000),
                     color = Color.White,
                     style = MaterialTheme.typography.titleMedium
                 )
@@ -1617,7 +1620,7 @@ private fun BoxScope.TvControlsOverlay(
                     }
                 }
             }
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(4.dp))
             // Three layers, YouTube's convention: dim track for the whole
             // video, a lighter band for how far ahead is downloaded, red for
             // what has been played. The buffered band is the honest answer to
@@ -1626,7 +1629,7 @@ private fun BoxScope.TvControlsOverlay(
             BoxWithConstraints(
                 Modifier
                     .fillMaxWidth()
-                    .height(18.dp)
+                    .height(14.dp)
             ) {
                 Box(
                     Modifier
