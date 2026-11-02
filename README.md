@@ -376,7 +376,7 @@ after each install:
 adb shell cmd package compile -m speed -f io.pickwick.app
 ```
 
-minSdk 26 · Kotlin + Jetpack Compose · Media3/ExoPlayer · NewPipeExtractor · GPL-3.0
+minSdk 25 · Kotlin + Jetpack Compose · Media3/ExoPlayer · NewPipeExtractor · GPL-3.0
 · profile avatars from [Fluent Emoji](https://github.com/microsoft/fluentui-emoji)
 (MIT — see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md))
 
