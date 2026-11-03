@@ -708,8 +708,8 @@
       "name": "Mark Rober",
       "kind": "channel",
       "ages": [
-        "8-10",
-        "11+"
+        "11+",
+        "8-10"
       ],
       "topics": [
         "Science",
@@ -724,8 +724,8 @@
       "name": "Steve Mould",
       "kind": "channel",
       "ages": [
-        "8-10",
-        "11+"
+        "11+",
+        "8-10"
       ],
       "topics": [
         "Science"
@@ -739,8 +739,8 @@
       "name": "Be Smart",
       "kind": "channel",
       "ages": [
-        "8-10",
-        "11+"
+        "11+",
+        "8-10"
       ],
       "topics": [
         "Science",
@@ -755,8 +755,8 @@
       "name": "Eddie Woo",
       "kind": "channel",
       "ages": [
-        "8-10",
-        "11+"
+        "11+",
+        "8-10"
       ],
       "topics": [
         "Math"
@@ -770,8 +770,8 @@
       "name": "Amoeba Sisters",
       "kind": "channel",
       "ages": [
-        "8-10",
-        "11+"
+        "11+",
+        "8-10"
       ],
       "topics": [
         "Science"
@@ -785,6 +785,7 @@
       "name": "AntsCanada",
       "kind": "channel",
       "ages": [
+        "11+",
         "5-7",
         "8-10"
       ],
@@ -800,8 +801,8 @@
       "name": "Nature on PBS",
       "kind": "channel",
       "ages": [
-        "8-10",
-        "11+"
+        "11+",
+        "8-10"
       ],
       "topics": [
         "Nature & animals"
@@ -815,9 +816,9 @@
       "name": "Cornell Lab of Ornithology",
       "kind": "channel",
       "ages": [
+        "11+",
         "5-7",
-        "8-10",
-        "11+"
+        "8-10"
       ],
       "topics": [
         "Nature & animals"
@@ -831,8 +832,9 @@
       "name": "MBARI",
       "kind": "channel",
       "ages": [
-        "8-10",
-        "11+"
+        "11+",
+        "5-7",
+        "8-10"
       ],
       "topics": [
         "Nature & animals",
@@ -847,8 +849,9 @@
       "name": "Boston Dynamics",
       "kind": "channel",
       "ages": [
-        "8-10",
-        "11+"
+        "11+",
+        "5-7",
+        "8-10"
       ],
       "topics": [
         "Engineering & tech"
@@ -862,7 +865,8 @@
       "name": "Practical Engineering",
       "kind": "channel",
       "ages": [
-        "11+"
+        "11+",
+        "8-10"
       ],
       "topics": [
         "Engineering & tech"
@@ -890,7 +894,8 @@
       "name": "The B1M",
       "kind": "channel",
       "ages": [
-        "11+"
+        "11+",
+        "8-10"
       ],
       "topics": [
         "Engineering & tech"
@@ -977,7 +982,8 @@
       "name": "SmarterEveryDay",
       "kind": "channel",
       "ages": [
-        "11+"
+        "11+",
+        "8-10"
       ],
       "topics": [
         "Science",
@@ -1049,8 +1055,8 @@
       "name": "Primitive Technology",
       "kind": "channel",
       "ages": [
-        "8-10",
-        "11+"
+        "11+",
+        "8-10"
       ],
       "topics": [
         "Engineering & tech",
