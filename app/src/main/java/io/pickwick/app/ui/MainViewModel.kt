@@ -56,6 +56,8 @@ class MainViewModel(
     private val prefetchThumbs: suspend (List<String>) -> Unit = {},
     /** AI screening gate; null in tests. Unscreened/blocked videos never render. */
     private val screener: io.pickwick.app.data.Screener? = null,
+    /** Last known playability/live state of hand-picked videos; null in tests. */
+    private val statusCache: io.pickwick.app.data.VideoStatusCache? = null,
     /** Whose home screen this is; null = pre-profile single-kid behavior. */
     private val activeProfileId: String? = null,
     /** Search index; null in tests. The crawler runs only on the master device. */
@@ -69,6 +71,8 @@ class MainViewModel(
     val state: StateFlow<UiState> = _state
     private var sources: List<Source> = emptyList()
     private var blockedVideoIds: Set<String> = emptySet()
+    private var videoStatus: Map<String, io.pickwick.app.data.VideoStatusCache.Entry> = emptyMap()
+    private var pickedLists: List<io.pickwick.app.data.WhitelistEntry> = emptyList()
     /** Parent's choice: do custom playlists auto-advance like YouTube playlists? */
     var customAutoplay: Boolean = false
         private set
@@ -568,6 +572,7 @@ class MainViewModel(
                 screener?.profiles = list.profiles
                 screener?.activeProfileId = activeProfileId
                 screener?.allowedOverrides = list.allowedIdsFor(activeProfileId)
+                refreshVideoStatus(list.sources)
                 _state.value = _state.value.copy(videos = annotated(includeFinishedNow()))
                 // Only the kid whose home this is owns these prefs. With nobody
                 // picked yet (who's-watching screen) `sessionGuard` is still the
@@ -827,8 +832,46 @@ class MainViewModel(
         if (_state.value.scrollTo != null) _state.value = _state.value.copy(scrollTo = null)
     }
 
+    /**
+     * Re-checks the hand-picked videos' playability and live state, on app open
+     * and whenever the whitelist reloads. The cache's short TTL keeps this from
+     * polling; the last known answers paint first, so tiles never wait on it.
+     */
+    private fun refreshVideoStatus(entries: List<io.pickwick.app.data.WhitelistEntry>) {
+        pickedLists = entries.filter { it.kind == SourceKind.CUSTOM }
+        publishLive()
+        val cache = statusCache ?: return
+        // Only live items are re-checked: a stream going off air is the case that
+        // changes by itself. A clip that stops playing is caught at play time.
+        val ids = pickedLists.flatMap { e -> e.customVideos.filter { it.live }.map { it.id } }
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            videoStatus = withContext(Dispatchers.IO) { cache.all() }
+            publishLive()
+            reapplyScreening()
+            withContext(Dispatchers.IO) { cache.refresh(ids) { yt.videoStatus(it) } }
+            videoStatus = withContext(Dispatchers.IO) { cache.all() }
+            publishLive()
+            reapplyScreening()
+        }
+    }
+
+    /** The TV's Live row: picked videos on air right now, for this kid. */
+    private fun publishLive() {
+        val items = pickedLists.filter { it.visibleTo(activeProfileId) }
+            .flatMap { it.customVideos }
+            .filter { it.live }
+            .map { io.pickwick.app.data.VideoStatus.apply(it.toVideo(), videoStatus[it.id]) }
+            .filter { it.live && !it.offline && it.videoId !in blockedVideoIds && screener?.isVisible(it) != false }
+            .distinctBy { it.url }
+            .map { VideoItem(it, null) }
+        if (items != _state.value.liveVideos) _state.value = _state.value.copy(liveVideos = items)
+    }
+
     private fun annotated(includeFinished: Boolean): List<VideoItem> =
-        rawVideos.mapNotNull { video ->
+        (if (videoStatus.isEmpty()) rawVideos else rawVideos.map { v ->
+            io.pickwick.app.data.VideoStatus.apply(v, videoStatus[v.videoId])
+        }).mapNotNull { video ->
             if (video.videoId in blockedVideoIds || tooShort(video)) return@mapNotNull null
             if (io.pickwick.app.data.SmbPaths.isNetwork(video.url)) {
                 val catalogId = runCatching { io.pickwick.app.data.SmbPaths.parse(video.url).first }.getOrNull()

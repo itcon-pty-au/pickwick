@@ -157,6 +157,8 @@ fun PickwickScreen(
                             onOpenNetworkCatalogs = { networkOpen = true },
                             podcasts = state.podcasts,
                             onOpenPodcast = { podcastOpen = it.id },
+                            liveVideos = state.liveVideos,
+                            onPlayLive = onPlay,
                             hasWatchLater = state.watchLater.isNotEmpty(),
                             onOpenWatchLater = vm::openWatchLater,
                             hasQueue = state.queued.isNotEmpty(),

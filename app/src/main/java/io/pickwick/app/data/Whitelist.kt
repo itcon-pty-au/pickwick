@@ -17,14 +17,17 @@ data class CustomVideo(
     val title: String,
     val channel: String,
     val thumb: String?,
-    val durationSeconds: Long
+    val durationSeconds: Long,
+    /** Was a live broadcast when added (see [VideoStatus]); the tile shows LIVE while it still is. */
+    val live: Boolean = false
 ) {
     fun toVideo() = Video(
         url = "https://www.youtube.com/watch?v=$id",
         title = title,
         channelName = channel,
         thumbnailUrl = thumb,
-        durationSeconds = durationSeconds
+        durationSeconds = durationSeconds,
+        live = live
     )
 }
 
