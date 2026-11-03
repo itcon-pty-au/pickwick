@@ -151,6 +151,9 @@ class PlayerActivity : ComponentActivity() {
      */
     private var sponsorChoice: Set<String>? = null
 
+    /** Time of the latest auto-skip; drives the corner hint, null once it has faded. */
+    private val skipHint = mutableStateOf<Long?>(null)
+
     // Queue position, resolved streams, and terminal error, hoisted out of the
     // composition. Deliberate: recomposition needs display frames, which stop
     // dead when the screen is off — a LaunchedEffect-driven advance would
@@ -422,8 +425,10 @@ class PlayerActivity : ComponentActivity() {
             true
         }
 
-        // Auto-skip the promo stretches SponsorBlock knows about. Deliberately
-        // silent — the jump is the whole feature, no toast. Polled at 500ms:
+        // Auto-skip the promo stretches SponsorBlock knows about. The jump is
+        // the feature; the only acknowledgement is a faint corner hint after
+        // the fact (see SkipHint), so a sudden seek doesn't read as a glitch.
+        // Polled at 500ms:
         // at most half a second of a sponsor read plays before the seek, and a
         // position read this light is free next to the 5s stats tick below.
         lifecycleScope.launch {
@@ -436,7 +441,10 @@ class PlayerActivity : ComponentActivity() {
                 // on the next tick while the seek is still settling.
                 sponsorSegments.value
                     .firstOrNull { pos >= it.startMs && pos < it.endMs - 300 }
-                    ?.let { exo.seekTo(it.endMs) }
+                    ?.let {
+                        exo.seekTo(it.endMs)
+                        skipHint.value = System.currentTimeMillis()
+                    }
             }
         }
 
@@ -672,6 +680,7 @@ class PlayerActivity : ComponentActivity() {
                     ) {
                         PhoneQualityButton(playback!!, qualityPref.intValue) { selectQuality(it) }
                     }
+                    if (timeUp == null) SkipHint(skipHint)
                     if (timeUp == null) NoticeOverlay(notice, if (contentRemaining.value != null && playerControlsVisible.value) 72.dp else 28.dp)
                     if (playerControlsVisible.value && contentBlocked.value == null && timeUp == null) contentRemaining.value?.let { (group, left) ->
                         Text("${group.name}: ${formatClock((left + 999) / 1000)} this session",
@@ -1566,6 +1575,37 @@ private fun BoxScope.NoticeOverlay(state: MutableState<Notice?>, topPadding: and
     LaunchedEffect(n) {
         delay(4_000)
         if (state.value == n) state.value = null
+    }
+}
+
+/**
+ * Small, translucent top-right hint after a sponsor skip. Generic wording on
+ * purpose: the segments carry no category, and "ahead" is true for intros and
+ * outros too. Smaller and shorter-lived than [NoticeOverlay] — it confirms a
+ * jump, it shouldn't ask for attention.
+ */
+@Composable
+private fun BoxScope.SkipHint(state: MutableState<Long?>) {
+    val at = state.value
+    androidx.compose.animation.AnimatedVisibility(
+        visible = at != null,
+        modifier = Modifier.align(Alignment.TopEnd).padding(top = 20.dp, end = 24.dp),
+        enter = androidx.compose.animation.fadeIn(),
+        exit = androidx.compose.animation.fadeOut()
+    ) {
+        Text(
+            "Skipped ahead",
+            color = Color.White.copy(alpha = 0.8f),
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier
+                .background(Color(0x66000000), shape = RoundedCornerShape(16.dp))
+                .padding(horizontal = 12.dp, vertical = 6.dp)
+        )
+    }
+    LaunchedEffect(at) {
+        if (at == null) return@LaunchedEffect
+        delay(2_000)
+        if (state.value == at) state.value = null
     }
 }
 
