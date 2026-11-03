@@ -2,6 +2,11 @@
 # pipeline). Comments a verdict on the PR; the human reviewer merges or closes.
 # Cost control: max 3 entries per run, max 20 runs per UTC day — combined with
 # the Worker's queue cap this bounds the worst-case daily API spend by design.
+# Exempt: a PR opened by the repository owner from a branch that is NOT
+# "submission/…". The Worker opens its submission PRs with the owner's token,
+# so the author alone can't tell the maintainer from the public; the branch
+# prefix can, because only the Worker creates "submission/…" branches. Fork PRs
+# never see the API key, so the exemption can't be reached from outside.
 name: Screen directory submission
 
 on:
@@ -55,6 +60,10 @@ jobs:
         id: cap
         if: steps.diff.outputs.count != '0'
         run: |
+          if [ "$TRUSTED" = "true" ]; then
+            echo "capped=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           today=$(date -u +%Y-%m-%d)
           # A failed count must read as "capped", not "unused" — this is the
           # bill-protection valve, so it fails closed.
@@ -68,6 +77,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
+          TRUSTED: ${{ github.event.pull_request.user.login == github.repository_owner && !startsWith(github.event.pull_request.head.ref, 'submission/') }}
 
       - name: Screen each new entry
         if: steps.diff.outputs.count != '0' && steps.cap.outputs.capped == 'false'
@@ -81,8 +91,10 @@ jobs:
           echo "" >> comment.md
 
           total=$(jq length new_entries.json)
-          n=$(( total < 3 ? total : 3 ))
-          [ "$total" -gt 3 ] && echo "_Screening the first 3 of $total new entries (per-run cap)._" >> comment.md
+          limit=3
+          [ "$TRUSTED" = "true" ] && limit=$total
+          n=$(( total < limit ? total : limit ))
+          [ "$total" -gt "$limit" ] && echo "_Screening the first $limit of $total new entries (per-run cap)._" >> comment.md
 
           for i in $(seq 0 $((n - 1))); do
             entry=$(jq ".[$i]" new_entries.json)
@@ -235,3 +247,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          TRUSTED: ${{ github.event.pull_request.user.login == github.repository_owner && !startsWith(github.event.pull_request.head.ref, 'submission/') }}
