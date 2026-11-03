@@ -179,9 +179,10 @@ catching up later with any device that was asleep.
   everyone and hold picks kids. Watch history is never sent, and each video is
   screened once per rules version, so the catalog isn't re-screened (or
   re-billed) on every launch. A connection test is built in.
-- **Custom playlists and live streams** — paste a single video's link (watch,
-  youtu.be, shorts or live) and add it to a **custom playlist** you create; a
-  single video can only go into a playlist you make, never into a channel.
+- **Add single videos and live streams, right in the app** — search YouTube
+  for a video by name, or paste its link (watch, youtu.be, shorts or live), and
+  add it to a **custom playlist** you create; a single video can only go into a
+  playlist you make, never into a channel.
   Each playlist is one item in your list (same screen-time chip and per-kid
   switches, delete it as a whole) with its own row on the TV, and opens to
   remove single videos. The link is checked first: a video that can't be
@@ -197,7 +198,9 @@ catching up later with any device that was asleep.
   A **Check with AI** switch (channels and custom playlists) turns screening
   off for that source: its videos skip the AI and show up as if you had
   allowed them (the icon is bright while AI checks it). A custom playlist
-  starts with the switch off, since you picked its videos by hand.
+  starts with the switch **on**, so its videos are reviewed like any other
+  (before they play, when AI screening is enabled) — switch it off for a
+  playlist you fully trust.
 - **Offline downloads** — approve (or decline) the kid's requests, pick download
   quality, watch progress, cancel or delete. With screening on, each request is
   deep-checked first and reaches your approval list only if it passes. Files
