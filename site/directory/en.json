@@ -1,6 +1,6 @@
 {
   "language": "en",
-  "updated": "2026-08-16",
+  "updated": "2026-11-03",
   "entries": [
     {
       "url": "https://www.youtube.com/user/scishowkids",
@@ -702,6 +702,307 @@
       ],
       "note": "Clear, step-by-step math lessons — fractions, integers, elapsed time and more — with practice problems kids can follow along at home.",
       "added": "2026-08-16"
+    },
+    {
+      "url": "https://www.youtube.com/channel/UCY1kMZp36IQSyNx_9h4mpCg",
+      "name": "Mark Rober",
+      "kind": "channel",
+      "ages": [
+        "11+",
+        "8-10"
+      ],
+      "topics": [
+        "Science",
+        "Engineering & tech"
+      ],
+      "note": "Big, funny builds and experiments that make science and engineering look like a game.",
+      "added": "2026-11-03",
+      "channelId": "UCY1kMZp36IQSyNx_9h4mpCg"
+    },
+    {
+      "url": "https://www.youtube.com/channel/UCEIwxahdLz7bap-VDs9h35A",
+      "name": "Steve Mould",
+      "kind": "channel",
+      "ages": [
+        "11+",
+        "8-10"
+      ],
+      "topics": [
+        "Science"
+      ],
+      "note": "Quirky everyday science demos, explained clearly.",
+      "added": "2026-11-03",
+      "channelId": "UCEIwxahdLz7bap-VDs9h35A"
+    },
+    {
+      "url": "https://www.youtube.com/channel/UCH4BNI0-FOK2dMXoFtViWHw",
+      "name": "Be Smart",
+      "kind": "channel",
+      "ages": [
+        "11+",
+        "8-10"
+      ],
+      "topics": [
+        "Science",
+        "Nature & animals"
+      ],
+      "note": "Short, upbeat videos about living things and how the world works.",
+      "added": "2026-11-03",
+      "channelId": "UCH4BNI0-FOK2dMXoFtViWHw"
+    },
+    {
+      "url": "https://www.youtube.com/channel/UCq0EGvLTyy-LLT1oUSO_0FQ",
+      "name": "Eddie Woo",
+      "kind": "channel",
+      "ages": [
+        "11+",
+        "8-10"
+      ],
+      "topics": [
+        "Math"
+      ],
+      "note": "A Sydney maths teacher who makes school maths clear and surprising.",
+      "added": "2026-11-03",
+      "channelId": "UCq0EGvLTyy-LLT1oUSO_0FQ"
+    },
+    {
+      "url": "https://www.youtube.com/channel/UCb2GCoLSBXjmI_Qj1vk-44g",
+      "name": "Amoeba Sisters",
+      "kind": "channel",
+      "ages": [
+        "11+",
+        "8-10"
+      ],
+      "topics": [
+        "Science"
+      ],
+      "note": "Friendly, cartoon-style school biology: cells, genes and ecosystems.",
+      "added": "2026-11-03",
+      "channelId": "UCb2GCoLSBXjmI_Qj1vk-44g"
+    },
+    {
+      "url": "https://www.youtube.com/channel/UCcBp_9YPyma4c3HTadmRJ3Q",
+      "name": "Nature on PBS",
+      "kind": "channel",
+      "ages": [
+        "11+",
+        "8-10"
+      ],
+      "topics": [
+        "Nature & animals"
+      ],
+      "note": "Wildlife documentaries and clips from the long-running PBS series.",
+      "added": "2026-11-03",
+      "channelId": "UCcBp_9YPyma4c3HTadmRJ3Q"
+    },
+    {
+      "url": "https://www.youtube.com/channel/UCFXww6CrLAHhyZQCDnJ2g2A",
+      "name": "MBARI",
+      "kind": "channel",
+      "ages": [
+        "11+",
+        "5-7",
+        "8-10"
+      ],
+      "topics": [
+        "Nature & animals",
+        "Science"
+      ],
+      "note": "Deep-sea footage and discoveries from a marine research institute.",
+      "added": "2026-11-03",
+      "channelId": "UCFXww6CrLAHhyZQCDnJ2g2A"
+    },
+    {
+      "url": "https://www.youtube.com/channel/UC7vVhkEfw4nOGp8TyDk7RcQ",
+      "name": "Boston Dynamics",
+      "kind": "channel",
+      "ages": [
+        "11+",
+        "5-7",
+        "8-10"
+      ],
+      "topics": [
+        "Engineering & tech"
+      ],
+      "note": "Robots that walk, run and dance, with no talking.",
+      "added": "2026-11-03",
+      "channelId": "UC7vVhkEfw4nOGp8TyDk7RcQ"
+    },
+    {
+      "url": "https://www.youtube.com/channel/UCMOqf8ab-42UUQIdVoKwjlQ",
+      "name": "Practical Engineering",
+      "kind": "channel",
+      "ages": [
+        "11+",
+        "8-10"
+      ],
+      "topics": [
+        "Engineering & tech"
+      ],
+      "note": "How dams, bridges and other infrastructure work, shown with demos.",
+      "added": "2026-11-03",
+      "channelId": "UCMOqf8ab-42UUQIdVoKwjlQ"
+    },
+    {
+      "url": "https://www.youtube.com/channel/UC6n8I1UDTKP1IWjQMg6_TwA",
+      "name": "The B1M",
+      "kind": "channel",
+      "ages": [
+        "11+"
+      ],
+      "topics": [
+        "Engineering & tech"
+      ],
+      "note": "Big construction projects around the world, from skyscrapers to tunnels.",
+      "added": "2026-11-03",
+      "channelId": "UC6n8I1UDTKP1IWjQMg6_TwA"
+    },
+    {
+      "url": "https://www.youtube.com/channel/UC6uKrU_WqJ1R2HMTY3LIx5Q",
+      "name": "Everyday Astronaut",
+      "kind": "channel",
+      "ages": [
+        "11+"
+      ],
+      "topics": [
+        "Space",
+        "Engineering & tech"
+      ],
+      "note": "Rockets and launches explained by a space fan, with launch coverage.",
+      "added": "2026-11-03",
+      "channelId": "UC6uKrU_WqJ1R2HMTY3LIx5Q"
+    },
+    {
+      "url": "https://www.youtube.com/channel/UCxzC4EngIsMrPmbm6Nxvb-A",
+      "name": "Scott Manley",
+      "kind": "channel",
+      "ages": [
+        "11+"
+      ],
+      "topics": [
+        "Space"
+      ],
+      "note": "Spaceflight news and explainers in a calm, clear voice.",
+      "added": "2026-11-03",
+      "channelId": "UCxzC4EngIsMrPmbm6Nxvb-A"
+    },
+    {
+      "url": "https://www.youtube.com/channel/UCYNbYGl89UUowy8oXkipC-Q",
+      "name": "Dr. Becky",
+      "kind": "channel",
+      "ages": [
+        "11+"
+      ],
+      "topics": [
+        "Space",
+        "Science"
+      ],
+      "note": "An astrophysicist answers questions about black holes and the universe.",
+      "added": "2026-11-03",
+      "channelId": "UCYNbYGl89UUowy8oXkipC-Q"
+    },
+    {
+      "url": "https://www.youtube.com/channel/UCxqAWLTk1CmBvZFPzeZMd9A",
+      "name": "Domain of Science",
+      "kind": "channel",
+      "ages": [
+        "11+"
+      ],
+      "topics": [
+        "Science"
+      ],
+      "note": "Hand-drawn maps that show how the fields of science fit together.",
+      "added": "2026-11-03",
+      "channelId": "UCxqAWLTk1CmBvZFPzeZMd9A"
+    },
+    {
+      "url": "https://www.youtube.com/channel/UCSIvk78tK2TiviLQn4fSHaw",
+      "name": "Up and Atom",
+      "kind": "channel",
+      "ages": [
+        "11+"
+      ],
+      "topics": [
+        "Science",
+        "Math"
+      ],
+      "note": "Physics and maths ideas, explained with a light touch.",
+      "added": "2026-11-03",
+      "channelId": "UCSIvk78tK2TiviLQn4fSHaw"
+    },
+    {
+      "url": "https://www.youtube.com/channel/UC6107grRI4m0o2-emgoDnAA",
+      "name": "SmarterEveryDay",
+      "kind": "channel",
+      "ages": [
+        "11+"
+      ],
+      "topics": [
+        "Science",
+        "Engineering & tech"
+      ],
+      "note": "Curious experiments with slow-motion cameras and plenty of enthusiasm.",
+      "added": "2026-11-03",
+      "channelId": "UC6107grRI4m0o2-emgoDnAA"
+    },
+    {
+      "url": "https://www.youtube.com/channel/UCYeF244yNGuFefuFKqxIAXw",
+      "name": "The Royal Institution",
+      "kind": "channel",
+      "ages": [
+        "11+"
+      ],
+      "topics": [
+        "Science"
+      ],
+      "note": "Public science talks and demos from the UK's Royal Institution.",
+      "added": "2026-11-03",
+      "channelId": "UCYeF244yNGuFefuFKqxIAXw"
+    },
+    {
+      "url": "https://www.youtube.com/channel/UCsaGKqPZnGp_7N80hcHySGQ",
+      "name": "Tasting History with Max Miller",
+      "kind": "channel",
+      "ages": [
+        "11+"
+      ],
+      "topics": [
+        "History",
+        "Cooking & baking"
+      ],
+      "note": "Max Miller cooks historic recipes and tells the stories behind them.",
+      "added": "2026-11-03",
+      "channelId": "UCsaGKqPZnGp_7N80hcHySGQ"
+    },
+    {
+      "url": "https://www.youtube.com/channel/UC22BdTgxefuvUivrjesETjg",
+      "name": "History Matters",
+      "kind": "channel",
+      "ages": [
+        "11+"
+      ],
+      "topics": [
+        "History"
+      ],
+      "note": "Short, clear history explainers.",
+      "added": "2026-11-03",
+      "channelId": "UC22BdTgxefuvUivrjesETjg"
+    },
+    {
+      "url": "https://www.youtube.com/channel/UCAL3JXZSzSm8AlZyD3nQdBA",
+      "name": "Primitive Technology",
+      "kind": "channel",
+      "ages": [
+        "11+",
+        "8-10"
+      ],
+      "topics": [
+        "Engineering & tech",
+        "Crafts & making"
+      ],
+      "note": "Building tools, huts and kilns from scratch, with no talking.",
+      "added": "2026-11-03",
+      "channelId": "UCAL3JXZSzSm8AlZyD3nQdBA"
     }
   ]
 }
