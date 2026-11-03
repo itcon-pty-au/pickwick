@@ -103,6 +103,13 @@ class YouTubeRepository {
         private val playlistInfoCache = BoundedCache<PlaylistInfo>(12)
         private val channelTabCache = BoundedCache<ChannelTabInfo>(12)
 
+        // Parent-side search results, kept for INFO_TTL_MS so flipping between the
+        // Channels / Playlists / Videos chips (or re-running a query) costs nothing.
+        // Small lists, so a handful of entries each is plenty.
+        private val channelSearchCache = BoundedCache<SearchPage<ChannelResult>>(24)
+        private val playlistSearchCache = BoundedCache<SearchPage<PlaylistResult>>(24)
+        private val videoSearchCache = BoundedCache<SearchPage<VideoResult>>(24)
+
         /**
          * Two priority lanes: user taps never queue behind background warming.
          * YouTube throttles bursts, so both lanes are narrow.
@@ -307,23 +314,49 @@ class YouTubeRepository {
         val subscriberCount: Long
     )
 
+    /** One page of search results; [next] is the cursor for the page after it, if any. */
+    data class SearchPage<T>(val items: List<T>, val next: Page?)
+
+    /**
+     * One page of a parent search, cached per query and page for INFO_TTL_MS. [page] is
+     * the previous result's [SearchPage.next], or null for the first page.
+     */
+    private suspend fun <T> searchPaged(
+        filter: String,
+        cache: BoundedCache<SearchPage<T>>,
+        query: String,
+        page: Page?,
+        what: String,
+        map: (org.schabi.newpipe.extractor.InfoItem) -> T?
+    ): SearchPage<T> = withContext(Dispatchers.IO) {
+        val q = query.trim()
+        val pageKey = page?.let { "${it.url}|${it.id}|${it.body?.contentHashCode()}" } ?: "first"
+        memoized("s:$filter:${q.lowercase()}:$pageKey", cache, interactiveFetches, "$what search '$q'") {
+            val handler = youtube.searchQHFactory.fromQuery(q, listOf(filter), "")
+            if (page == null) {
+                val info = SearchInfo.getInfo(youtube, handler)
+                SearchPage(info.relatedItems.mapNotNull(map), info.nextPage)
+            } else {
+                val more = SearchInfo.getMoreItems(youtube, handler, page)
+                SearchPage(more.items.mapNotNull(map), more.nextPage)
+            }
+        }
+    }
+
     /** Parent-facing channel search for the admin UI (no IDs, no URLs to paste). */
     suspend fun searchChannels(query: String): List<ChannelResult> =
-        withContext(Dispatchers.IO) {
-            val handler = youtube.searchQHFactory.fromQuery(query, listOf("channels"), "")
-            val info = interactiveFetches.withPermit {
-                retrying("channel search '$query'") { SearchInfo.getInfo(youtube, handler) }
+        searchChannelsPage(query, null).items
+
+    suspend fun searchChannelsPage(query: String, page: Page?): SearchPage<ChannelResult> =
+        searchPaged("channels", channelSearchCache, query, page, "channel") {
+            (it as? ChannelInfoItem)?.let { c ->
+                ChannelResult(
+                    name = c.name,
+                    url = c.url,
+                    avatarUrl = c.thumbnails.pick(160),
+                    subscriberCount = c.subscriberCount
+                )
             }
-            info.relatedItems
-                .filterIsInstance<ChannelInfoItem>()
-                .map {
-                    ChannelResult(
-                        name = it.name,
-                        url = it.url,
-                        avatarUrl = it.thumbnails.pick(160),
-                        subscriberCount = it.subscriberCount
-                    )
-                }
         }
 
     /** A playlist found via search (AI discovery), ready to be whitelisted. */
@@ -336,22 +369,47 @@ class YouTubeRepository {
     )
 
     suspend fun searchPlaylists(query: String): List<PlaylistResult> =
-        withContext(Dispatchers.IO) {
-            val handler = youtube.searchQHFactory.fromQuery(query, listOf("playlists"), "")
-            val info = interactiveFetches.withPermit {
-                retrying("playlist search '$query'") { SearchInfo.getInfo(youtube, handler) }
+        searchPlaylistsPage(query, null).items
+
+    suspend fun searchPlaylistsPage(query: String, page: Page?): SearchPage<PlaylistResult> =
+        searchPaged("playlists", playlistSearchCache, query, page, "playlist") {
+            (it as? org.schabi.newpipe.extractor.playlist.PlaylistInfoItem)?.let { p ->
+                PlaylistResult(
+                    name = p.name,
+                    url = p.url,
+                    thumbnailUrl = p.thumbnails.pick(160),
+                    uploaderName = p.uploaderName?.takeIf { n -> n.isNotBlank() },
+                    videoCount = p.streamCount
+                )
             }
-            info.relatedItems
-                .filterIsInstance<org.schabi.newpipe.extractor.playlist.PlaylistInfoItem>()
-                .map {
-                    PlaylistResult(
-                        name = it.name,
-                        url = it.url,
-                        thumbnailUrl = it.thumbnails.pick(160),
-                        uploaderName = it.uploaderName?.takeIf { n -> n.isNotBlank() },
-                        videoCount = it.streamCount
-                    )
-                }
+        }
+
+    /** A single video found via parent search; [live] is the extractor's own stream type. */
+    data class VideoResult(
+        val id: String,
+        val title: String,
+        val channel: String,
+        val thumbnailUrl: String?,
+        val durationSeconds: Long,
+        val live: Boolean
+    ) {
+        fun toCustomVideo() = CustomVideo(id, title, channel, thumbnailUrl, durationSeconds.coerceAtLeast(0), live)
+    }
+
+    suspend fun searchVideosPage(query: String, page: Page?): SearchPage<VideoResult> =
+        searchPaged("videos", videoSearchCache, query, page, "video") {
+            (it as? StreamInfoItem)?.let { v ->
+                val id = Regex("[?&]v=([A-Za-z0-9_-]{11})").find(v.url)?.groupValues?.get(1)
+                    ?: return@let null
+                VideoResult(
+                    id = id,
+                    title = v.name,
+                    channel = v.uploaderName.orEmpty(),
+                    thumbnailUrl = v.thumbnails.pick(QualityTargets.videoThumbMinWidth),
+                    durationSeconds = v.duration,
+                    live = v.streamType == org.schabi.newpipe.extractor.stream.StreamType.LIVE_STREAM
+                )
+            }
         }
 
     /**
