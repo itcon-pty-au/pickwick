@@ -692,7 +692,38 @@ class PlayerActivity : ComponentActivity() {
         else finish()
     }
 
+    /**
+     * A hand-picked video that won't play (gone, no longer embeddable, the live
+     * stream ended) is recorded so its tile shows Offline, then the lineup moves
+     * on or returns to the grid — never an error screen.
+     */
     private fun onPlaybackFailed(message: String) {
+        val id = currentPageUrl?.let(io.pickwick.app.data.SponsorBlock::videoIdOf)
+        if (id == null) { showPlaybackFailure(message); return }
+        lifecycleScope.launch {
+            val picked = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val cfg = familyConfig
+                    ?: io.pickwick.app.data.ConfigStore(this@PlayerActivity).load().also { familyConfig = it }
+                cfg.sources.any { e ->
+                    e.kind == io.pickwick.app.data.SourceKind.CUSTOM && e.customVideos.any { it.id == id }
+                }
+            }
+            if (!picked) { showPlaybackFailure(message); return@launch }
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                io.pickwick.app.data.VideoStatusCache(this@PlayerActivity).markFailed(id)
+            }
+            if (indexState.intValue < queue.lastIndex) playIndex(indexState.intValue + 1)
+            else {
+                android.widget.Toast.makeText(
+                    this@PlayerActivity, "That video isn't available right now.",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+                finish()
+            }
+        }
+    }
+
+    private fun showPlaybackFailure(message: String) {
         if (currentPageUrl?.let(io.pickwick.app.data.SmbPaths::isNetwork) == true) {
             saveProgress()
             player?.pause()
@@ -981,6 +1012,22 @@ class PlayerActivity : ComponentActivity() {
                         .setMediaMetadata(mediaMetadata).build()
                 )
         val wasPlaying = if (resumeMs != null) exo.playWhenReady else true
+        if (pb.live) {
+            // A live HLS playlist: no range chunking, no audio merge, nothing to seek to.
+            exo.setMediaSource(
+                androidx.media3.exoplayer.hls.HlsMediaSource.Factory(
+                    androidx.media3.datasource.DefaultDataSource.Factory(this,
+                        androidx.media3.datasource.DefaultHttpDataSource.Factory()
+                            .setAllowCrossProtocolRedirects(true))
+                ).createMediaSource(
+                    MediaItem.Builder().setUri(pb.videoUrl).setMediaMetadata(mediaMetadata).build()
+                )
+            )
+            exo.prepare()
+            exo.playWhenReady = true
+            if (isTv) pokeControls()
+            return
+        }
         if (audioOnly && audioUrl != null) {
             exo.setMediaSource(progressive(audioUrl))
         } else {

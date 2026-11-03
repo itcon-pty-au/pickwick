@@ -215,6 +215,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         },
                         prefetchThumbs = prefetchThumbs,
                         screener = screener,
+                        statusCache = io.pickwick.app.data.VideoStatusCache(applicationContext),
                         activeProfileId = activeProfileId,
                         channelIndex = io.pickwick.app.data.ChannelIndex(applicationContext)
                     )

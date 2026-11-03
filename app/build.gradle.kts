@@ -34,8 +34,8 @@ android {
         // a desugared library API (see coreLibraryDesugaring below).
         minSdk = 25
         targetSdk = 34
-        versionCode = 37
-        versionName = "0.12.2"
+        versionCode = 38
+        versionName = "0.13.0"
 
         // Self-update manifest: JSON with versionCode/versionName/apkUrl.
         buildConfigField(
@@ -174,6 +174,8 @@ dependencies {
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.material3)
     implementation(libs.media3.exoplayer)
+    // Live streams arrive as an HLS playlist.
+    implementation(libs.media3.exoplayer.hls)
     implementation(libs.media3.ui)
     // Listen mode: MediaSession for lock-screen/headset controls while the
     // phone plays with its screen off.

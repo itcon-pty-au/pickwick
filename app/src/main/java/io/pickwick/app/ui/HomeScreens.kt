@@ -428,6 +428,8 @@ internal fun TvHomeRows(
     onOpenNetworkCatalogs: () -> Unit = {},
     podcasts: List<PodcastFeed> = emptyList(),
     onOpenPodcast: (PodcastFeed) -> Unit = {},
+    liveVideos: List<VideoItem> = emptyList(),
+    onPlayLive: (VideoItem) -> Unit = {},
     hasWatchLater: Boolean = false,
     onOpenWatchLater: () -> Unit = {},
     hasQueue: Boolean = false,
@@ -509,6 +511,31 @@ internal fun TvHomeRows(
                                     else Modifier).width(150.dp),
                                 onClick = { onOpenPodcast(podcasts[i]) }
                             )
+                        }
+                    }
+                }
+            }
+        }
+
+        if (liveVideos.isNotEmpty()) item(key = "live") {
+            Column {
+                TvRowTitle("Live")
+                CompositionLocalProvider(
+                    androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides TvRowPivot
+                ) {
+                    androidx.compose.foundation.lazy.LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                        modifier = Modifier.dpadHeldScrollThrottle(keys = DPAD_HORIZONTAL)
+                    ) {
+                        items(liveVideos.size, key = { liveVideos[it].video.url }) { i ->
+                            Box(Modifier.width(240.dp)) {
+                                VideoTile(
+                                    liveVideos[i], null, onPlayLive, null,
+                                    downloadPending = emptySet(), downloaded = emptySet(),
+                                    showDownloadStatus = false
+                                )
+                            }
                         }
                     }
                 }

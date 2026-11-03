@@ -67,7 +67,11 @@ data class Video(
     val title: String,
     val channelName: String,
     val thumbnailUrl: String?,
-    val durationSeconds: Long
+    val durationSeconds: Long,
+    /** Live broadcast right now — a hand-picked video only; drives the LIVE badge. */
+    val live: Boolean = false,
+    /** Can't be played right now (see [VideoStatus]): dimmed, "Offline", not tappable. */
+    val offline: Boolean = false
 ) {
     val videoId: String?
         // Sideloaded files carry a synthetic pickwick://local/<hash> URL; the
@@ -419,7 +423,9 @@ class YouTubeRepository {
          *  choose between (muxed fallback, local files, network shares). */
         val videoOptions: List<VideoOption> = emptyList(),
         /** Height of the stream in [videoUrl]; 0 when unknown (local files). */
-        val videoHeight: Int = 0
+        val videoHeight: Int = 0,
+        /** [videoUrl] is a live HLS playlist, played as is (no audio merge, no chunking). */
+        val live: Boolean = false
     )
 
     data class VideoOption(val height: Int, val url: String)
@@ -455,6 +461,17 @@ class YouTubeRepository {
                 retrying("stream $videoPageUrl") { StreamInfo.getInfo(youtube, videoPageUrl) }
             }
             check(info.ageLimit == 0) { "This video is age-restricted and can't be played here." }
+
+            if (info.streamType == org.schabi.newpipe.extractor.stream.StreamType.LIVE_STREAM &&
+                !info.hlsUrl.isNullOrBlank()
+            ) {
+                return@withContext Playback(
+                    info.name, info.hlsUrl, null, emptyList(),
+                    description = info.description?.content.orEmpty(),
+                    tags = info.tags.orEmpty(), uploaderUrl = info.uploaderUrl,
+                    live = true
+                )
+            }
 
             if (maxHeight != null) {
                 val videoOnly = info.videoOnlyStreams
@@ -542,21 +559,65 @@ class YouTubeRepository {
             )
         }
 
-    /** One video's tile data for a parent's custom list; null when it can't be looked up. */
-    suspend fun videoDetails(videoId: String): CustomVideo? = withContext(Dispatchers.IO) {
-        val url = "https://www.youtube.com/watch?v=$videoId"
-        val info = runCatching {
-            interactiveFetches.withPermit { retrying("video $videoId") { StreamInfo.getInfo(youtube, url) } }
-        }.getOrNull() ?: return@withContext null
-        CustomVideo(
-            id = videoId,
-            title = info.name.orEmpty(),
-            channel = info.uploaderName.orEmpty(),
-            thumb = info.thumbnails.pick(QualityTargets.videoThumbMinWidth),
-            // Live streams report a negative duration.
-            durationSeconds = info.duration.coerceAtLeast(0)
-        )
+    /** The extractor's answer for one video, as the custom-list flows need it. */
+    private sealed interface Fetched {
+        class Ok(val info: StreamInfo) : Fetched
+        /** Private, removed, blocked or age-restricted. */
+        data object Gone : Fetched
+        /** Couldn't tell (offline, extractor hiccup). */
+        data object Error : Fetched
     }
+
+    private suspend fun fetchInfo(videoId: String, limiter: Semaphore): Fetched =
+        withContext(Dispatchers.IO) {
+            val url = "https://www.youtube.com/watch?v=$videoId"
+            try {
+                val info = limiter.withPermit { retrying("video $videoId") { StreamInfo.getInfo(youtube, url) } }
+                if (info.ageLimit != 0) Fetched.Gone else Fetched.Ok(info)
+            } catch (e: org.schabi.newpipe.extractor.exceptions.ContentNotAvailableException) {
+                Fetched.Gone
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Fetched.Error
+            }
+        }
+
+    sealed interface VideoLookup {
+        data class Found(val video: CustomVideo) : VideoLookup
+        /** Can't be played in the app: don't add it. */
+        data object Unplayable : VideoLookup
+        data object Failed : VideoLookup
+    }
+
+    /** One video's tile data for a parent's custom list, with its live flag. */
+    suspend fun lookupVideo(videoId: String): VideoLookup =
+        when (val f = fetchInfo(videoId, interactiveFetches)) {
+            is Fetched.Ok -> VideoLookup.Found(
+                CustomVideo(
+                    id = videoId,
+                    title = f.info.name.orEmpty(),
+                    channel = f.info.uploaderName.orEmpty(),
+                    thumb = f.info.thumbnails.pick(QualityTargets.videoThumbMinWidth),
+                    // Live streams report a negative duration.
+                    durationSeconds = f.info.duration.coerceAtLeast(0),
+                    live = f.info.streamType == org.schabi.newpipe.extractor.stream.StreamType.LIVE_STREAM
+                )
+            )
+            Fetched.Gone -> VideoLookup.Unplayable
+            Fetched.Error -> VideoLookup.Failed
+        }
+
+    /** Playable and live right now; null when it couldn't be checked. Background lane. */
+    suspend fun videoStatus(videoId: String): VideoStatus.Info? =
+        when (val f = fetchInfo(videoId, backgroundFetches)) {
+            is Fetched.Ok -> VideoStatus.Info(
+                playable = true,
+                live = f.info.streamType == org.schabi.newpipe.extractor.stream.StreamType.LIVE_STREAM
+            )
+            Fetched.Gone -> VideoStatus.Info(playable = false, live = false)
+            Fetched.Error -> null
+        }
 
     private fun StreamInfoItem.toVideo() = Video(
         url = url,

@@ -333,6 +333,7 @@ class ConfigStore(context: Context) {
                                     put("id", v.id); put("t", v.title); put("c", v.channel)
                                     v.thumb?.let { put("th", it) }
                                     if (v.durationSeconds > 0) put("d", v.durationSeconds)
+                                    if (v.live) put("lv", true)
                                 })
                             }
                         })
@@ -568,7 +569,8 @@ class ConfigStore(context: Context) {
                                 ?: return@mapNotNull null
                             CustomVideo(
                                 vid, v.optString("t"), v.optString("c"),
-                                v.optString("th").ifEmpty { null }, v.optLong("d")
+                                v.optString("th").ifEmpty { null }, v.optLong("d"),
+                                v.optBoolean("lv")
                             )
                         }
                     } ?: emptyList()

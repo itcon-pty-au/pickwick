@@ -479,16 +479,19 @@ internal fun VideoTile(
     // opens the action menu.
     var focused by remember { mutableStateOf(false) }
     val focusMod = focusRequester?.let { Modifier.focusRequester(it) } ?: Modifier
+    // An offline tile stays focusable (the D-pad must be able to pass over it)
+    // but does nothing: no play, no menu.
+    val offline = item.video.offline
     val cardModifier = if (onOpenMenu != null) {
         focusMod
             .tvFocusHighlight { focused = it }
-            .dpadLongPress { onOpenMenu(item) }
+            .dpadLongPress { if (!offline) onOpenMenu(item) }
             .combinedClickable(
-                onClick = { onPlay(item) },
-                onLongClick = { onOpenMenu(item) }
+                onClick = { if (!offline) onPlay(item) },
+                onLongClick = { if (!offline) onOpenMenu(item) }
             )
     } else {
-        focusMod.tvFocusHighlight { focused = it }.clickable { onPlay(item) }
+        focusMod.tvFocusHighlight { focused = it }.clickable { if (!offline) onPlay(item) }
     }
     // Watched videos stay browsable (kids rewatch) but recede: dimmed
     // unless focused, plus their full red bar below.
@@ -496,7 +499,7 @@ internal fun VideoTile(
     Card(
         shape = androidx.compose.ui.graphics.RectangleShape,
         modifier = cardModifier.graphicsLayer {
-            alpha = if (finished && !focused) 0.5f else 1f
+            alpha = if (offline) 0.4f else if (finished && !focused) 0.5f else 1f
         }
     ) {
         Column {
@@ -559,6 +562,21 @@ internal fun VideoTile(
                             modifier = Modifier.align(Alignment.TopEnd).padding(4.dp)
                         )
                     }
+                }
+                if (item.video.live || offline) {
+                    Text(
+                        if (offline) "Offline" else "LIVE",
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(4.dp)
+                            .background(
+                                if (offline) Color(0xCC000000) else Color(0xFFD32F2F),
+                                androidx.compose.foundation.shape.RoundedCornerShape(3.dp)
+                            )
+                            .padding(horizontal = 5.dp, vertical = 1.dp)
+                    )
                 }
                 // YouTube-style watched-progress bar.
                 item.progress?.let { fraction -> WatchedProgressBar(fraction) }

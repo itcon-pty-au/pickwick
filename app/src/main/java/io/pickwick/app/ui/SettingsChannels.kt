@@ -85,10 +85,15 @@ internal fun ChannelsSection(
         // The extractor takes a few seconds; the dialog is up straight away and
         // its buttons wake when the title and thumbnail have arrived.
         var lookup by remember(videoId) { mutableStateOf<CustomVideo?>(null) }
-        var lookupFailed by remember(videoId) { mutableStateOf(false) }
+        var lookupError by remember(videoId) { mutableStateOf<String?>(null) }
         LaunchedEffect(videoId) {
-            lookup = yt.videoDetails(videoId)
-            lookupFailed = lookup == null
+            when (val r = yt.lookupVideo(videoId)) {
+                is YouTubeRepository.VideoLookup.Found -> lookup = r.video
+                YouTubeRepository.VideoLookup.Unplayable ->
+                    lookupError = "This video can't be played in the app."
+                YouTubeRepository.VideoLookup.Failed ->
+                    lookupError = "Couldn't check that video. Try again."
+            }
         }
         val video = lookup
         AlertDialog(
@@ -99,13 +104,13 @@ internal fun ChannelsSection(
                     Text(
                         when {
                             video != null -> video.title.ifBlank { video.id }
-                            lookupFailed -> "Couldn't look that video up."
+                            lookupError != null -> lookupError!!
                             else -> "Looking up the video…"
                         },
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = if (lookupFailed) MaterialTheme.colorScheme.error
+                        color = if (lookupError != null) MaterialTheme.colorScheme.error
                         else MaterialTheme.colorScheme.onSurface
                     )
                     Text(
@@ -343,6 +348,10 @@ internal fun ChannelsSection(
             }
             // Per-channel AI instructions; dimmed until one exists. Emoji over
             // a vector icon, matching the app's other glyph affordances.
+            // Bright = AI is checking this source; dim = it isn't. A YouTube playlist
+            // has no switch, so for it bright means it has instructions.
+            val aiActive = if (entry.kind == SourceKind.PLAYLIST) !entry.aiNote.isNullOrBlank()
+                else entry.aiCheck
             IconButton(
                 modifier = Modifier.tvFocusHighlight(),
                 onClick = { noteEntry = entry }
@@ -351,7 +360,7 @@ internal fun ChannelsSection(
                     "📝",
                     // alpha, not text color: emoji glyphs ignore the latter.
                     modifier = Modifier
-                        .alpha(if (entry.aiNote.isNullOrBlank() && entry.aiCheck) 0.35f else 1f)
+                        .alpha(if (aiActive) 1f else 0.35f)
                         .semantics {
                             contentDescription = "AI instructions for ${displayName(entry)}"
                         }
