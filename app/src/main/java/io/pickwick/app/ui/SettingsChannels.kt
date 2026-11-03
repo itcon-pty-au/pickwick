@@ -189,9 +189,9 @@ internal fun ChannelsSection(
                         add(
                             WhitelistEntry(
                                 id = id, url = "pickwick://custom/$id", label = newName.trim(),
-                                kind = SourceKind.CUSTOM, customVideos = listOf(video),
-                                // Hand-picked: skips the AI until the parent switches it on.
-                                aiCheck = false
+                                // AI check stays on (the default): a picked video is reviewed
+                                // when played, like any other, if screening is enabled.
+                                kind = SourceKind.CUSTOM, customVideos = listOf(video)
                             )
                         )
                         pendingVideoId = null
