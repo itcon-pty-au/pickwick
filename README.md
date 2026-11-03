@@ -114,8 +114,9 @@ catching up later with any device that was asleep.
   screen. Each device can be **dedicated to one kid** (their phone) or stay
   shared (the TV) — shared devices re-ask per sitting, never between episodes.
   Watch history, saved lists, NEW badges and stats are all per kid.
-- **Content Sources > YouTube** — search YouTube by name and tap Add; or paste any
-  channel, playlist or **single-video** link. Pick from the built-in **suggested channels directory**
+- **Content Sources > YouTube** — search YouTube by name and tap Add, with chips for
+  **Channels**, **Playlists** and **Videos** (paged with Back/Next; a video you add
+  goes into a custom playlist); or paste any channel, playlist or **single-video** link. Pick from the built-in **suggested channels directory**
   (community-curated, multilingual), import a whitelist from a file, and
   **export/share** your own list back out (save to file or share sheet) — or
   **submit it to the directory** so other families can find it. With multiple kids, one shared list carries
