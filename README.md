@@ -56,13 +56,18 @@ with no ads.
 - **🚩 Report a video** — hold OK on a tile and choose *Report this video*: it
   vanishes for every kid on that device at once and waits under *Waiting for
   your OK* until a parent allows or blocks it (works with AI screening off)
+- **📡 Live** — on the TV home, streams a parent has added that are on air
+  right now get their own row, under Podcasts; press OK to watch. The row only
+  appears while something is live, and the same video wears a red **LIVE**
+  badge in its playlist (then dims and reads **Offline** when it stops)
 - **Unwatched first** — a channel opens on what they haven't seen; everything
   already watched moves behind a **Watched** tile at the end, so a favourite
   is still one tap away without cluttering the row
 - **Keep watching** — resume where they left off, on any of the family's devices
 - **🔎 Search** — find videos by name, but only *inside* the allowed channels: it
   searches an on-device index of the whitelist, so a search can never surface
-  anything a parent didn't approve
+  anything a parent didn't approve. Matching channels, playlists and podcast
+  shows appear as chips above the videos
 - **📚 Up next** — hold any poster (long-press / hold OK) for one menu: add to
   the queue, save to Favorites or Watch later, mark it watched, or request an
   offline copy; queued videos play in order and clear themselves only when
@@ -110,7 +115,7 @@ catching up later with any device that was asleep.
   shared (the TV) — shared devices re-ask per sitting, never between episodes.
   Watch history, saved lists, NEW badges and stats are all per kid.
 - **Content Sources > YouTube** — search YouTube by name and tap Add; or paste any
-  channel/playlist link. Pick from the built-in **suggested channels directory**
+  channel, playlist or **single-video** link. Pick from the built-in **suggested channels directory**
   (community-curated, multilingual), import a whitelist from a file, and
   **export/share** your own list back out (save to file or share sheet) — or
   **submit it to the directory** so other families can find it. With multiple kids, one shared list carries
@@ -173,11 +178,25 @@ catching up later with any device that was asleep.
   everyone and hold picks kids. Watch history is never sent, and each video is
   screened once per rules version, so the catalog isn't re-screened (or
   re-billed) on every launch. A connection test is built in.
-- **Per-channel AI instructions** — the 📝 button on any channel opens a note
-  the AI applies to that channel alone, on top of the family rules and winning
-  where they clash: *"only the engineering builds — no prank or stunt videos"*,
-  *"mild cartoon slapstick is fine here"*. Editing a note re-checks just that
-  channel's videos; anything already blocked stays blocked.
+- **Custom playlists and live streams** — paste a single video's link (watch,
+  youtu.be, shorts or live) and add it to a **custom playlist** you create; a
+  single video can only go into a playlist you make, never into a channel.
+  Each playlist is one item in your list (same screen-time chip and per-kid
+  switches, delete it as a whole) with its own row on the TV, and opens to
+  remove single videos. The link is checked first: a video that can't be
+  played in the app is refused, and a live one is remembered as live. Live
+  items are re-checked when the app opens (at most every 10 minutes). Under
+  *Playback*, **Play the next video automatically** is off by default for these
+  playlists. Live streams play over HLS in the normal player.
+- **Per-channel AI instructions** — the 📝 button on any channel or custom
+  playlist opens a note the AI applies to it alone, on top of the family rules
+  and winning where they clash: *"only the engineering builds — no prank or
+  stunt videos"*, *"mild cartoon slapstick is fine here"*. Editing a note
+  re-checks just that source's videos; anything already blocked stays blocked.
+  A **Check with AI** switch (channels and custom playlists) turns screening
+  off for that source: its videos skip the AI and show up as if you had
+  allowed them (the icon is bright while AI checks it). A custom playlist
+  starts with the switch off, since you picked its videos by hand.
 - **Offline downloads** — approve (or decline) the kid's requests, pick download
   quality, watch progress, cancel or delete. With screening on, each request is
   deep-checked first and reaches your approval list only if it passes. Files
@@ -494,3 +513,5 @@ persists across retries and app restarts.
 - [x] RSS podcasts, outside screen time, mixable with videos in Up next
 - [x] Fire TV / Fire OS 6 support (Android 7.1+), with memory tuned for small heaps
 - [x] In-player quality picker; parents choose which SponsorBlock kinds to skip
+- [x] Kid reports, custom playlists from single videos, per-source AI switch
+- [x] Live streams: LIVE badge, Offline state and a Live row on the TV
