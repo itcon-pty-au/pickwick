@@ -102,8 +102,8 @@ If a kid has their own phone or tablet, install Pickwick on it the same way.
 Everything from here is done on the phone, in **Pickwick → ⚙ →** (it asks
 for your fingerprint, or a parent PIN you set on first use).
 
-Settings opens on a short list of six pages — *Kids*, *Content Sources*,
-*Content screening*, *Devices*, *Playback*, *Backup & app*. Tap one to open it,
+Settings opens on a short list of seven pages — *Kids*, *Content Sources*,
+*Content screening*, *Blocked & reported*, *Devices*, *Playback*, *Backup & app*. Tap one to open it,
 **‹ Back** to return. Inline changes save automatically and are sent to the TV.
 Connection, catalog and content-group dialogs have their own Save action.
 
@@ -151,15 +151,19 @@ Save button for the settings page.
    provider, paste an API key, write your house rules in plain words. New
    videos are checked per kid's age before kids can see them, and the first
    time a video is pressed it gets a **deep check** of its description, tags
-   and transcript before it plays. Anything the AI is unsure about waits for
-   your OK under *Waiting for your OK*; anything it blocks is listed under
-   *Blocked videos*, where Allow overrules it.
+   and transcript before it plays. On the **Blocked & reported** page, anything
+   the AI is unsure about waits under *Waiting for your OK*; anything it blocks
+   is listed under *Blocked by AI*, where Allow overrules it.
 
    A kid can also report a video (hold OK on a tile). It is hidden for every kid
    on that device and lands in *Waiting for your OK*, even with AI screening
    off. Tap **Allow** to bring it back for everyone, or hold Allow/Block to
    choose which kids (needs two or more kid profiles). The YouTube icon on each
    card opens the video so you can watch it before deciding.
+
+   Videos you block are listed under *Blocked by you*. **Unblock** removes your
+   block; if the AI or a kid flagged the video, it returns to *Waiting for your
+   OK* rather than straight to the kids.
 
    **When the pre-play check is incomplete** defaults to **Allow playback**:
    the AI uses whatever information is available, and failures allow that attempt.

@@ -64,6 +64,16 @@ fun formatClock(totalSeconds: Long): String {
 val SponsorSegmentGreen = Color(0xFF00C853)
 
 /**
+ * What has the remote's focus on TV: white with dark text. Solid fills are how
+ * the big streaming apps mark focus, and they read from across a room.
+ */
+val TvFocusFill = Color.White
+val TvFocusInk = Color(0xFF0F0F0F)
+
+/** The player's screen-time chip once a warning has fired: noticed, not alarming. */
+val PlayerTimeLowAmber = Color(0xFFFFB74D)
+
+/**
  * Bonus minutes on the screen-time bar ([TodayTimeBar]). A warm orange next
  * to the brand teal: a complementary pair, so the "extra" reads as extra
  * without looking like an alarm — the red is spoken for by watched progress.

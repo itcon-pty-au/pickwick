@@ -15,12 +15,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -222,7 +219,6 @@ internal fun KidPage(
                     )
                     siblings.forEach { sibling ->
                         TextButton(
-                            modifier = Modifier.tvFocusHighlight(),
                             // Rules only: a sibling's timeout is theirs.
                             onClick = { limits = sibling.limits.copy(pausedUntilMillis = null) }
                         ) { Text(sibling.name) }
@@ -247,7 +243,6 @@ internal fun KidPage(
 
             Spacer(Modifier.height(32.dp))
             OutlinedButton(
-                modifier = Modifier.tvFocusHighlight(),
                 onClick = { confirmRemove = true }
             ) { Text("Remove ${built.name}") }
         }

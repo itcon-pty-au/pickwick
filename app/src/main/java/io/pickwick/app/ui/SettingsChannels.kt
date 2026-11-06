@@ -384,7 +384,6 @@ internal fun ChannelsSection(
             val aiActive = if (entry.kind == SourceKind.PLAYLIST) !entry.aiNote.isNullOrBlank()
                 else entry.aiCheck
             IconButton(
-                modifier = Modifier.tvFocusHighlight(),
                 onClick = { noteEntry = entry }
             ) {
                 Text(
@@ -398,7 +397,6 @@ internal fun ChannelsSection(
                 )
             }
             IconButton(
-                modifier = Modifier.tvFocusHighlight(),
                 onClick = { pendingDelete = entry }
             ) {
                 Icon(
@@ -533,7 +531,6 @@ internal fun ChannelsSection(
         )
         Spacer(Modifier.width(4.dp))
         IconButton(
-            modifier = Modifier.tvFocusHighlight(),
             enabled = !searching && query.isNotBlank(),
             onClick = { runSearch() }
         ) {
@@ -549,7 +546,6 @@ internal fun ChannelsSection(
                 selected = kind == k,
                 onClick = { pick(k) },
                 label = { Text(k.label) },
-                modifier = Modifier.tvFocusHighlight()
             )
         }
     }
@@ -718,7 +714,6 @@ internal fun ChannelsSection(
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
             ) {
                 IconButton(
-                    modifier = Modifier.tvFocusHighlight(),
                     enabled = idx > 0 && !searching,
                     onClick = { turn(-1) }
                 ) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Previous results") }
@@ -728,7 +723,6 @@ internal fun ChannelsSection(
                     modifier = Modifier.padding(horizontal = 16.dp)
                 )
                 IconButton(
-                    modifier = Modifier.tvFocusHighlight(),
                     enabled = hasNext && !searching,
                     onClick = { turn(1) }
                 ) { Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Next results") }

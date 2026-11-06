@@ -1,23 +1,33 @@
 package io.pickwick.app.ui
 
-import androidx.compose.foundation.border
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.material3.CardColors
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 
 /**
- * Focused tiles get a sharp high-contrast ring. [onFocusChange] lets tiles
- * react (e.g. marquee). No scaling or elevation shadow: both make neighboring
- * rows visibly move on TV, while this ring is a cheap fixed-geometry draw pass.
+ * Focus on TV: nothing here outlines anything, because rings looked cheap on
+ * artwork. Tiles lift ([onTileFocus], [tvFocusLift]), buttons fill white (TvSquareButtons.kt),
+ * and rows and other plain controls get a soft band ([tvFocusHighlight]).
  */
+
+/** The band behind a focused row. Translucent so its own text colors still work. */
 @Composable
 internal fun Modifier.tvFocusHighlight(onFocusChange: ((Boolean) -> Unit)? = null): Modifier {
     var focused by remember { mutableStateOf(false) }
@@ -27,17 +37,62 @@ internal fun Modifier.tvFocusHighlight(onFocusChange: ((Boolean) -> Unit)? = nul
             focused = now
             onFocusChange?.invoke(now)
         }
-        .border(
-            width = if (focused) 5.dp else 0.dp,
-            color = if (focused) Color.White else Color.Transparent,
-            shape = RectangleShape
-        )
-        .border(
-            width = if (focused) 2.dp else 0.dp,
-            color = if (focused) PickwickDarkColors.primary else Color.Transparent,
-            shape = RectangleShape
-        )
+        .drawBehind { if (focused) drawRect(TvFocusBand) }
 }
+
+private val TvFocusBand = Color.White.copy(alpha = 0.2f)
+
+/**
+ * Reports a tile's focus for [tvFocusLift] and its caption, and draws it above
+ * its neighbors so the shadow isn't painted over. Goes before the clickable.
+ */
+@Composable
+internal fun Modifier.onTileFocus(onFocusChange: (Boolean) -> Unit): Modifier {
+    var focused by remember { mutableStateOf(false) }
+    return this
+        .onFocusChanged {
+            val now = it.isFocused || it.hasFocus
+            focused = now
+            onFocusChange(now)
+        }
+        .zIndex(if (focused) 1f else 0f)
+}
+
+/**
+ * A focused tile rises toward the viewer. Scale and shadow live in the graphics
+ * layer: they never touch layout, so neighbors stay put, and the animation costs
+ * a layer update per frame rather than a recomposition, which a Chromecast feels.
+ * The size is what fits the 8dp list padding, so the widest tile isn't clipped.
+ *
+ * Goes after the clickable, always. Scroll-into-view measures the focus target
+ * through any layers around it, so a lift outside it reads as a taller tile, and
+ * the page scrolls a few pixels to fit it and back again on every D-pad press.
+ */
+@Composable
+internal fun Modifier.tvFocusLift(focused: Boolean): Modifier {
+    val lift by animateFloatAsState(if (focused) 1f else 0f, tween(120), label = "tvFocusLift")
+    return graphicsLayer {
+        val scale = 1f + 0.05f * lift
+        scaleX = scale
+        scaleY = scale
+        shadowElevation = 16.dp.toPx() * lift
+    }
+}
+
+/** A tile's caption bar flips with focus: the lift alone is faint on dark artwork. */
+@Composable
+internal fun tvTileColors(focused: Boolean): CardColors =
+    if (focused) CardDefaults.cardColors(containerColor = TvFocusFill, contentColor = TvFocusInk)
+    else CardDefaults.cardColors()
+
+@Composable
+internal fun tvTileSubtitleColor(focused: Boolean): Color =
+    if (focused) TvFocusInk.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant
+
+/** A rounded ripple inside the square focus band would bring the odd corners back. */
+@Composable
+internal fun Modifier.clipOnPhone(shape: Shape): Modifier =
+    if (isTvDevice()) this else clip(shape)
 
 /**
  * How often a *held* D-pad key may advance focus in a throttled list, per step.
@@ -60,10 +115,10 @@ internal fun CompactButton(
     enabled: Boolean = true,
     content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit
 ) {
-    androidx.compose.material3.TextButton(
+    TextButton(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier.tvFocusHighlight(),
+        modifier = modifier,
         contentPadding = androidx.compose.foundation.layout.PaddingValues(
             horizontal = 10.dp, vertical = 2.dp
         ),

@@ -46,14 +46,16 @@ private fun KeepWatchingRow(
             var focused by remember { mutableStateOf(false) }
             Card(
                 shape = androidx.compose.ui.graphics.RectangleShape,
+                colors = tvTileColors(focused),
                 modifier = Modifier
-                    .tvFocusHighlight { focused = it }
+                    .onTileFocus { focused = it }
                     // Touch long-press and remote hold-OK both dismiss the tile.
                     .dpadLongPress { onDismiss(item) }
                     .combinedClickable(
                         onClick = { onPlay(item) },
                         onLongClick = { onDismiss(item) }
                     )
+                    .tvFocusLift(focused)
                     .width(150.dp)
             ) {
                 Column {
@@ -210,9 +212,11 @@ internal fun ArtworkTile(
     var focused by remember { mutableStateOf(false) }
     Card(
         shape = androidx.compose.ui.graphics.RectangleShape,
+        colors = tvTileColors(focused),
         modifier = modifier
-            .tvFocusHighlight { focused = it }
+            .onTileFocus { focused = it }
             .clickable { onClick() }
+            .tvFocusLift(focused)
     ) {
         Column {
             // Full-bleed cover, video-tile style (1:1 — avatars are square).
@@ -292,7 +296,6 @@ private fun EmptyHome(onOpenSettings: () -> Unit) {
             onClick = onOpenSettings,
             modifier = Modifier
                 .focusRequester(focus)
-                .tvFocusHighlight()
         ) {
             Text("Parent settings")
         }
@@ -359,7 +362,7 @@ private fun HomeHeader(
                     .let { m ->
                         if (onSwitchProfile != null) {
                             m.tvFocusHighlight()
-                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(20.dp))
+                                .clipOnPhone(androidx.compose.foundation.shape.RoundedCornerShape(20.dp))
                                 .clickable { onSwitchProfile() }
                         } else m
                     }

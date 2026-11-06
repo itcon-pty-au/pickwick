@@ -19,6 +19,9 @@ import kotlinx.coroutines.withContext
 
 // --- AI screening -------------------------------------------------------------
 
+/** Cards added per "Show more" in the parent's own blocks; also when its search box appears. */
+private const val PARENT_BLOCK_PAGE = 30
+
 private data class AiPreset(val name: String, val baseUrl: String, val modelHint: String)
 
 private val AI_PRESETS = listOf(
@@ -78,7 +81,7 @@ internal fun AiScreeningSection(
         "New videos on allowed channels are checked against your rules by an AI " +
             "before the kid can see them. Before playback, a deeper check also reads " +
             "the description, tags and English subtitles. Watch history is never sent. " +
-            "Videos needing a decision appear under Waiting for your OK.",
+            "Videos needing a decision appear under Blocked & reported.",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )
@@ -128,7 +131,6 @@ internal fun AiScreeningSection(
     ) {
         AI_PRESETS.forEach { preset ->
             FilterChip(
-                modifier = Modifier.tvFocusHighlight(),
                 selected = ai.baseUrl == preset.baseUrl,
                 onClick = { onChanged(ai.copy(baseUrl = preset.baseUrl, model = preset.modelHint)) },
                 label = { Text(preset.name) }
@@ -298,12 +300,41 @@ internal fun AiReviewSection(
     pairingStore: PairingStore,
     /** Already ruled on (parent-blocked or allowed) — dropped from the queue. */
     resolved: Set<String>,
+    /** The parent's own rulings: family-wide, and video → the kids it's blocked for. */
+    blockedForAll: Set<String>,
+    blockedForKids: Map<String, Set<String>>,
     /** Second arg: null = everyone (tap); a kid set = long-press per-kid ruling. */
     onAllow: (String, Set<String>?) -> Unit,
-    onBlock: (String, Set<String>?) -> Unit
+    onBlock: (String, Set<String>?) -> Unit,
+    onUnblock: (String) -> Unit
 ) {
     /** (videoId, allow?) awaiting the long-press "which kids?" answer. */
     var perKid by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+    /** Asked first: nothing on this page can re-block a video that no one flagged. */
+    var confirmUnblock by remember { mutableStateOf<io.pickwick.app.data.ParentBlocks.Row?>(null) }
+
+    confirmUnblock?.let { row ->
+        AlertDialog(
+            onDismissRequest = { confirmUnblock = null },
+            title = { Text("Unblock this video?") },
+            text = {
+                Text(
+                    "\"${row.title.ifBlank { row.videoId }}\" can appear on your kids' devices " +
+                        "again. If the AI or a kid flagged it, it goes back to Waiting for your OK instead."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { onUnblock(row.videoId); confirmUnblock = null }
+                ) { Text("Unblock") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { confirmUnblock = null }
+                ) { Text("Cancel") }
+            }
+        )
+    }
 
     perKid?.let { (videoId, isAllow) ->
         WhoForDialog(
@@ -327,11 +358,18 @@ internal fun AiReviewSection(
     var remoteByDevice by remember {
         mutableStateOf<Map<String, List<io.pickwick.app.data.Stats.AiFlagged>>>(emptyMap())
     }
+    /** Details kid devices still hold for videos the parent blocked. */
+    var remoteBlocked by remember { mutableStateOf<List<io.pickwick.app.data.Stats.AiFlagged>>(emptyList()) }
+    /** Details this phone's own stores hold for videos the parent blocked. */
+    var localBlockDetails by remember {
+        mutableStateOf<Map<String, io.pickwick.app.data.ParentBlocks.Details>>(emptyMap())
+    }
     /** Cached-feed videos with no verdict yet — the queue is still growing by this much. */
     var stillScreening by remember { mutableIntStateOf(0) }
     // The poll loop outlives any single value of `resolved`; read the latest each
     // pass rather than restarting the (disk-reading) loop on every Allow/Block tap.
     val latestResolved by rememberUpdatedState(resolved)
+    val latestBlockedIds by rememberUpdatedState(blockedForAll + blockedForKids.keys)
 
     // Polled, not read once: screening runs in background batches, and a snapshot
     // taken when the screen opened showed the parent one batch and hid the rest
@@ -342,8 +380,9 @@ internal fun AiReviewSection(
             val snapshot = withContext(kotlinx.coroutines.Dispatchers.IO) {
                 val flaggedNow = store.flagged(ai.rulesVersion)
                 val videoCache = io.pickwick.app.data.VideoCache(context.applicationContext)
-                val pending = SourceCache(context.applicationContext).load()
+                val feed = SourceCache(context.applicationContext).load()
                     .flatMap { videoCache.load(it.id) }
+                val pending = feed
                     .mapNotNull { it.videoId }
                     .distinct()
                     // Parent-allowed videos are never sent for screening, so they'd
@@ -351,10 +390,25 @@ internal fun AiReviewSection(
                     .count {
                         it !in latestResolved && store.get(it)?.rulesVersion != ai.rulesVersion
                     }
-                flaggedNow to pending
+                val details = buildMap {
+                    feed.forEach { v ->
+                        val id = v.videoId ?: return@forEach
+                        if (id in latestBlockedIds) {
+                            put(id, io.pickwick.app.data.ParentBlocks.Details(v.title, v.channelName, v.thumbnailUrl))
+                        }
+                    }
+                    // Any rules version: the title is still right after a rules change.
+                    latestBlockedIds.forEach { id ->
+                        store.get(id)?.let {
+                            put(id, io.pickwick.app.data.ParentBlocks.Details(it.title, it.channel, it.thumb))
+                        }
+                    }
+                }
+                Triple(flaggedNow, pending, details)
             }
             all = snapshot.first
             stillScreening = snapshot.second
+            localBlockDetails = snapshot.third
             delay(4_000)
         }
     }
@@ -367,15 +421,16 @@ internal fun AiReviewSection(
         val statsCache = io.pickwick.app.data.StatsCache(context.applicationContext)
         var live = false
         while (true) {
-            remoteByDevice = withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val payloads = withContext(kotlinx.coroutines.Dispatchers.IO) {
                 pairingStore.paired().associate { device ->
                     val json = (if (live) LanClient.stats(device)
                         ?.also { statsCache.save(device.key, it) } else null)
                         ?: statsCache.load(device.key)?.second
-                    device.key to
-                        json?.let { io.pickwick.app.data.Stats.parse(it)?.aiFlagged }.orEmpty()
+                    device.key to json?.let { io.pickwick.app.data.Stats.parse(it) }
                 }
             }
+            remoteByDevice = payloads.mapValues { it.value?.aiFlagged.orEmpty() }
+            remoteBlocked = payloads.values.flatMap { it?.aiBlocked.orEmpty() }
             if (live) delay(15_000)
             live = true
         }
@@ -410,6 +465,91 @@ internal fun AiReviewSection(
     // ruled and hidden, listed only so a wrong call can be overruled.
     val review = flagged.filter { it.second.verdict == io.pickwick.app.data.AiScreener.Verdict.REVIEW }
     val blockedList = flagged.filter { it.second.verdict == io.pickwick.app.data.AiScreener.Verdict.BLOCK }
+
+    // Families reach hundreds of blocks, so this list starts collapsed and pages:
+    // this screen is a plain Column, and every card in it is composed up front.
+    var parentBlocksExpanded by remember { mutableStateOf(false) }
+    var parentBlockQuery by remember { mutableStateOf("") }
+    var parentBlocksShown by remember { mutableIntStateOf(PARENT_BLOCK_PAGE) }
+    val parentBlockCount = (blockedForAll + blockedForKids.keys).size
+    // Built only once opened, and from maps: this body re-runs on each poll.
+    val parentBlocks = remember(
+        parentBlocksExpanded, blockedForAll, blockedForKids, all, remoteByDevice, remoteBlocked, localBlockDetails
+    ) {
+        if (!parentBlocksExpanded) return@remember emptyList()
+        val local = all.toMap()
+        val remote = (remoteByDevice.values.flatten() + remoteBlocked)
+            .filter { it.title.isNotBlank() }
+            .associateBy { it.videoId }
+        io.pickwick.app.data.ParentBlocks.rows(blockedForAll, blockedForKids) { id ->
+            // The flagged lists come first: they already hold a video the moment it's
+            // blocked, before the slower polls above have picked up its details.
+            val l = local[id]
+            val r = remote[id]
+            when {
+                l != null -> io.pickwick.app.data.ParentBlocks.Details(l.title, l.channel, l.thumb)
+                r != null -> io.pickwick.app.data.ParentBlocks.Details(r.title, r.channel, r.thumbnailUrl)
+                else -> localBlockDetails[id]
+            }
+        }
+    }
+
+    @Composable
+    fun youTubeButton(videoId: String) {
+        // Watch it yourself before ruling on the AI's call.
+        CompactButton( onClick = {
+            runCatching {
+                context.startActivity(
+                    android.content.Intent(
+                        android.content.Intent.ACTION_VIEW,
+                        android.net.Uri.parse("https://www.youtube.com/watch?v=$videoId")
+                    )
+                )
+            }
+        }) {
+            androidx.compose.foundation.Image(
+                painter = androidx.compose.ui.res.painterResource(io.pickwick.app.R.drawable.ic_source_youtube),
+                contentDescription = "View in YouTube",
+                modifier = Modifier.size(28.dp)
+            )
+        }
+    }
+
+    @Composable
+    fun parentBlockCard(row: io.pickwick.app.data.ParentBlocks.Row) {
+        val who = if (row.kidIds.isEmpty()) "Blocked for everyone" else
+            "Blocked for " + profiles.filter { it.id in row.kidIds }.joinToString(", ") { it.name }
+        Card(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+            Column(Modifier.padding(12.dp)) {
+                Row(verticalAlignment = Alignment.Top) {
+                    AsyncImage(
+                        model = row.thumb,
+                        contentDescription = row.title,
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                        modifier = Modifier.size(width = 104.dp, height = 58.dp)
+                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(4.dp))
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(row.title.ifBlank { "Video ${row.videoId}" }, style = MaterialTheme.typography.bodyMedium)
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            listOfNotNull(row.channel.takeIf { it.isNotBlank() }, who).joinToString(" · "),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    youTubeButton(row.videoId)
+                    Spacer(Modifier.weight(1f))
+                    TextButton(
+                        onClick = { confirmUnblock = row }
+                    ) { Text("Unblock") }
+                }
+            }
+        }
+    }
 
     @Composable
     fun flaggedCard(videoId: String, e: ScreeningStore.Entry) {
@@ -466,23 +606,7 @@ internal fun AiReviewSection(
                     )
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    // Watch it yourself before ruling on the AI's call.
-                    CompactButton( onClick = {
-                        runCatching {
-                            context.startActivity(
-                                android.content.Intent(
-                                    android.content.Intent.ACTION_VIEW,
-                                    android.net.Uri.parse("https://www.youtube.com/watch?v=$videoId")
-                                )
-                            )
-                        }
-                    }) {
-                        androidx.compose.foundation.Image(
-                            painter = androidx.compose.ui.res.painterResource(io.pickwick.app.R.drawable.ic_source_youtube),
-                            contentDescription = "View in YouTube",
-                            modifier = Modifier.size(28.dp)
-                        )
-                    }
+                    youTubeButton(videoId)
                     Spacer(Modifier.weight(1f))
                     // Tap rules for everyone; with 2+ kids a long-press picks who —
                     // TextButton owns its click, so these are hand-rolled buttons.
@@ -494,7 +618,7 @@ internal fun AiReviewSection(
                             style = MaterialTheme.typography.labelLarge,
                             modifier = Modifier
                                 .tvFocusHighlight()
-                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
+                                .clipOnPhone(androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
                                 .dpadLongPress {
                                     if (profiles.size >= 2) perKid = videoId to isAllow
                                 }
@@ -529,7 +653,7 @@ internal fun AiReviewSection(
         }
     }
 
-    val screeningNote = if (stillScreening > 0) {
+    val screeningNote = if (ai.enabled && stillScreening > 0) {
         " $stillScreening more still being screened — they'll appear here as the AI finishes."
     } else ""
 
@@ -561,7 +685,56 @@ internal fun AiReviewSection(
         }
     }
 
-    SectionTitle("Blocked videos")
+    SectionTitle("Blocked by you")
+    if (parentBlockCount == 0) {
+        Text(
+            "Nothing blocked. Videos you block collect here so you can change your mind.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    } else {
+        Text(
+            if (parentBlocksExpanded) "▾ $parentBlockCount video(s) you blocked — hide list"
+            else "▸ $parentBlockCount video(s) you blocked — show",
+            color = MaterialTheme.colorScheme.primary,
+            style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier
+                .tvFocusHighlight()
+                .clipOnPhone(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                .combinedClickable(onClick = { parentBlocksExpanded = !parentBlocksExpanded })
+                .padding(horizontal = 4.dp, vertical = 8.dp)
+        )
+        if (parentBlocksExpanded) {
+            if (parentBlockCount > PARENT_BLOCK_PAGE) {
+                OutlinedTextField(
+                    value = parentBlockQuery,
+                    onValueChange = { parentBlockQuery = it; parentBlocksShown = PARENT_BLOCK_PAGE },
+                    label = { Text("Find by title, channel or video id") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().tvFocusHighlight()
+                )
+            }
+            val matches = io.pickwick.app.data.ParentBlocks.matching(parentBlocks, parentBlockQuery)
+            if (matches.isEmpty()) {
+                Text(
+                    "No blocked video matches that.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            matches.take(parentBlocksShown).forEach { parentBlockCard(it) }
+            if (matches.size > parentBlocksShown) {
+                TextButton(
+                    onClick = { parentBlocksShown += PARENT_BLOCK_PAGE }
+                ) { Text("Show more (${matches.size - parentBlocksShown} left)") }
+            }
+        }
+    }
+
+    // Nothing to explain to a family that doesn't use the AI.
+    if (!ai.enabled && blockedList.isEmpty()) return
+
+    SectionTitle("Blocked by AI")
     if (blockedList.isEmpty()) {
         Text(
             "Nothing blocked right now. Videos the AI blocks — at screening, or in " +
@@ -581,7 +754,7 @@ internal fun AiReviewSection(
             style = MaterialTheme.typography.labelLarge,
             modifier = Modifier
                 .tvFocusHighlight()
-                .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                .clipOnPhone(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
                 .combinedClickable(onClick = { blockedExpanded = !blockedExpanded })
                 .padding(horizontal = 4.dp, vertical = 8.dp)
         )

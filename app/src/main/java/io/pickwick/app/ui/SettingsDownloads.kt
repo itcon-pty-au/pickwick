@@ -69,7 +69,7 @@ internal fun DownloadsSection() {
                 selected = quality == h,
                 onClick = { quality = h; store.maxHeight = h },
                 label = { Text("${h}p") },
-                modifier = Modifier.padding(start = 6.dp).tvFocusHighlight()
+                modifier = Modifier.padding(start = 6.dp)
             )
         }
     }
@@ -271,12 +271,10 @@ internal fun LocalVideosSection(profiles: List<io.pickwick.app.data.Profile> = e
 
     Row(verticalAlignment = Alignment.CenterVertically) {
         Button(
-            modifier = Modifier.tvFocusHighlight(),
             onClick = { pickFolder.launch(null) }
         ) { Text("Add folder") }
         Spacer(Modifier.width(8.dp))
         OutlinedButton(
-            modifier = Modifier.tvFocusHighlight(),
             onClick = { pickVideos.launch(arrayOf("video/*")) }
         ) { Text("Add videos") }
         if (trees.isNotEmpty()) {

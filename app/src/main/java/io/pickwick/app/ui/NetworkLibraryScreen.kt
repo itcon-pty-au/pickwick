@@ -44,15 +44,15 @@ internal fun NetworkLibraryScreen(profileId: String?, vm: MainViewModel? = null,
             text = {
                 Column(Modifier.ignoreSelectUntilRelease(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     TextButton(onClick = { vm?.toggleQueue(item); menuFor = null },
-                        modifier = Modifier.fillMaxWidth().focusRequester(firstAction).tvFocusHighlight()) {
+                        modifier = Modifier.fillMaxWidth().focusRequester(firstAction)) {
                         Text(if (item.video.url in saved?.queued.orEmpty()) "Remove from Up next" else "Add to Up next")
                     }
                     TextButton(onClick = { vm?.toggleWatchlist(item); menuFor = null },
-                        modifier = Modifier.fillMaxWidth().tvFocusHighlight()) {
+                        modifier = Modifier.fillMaxWidth()) {
                         Text(if (item.video.url in saved?.watchlisted.orEmpty()) "Remove from Favorites" else "Add to Favorites")
                     }
                     TextButton(onClick = { vm?.toggleWatchLater(item); menuFor = null },
-                        modifier = Modifier.fillMaxWidth().tvFocusHighlight()) {
+                        modifier = Modifier.fillMaxWidth()) {
                         Text(if (item.video.url in saved?.watchLater.orEmpty()) "Remove from Watch later" else "Add to Watch later")
                     }
                 }
@@ -180,7 +180,7 @@ internal fun NetworkLibraryScreen(profileId: String?, vm: MainViewModel? = null,
                     modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleLarge.copy(
                         fontWeight = androidx.compose.ui.text.font.FontWeight.Bold))
                 IconButton(onClick = { forceRefresh = true; refresh++ }, enabled = !loading,
-                    modifier = Modifier.tvFocusHighlight()) { Icon(Icons.Default.Refresh, "Refresh") }
+                    modifier = Modifier) { Icon(Icons.Default.Refresh, "Refresh") }
             }
             if (loading || config == null) LinearProgressIndicator(Modifier.fillMaxWidth())
             if (readingDetails) Text("Reading video details: $detailsCompleted of $detailsTotal", style = MaterialTheme.typography.bodySmall)

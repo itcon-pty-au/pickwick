@@ -40,9 +40,11 @@ internal fun SpecialTile(
     source: SourceBadge? = null,
     onClick: () -> Unit
 ) {
+    var focused by remember { mutableStateOf(false) }
     Card(
         shape = androidx.compose.ui.graphics.RectangleShape,
-        modifier = modifier.tvFocusHighlight().clickable { onClick() }
+        colors = tvTileColors(focused),
+        modifier = modifier.onTileFocus { focused = it }.clickable { onClick() }.tvFocusLift(focused)
     ) {
         Column {
             // Full-bleed color block matching the channel-tile geometry.

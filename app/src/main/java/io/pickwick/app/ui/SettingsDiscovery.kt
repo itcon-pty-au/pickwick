@@ -82,7 +82,6 @@ internal fun AiDiscoverySection(
         )
         Spacer(Modifier.width(8.dp))
         Button(
-            modifier = Modifier.tvFocusHighlight(),
             enabled = !busy && query.isNotBlank(),
             onClick = {
                 scope.launch {
@@ -292,7 +291,7 @@ internal fun DirectorySection(
                         selectedLangs = if (code in selectedLangs) selectedLangs - code else selectedLangs + code
                     },
                     label = { Text(name.ifBlank { code }) },
-                    modifier = Modifier.padding(end = 6.dp).tvFocusHighlight()
+                    modifier = Modifier.padding(end = 6.dp)
                 )
             }
         }
@@ -305,7 +304,7 @@ internal fun DirectorySection(
                     selectedAges = if (a in selectedAges) selectedAges - a else selectedAges + a
                 },
                 label = { Text("ages " + a.replace("-", "–")) },
-                modifier = Modifier.padding(end = 6.dp).tvFocusHighlight()
+                modifier = Modifier.padding(end = 6.dp)
             )
         }
     }
@@ -317,7 +316,7 @@ internal fun DirectorySection(
                     selectedTopics = if (t in selectedTopics) selectedTopics - t else selectedTopics + t
                 },
                 label = { Text(t) },
-                modifier = Modifier.padding(end = 6.dp).tvFocusHighlight()
+                modifier = Modifier.padding(end = 6.dp)
             )
         }
     }

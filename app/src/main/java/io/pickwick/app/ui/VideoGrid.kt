@@ -132,15 +132,12 @@ internal fun QueueList(
                 // the D-pad landscape doesn't shift under the kid's focus.
                 IconButton(
                     onClick = { onMove(item, -1) },
-                    modifier = Modifier.tvFocusHighlight()
                 ) { Text("▲") }
                 IconButton(
                     onClick = { onMove(item, +1) },
-                    modifier = Modifier.tvFocusHighlight()
                 ) { Text("▼") }
                 IconButton(
                     onClick = { onRemove(item) },
-                    modifier = Modifier.tvFocusHighlight()
                 ) { Text("✕") }
             }
         }
@@ -225,13 +222,11 @@ internal fun VideoGrid(
             confirmButton = {
                 TextButton(
                     onClick = { onReport?.invoke(item); reportFor = null },
-                    modifier = Modifier.tvFocusHighlight()
                 ) { Text("Report") }
             },
             dismissButton = {
                 TextButton(
                     onClick = { reportFor = null },
-                    modifier = Modifier.tvFocusHighlight()
                 ) { Text("Cancel") }
             }
         )
@@ -260,7 +255,6 @@ internal fun VideoGrid(
                         modifier = Modifier
                             .fillMaxWidth()
                             .focusRequester(firstAction)
-                            .tvFocusHighlight()
                     ) {
                         Text(
                             if (item.video.url in queued) "➖  Remove from Up next"
@@ -269,7 +263,7 @@ internal fun VideoGrid(
                     }
                     TextButton(
                         onClick = { onToggleWatchlist?.invoke(item); menuFor = null },
-                        modifier = Modifier.fillMaxWidth().tvFocusHighlight()
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
                             if (item.video.url in watchlisted) "💔  Remove from Favorites"
@@ -278,7 +272,7 @@ internal fun VideoGrid(
                     }
                     TextButton(
                         onClick = { onToggleWatchLater?.invoke(item); menuFor = null },
-                        modifier = Modifier.fillMaxWidth().tvFocusHighlight()
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
                             if (item.video.url in watchLater) "➖  Remove from Watch later"
@@ -293,7 +287,7 @@ internal fun VideoGrid(
                         val seen = (item.progress ?: 0f) >= 0.98f
                         TextButton(
                             onClick = { onToggleWatched(item); menuFor = null },
-                            modifier = Modifier.fillMaxWidth().tvFocusHighlight()
+                            modifier = Modifier.fillMaxWidth()
                         ) {
                             val verb = if (podcast) "listened" else "watched"
                             Text(if (seen) "↩️  Move back to not $verb" else "✔️  Mark as $verb")
@@ -306,7 +300,7 @@ internal fun VideoGrid(
                     ) {
                         TextButton(
                             onClick = { reportFor = item; menuFor = null },
-                            modifier = Modifier.fillMaxWidth().tvFocusHighlight()
+                            modifier = Modifier.fillMaxWidth()
                         ) { Text("🚩  Report this video") }
                     }
                     if (onToggleDownload != null && !io.pickwick.app.data.SmbPaths.isNetwork(item.video.url) && !podcast) {
@@ -317,7 +311,7 @@ internal fun VideoGrid(
                             // in settings — the row goes inert, not hidden, so
                             // the state is still readable here.
                             enabled = url !in downloaded,
-                            modifier = Modifier.fillMaxWidth().tvFocusHighlight()
+                            modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
                                 when {
@@ -426,9 +420,11 @@ internal fun WatchedShelfTile(
     var focused by remember { mutableStateOf(false) }
     Card(
         shape = androidx.compose.ui.graphics.RectangleShape,
+        colors = tvTileColors(focused),
         modifier = (focusRequester?.let { Modifier.focusRequester(it) } ?: Modifier)
-            .tvFocusHighlight { focused = it }
+            .onTileFocus { focused = it }
             .clickable { onOpen() }
+            .tvFocusLift(focused)
     ) {
         Column {
             Box(
@@ -456,7 +452,7 @@ internal fun WatchedShelfTile(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = tvTileSubtitleColor(focused)
                 )
             }
         }
@@ -484,21 +480,22 @@ internal fun VideoTile(
     val offline = item.video.offline
     val cardModifier = if (onOpenMenu != null) {
         focusMod
-            .tvFocusHighlight { focused = it }
+            .onTileFocus { focused = it }
             .dpadLongPress { if (!offline) onOpenMenu(item) }
             .combinedClickable(
                 onClick = { if (!offline) onPlay(item) },
                 onLongClick = { if (!offline) onOpenMenu(item) }
             )
     } else {
-        focusMod.tvFocusHighlight { focused = it }.clickable { if (!offline) onPlay(item) }
+        focusMod.onTileFocus { focused = it }.clickable { if (!offline) onPlay(item) }
     }
     // Watched videos stay browsable (kids rewatch) but recede: dimmed
     // unless focused, plus their full red bar below.
     val finished = (item.progress ?: 0f) >= 0.98f
     Card(
         shape = androidx.compose.ui.graphics.RectangleShape,
-        modifier = cardModifier.graphicsLayer {
+        colors = tvTileColors(focused),
+        modifier = cardModifier.tvFocusLift(focused).graphicsLayer {
             alpha = if (offline) 0.4f else if (finished && !focused) 0.5f else 1f
         }
     ) {
@@ -586,7 +583,7 @@ internal fun VideoTile(
                 Text(item.video.channelName, maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    color = tvTileSubtitleColor(focused))
             }
         }
     }

@@ -184,7 +184,6 @@ internal fun PhoneDevicesSection(
             }
             val assigned = deviceProfiles[deviceToken]
             FilterChip(
-                modifier = Modifier.tvFocusHighlight(),
                 selected = assigned == null,
                 onClick = { onAssign(deviceToken, null) },
                 label = { Text("Shared") }
@@ -192,7 +191,6 @@ internal fun PhoneDevicesSection(
             profiles.forEach { p ->
                 Spacer(Modifier.width(4.dp))
                 FilterChip(
-                    modifier = Modifier.tvFocusHighlight(),
                     selected = assigned == p.id,
                     onClick = { onAssign(deviceToken, p.id) },
                     label = { Text(p.name) }
@@ -346,7 +344,7 @@ internal fun PhoneDevicesSection(
                     )
                     IconButton(
                         onClick = { renaming = device },
-                        modifier = Modifier.size(28.dp).tvFocusHighlight()
+                        modifier = Modifier.size(28.dp)
                     ) {
                         Icon(
                             Icons.Filled.Edit,
@@ -376,7 +374,7 @@ internal fun PhoneDevicesSection(
                     modifier = Modifier.horizontalScroll(rememberScrollState())
                 ) {
                     if (sync is DeviceSync.Reachable && sync.hash != localHash) {
-                        Button(modifier = Modifier.tvFocusHighlight(), onClick = {
+                        Button(modifier = Modifier, onClick = {
                             // Push = "make the device match this screen": saves the
                             // form (unsaved edits included), then overwrites the device.
                             scope.launch {
@@ -469,7 +467,7 @@ internal fun PhoneDevicesSection(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.primary
                         )
-                        Button(modifier = Modifier.tvFocusHighlight(), onClick = {
+                        Button(modifier = Modifier, onClick = {
                             scope.launch { LanClient.approveRequest(device, reqToken); checkAll() }
                         }) { Text("Approve") }
                         Spacer(Modifier.width(4.dp))
@@ -534,7 +532,6 @@ internal fun UpdateSection(tv: Boolean = false, onUpdateFound: () -> Unit = {}) 
             // the D-pad can't reach. The phone keeps it: that form is long and
             // a parent may want to force a check without reopening settings.
             if (!tv) TextButton(
-                modifier = Modifier.tvFocusHighlight(),
                 enabled = !busy,
                 onClick = {
                     scope.launch {
@@ -567,22 +564,10 @@ internal fun UpdateSection(tv: Boolean = false, onUpdateFound: () -> Unit = {}) 
                     delay(100)
                 }
             }
-            // The shared 1.04 focus scale vanishes against a solid fill, and this
-            // button arrives already focused — with nothing else on screen to
-            // move focus between, a parent can't tell it's live. A ring makes the
-            // selection legible from the couch; the hint line below names the key.
-            var focused by remember { mutableStateOf(false) }
             // Same red as the settings-gear dot, so the nudge that got the
             // parent here and the button that resolves it read as one thing.
             Button(
-                modifier = Modifier
-                    .focusRequester(installFocus)
-                    .tvFocusHighlight { focused = it }
-                    .then(
-                        if (tv && focused) Modifier.border(3.dp, Color.White, RectangleShape)
-                        else Modifier
-                    ),
-                shape = if (tv) RectangleShape else ButtonDefaults.shape,
+                modifier = Modifier.focusRequester(installFocus),
                 enabled = !busy,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = UpdateDot,

@@ -111,7 +111,7 @@ fun StatsScreen(
                         )
                     }
                 }
-                TextButton(modifier = Modifier.tvFocusHighlight(), onClick = onBack) { Text("Close") }
+                TextButton(modifier = Modifier, onClick = onBack) { Text("Close") }
             }
 
             val data = payload
@@ -167,7 +167,6 @@ fun StatsScreen(
                         var sending by remember { mutableStateOf(false) }
                         FilledTonalButton(
                             enabled = !sending,
-                            modifier = Modifier.tvFocusHighlight(),
                             onClick = {
                                 sending = true
                                 scope.launch {
@@ -241,7 +240,7 @@ fun StatsScreen(
                 )
                 if (held > 0) {
                     Text(
-                        "Rule on them under \"Waiting for your OK\" (or \"Blocked videos\") in settings.",
+                        "Rule on them under \"Blocked & reported\" in settings.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary
                     )
