@@ -16,6 +16,9 @@ import kotlinx.coroutines.withContext
  *  not the thousands a broad query can match against a full back catalog. */
 private const val SEARCH_SCREEN_BATCH = 50
 
+/** Episodes per show whose art is warmed: about the first two screens of its grid. */
+private const val PODCAST_WARM_EPISODES = 15
+
 class MainViewModel(
     private val whitelist: WhitelistRepository,
     private val history: WatchHistoryStore,
@@ -54,6 +57,13 @@ class MainViewModel(
      * never competes with the images currently on screen.
      */
     private val prefetchThumbs: suspend (List<String>) -> Unit = {},
+    /**
+     * [prefetchThumbs] for podcast art, which is apart because it can be
+     * thousands of pixels square and must not be decoded at full size.
+     */
+    private val prefetchPodcastArt: suspend (List<String>) -> Unit = {},
+    /** Saved podcast listings and covers; null in tests. */
+    private val podcastLibrary: io.pickwick.app.data.PodcastLibrary? = null,
     /** AI screening gate; null in tests. Unscreened/blocked videos never render. */
     private val screener: io.pickwick.app.data.Screener? = null,
     /** Last known playability/live state of hand-picked videos; null in tests. */
@@ -556,6 +566,10 @@ class MainViewModel(
         }
         runCatching { whitelist.load() }
             .onSuccess { list ->
+                val podcasts = list.podcasts.filter { list.podcastFor(it.id, activeProfileId) != null }
+                val podcastCovers = podcastLibrary?.let { library ->
+                    withContext(Dispatchers.IO) { podcasts.associate { it.id to library.cover(it.id) } }
+                }.orEmpty()
                 _state.value = _state.value.copy(
                     hasNetworkCatalogs = list.networkCatalogs.any {
                         list.networkCatalogFor(it.id, activeProfileId) != null
@@ -563,8 +577,10 @@ class MainViewModel(
                     networkTimePercents = list.networkCatalogs.filter {
                         list.networkCatalogFor(it.id, activeProfileId) != null
                     }.associate { it.id to it.timePercent },
-                    podcasts = list.podcasts.filter { list.podcastFor(it.id, activeProfileId) != null }
+                    podcasts = podcasts,
+                    podcastCovers = podcastCovers
                 )
+                launch { fetchNewPodcasts() }
                 // Per-kid blocks fold into one set — every downstream check
                 // ("is this video blocked?") stays a plain membership test.
                 blockedVideoIds = list.blockedVideoIds +
@@ -676,12 +692,59 @@ class MainViewModel(
             }
     }
 
+    private fun publishPodcastCover(feedId: String, imageUrl: String?) {
+        // A failed or art-less fetch must not wipe a cover that's still good.
+        if (imageUrl == null || _state.value.podcastCovers[feedId] == imageUrl) return
+        _state.value = _state.value.copy(
+            podcastCovers = _state.value.podcastCovers + (feedId to imageUrl)
+        )
+    }
+
+    /**
+     * Feeds never fetched on this device (a fresh push from the parent's phone),
+     * so their tiles don't sit on the fallback until the slower warm sweep.
+     */
+    private suspend fun fetchNewPodcasts() {
+        val library = podcastLibrary ?: return
+        for (feed in _state.value.podcasts) {
+            if (withContext(Dispatchers.IO) { library.hasListing(feed.id) }) continue
+            val image = withContext(Dispatchers.IO) {
+                runCatching { library.refresh(feed).imageUrl }.getOrNull()
+            }
+            publishPodcastCover(feed.id, image)
+        }
+    }
+
+    /**
+     * Downloads podcast art ahead of time, as [warmCaches] does for channels.
+     * Stale listings are re-fetched first or new episodes' art would never be
+     * warmed. Only the first episodes: shows can carry unique art per episode,
+     * and the whole back catalogue would evict everything else from the cache.
+     */
+    private suspend fun warmPodcasts() {
+        val library = podcastLibrary ?: return
+        for (feed in _state.value.podcasts) {
+            val channel = withContext(Dispatchers.IO) {
+                val fresh = if (library.isFresh(feed.id)) null
+                    else runCatching { library.refresh(feed) }.getOrNull()
+                fresh ?: library.cached(feed.id)
+            } ?: continue
+            publishPodcastCover(feed.id, channel.imageUrl)
+            prefetchPodcastArt(
+                (listOf(channel.imageUrl) + channel.episodes.take(PODCAST_WARM_EPISODES).map { it.imageUrl })
+                    .filterNotNull().distinct()
+            )
+        }
+    }
+
     /**
      * Walks every source one at a time in the background lane, persisting each
      * source's videos to the disk cache as they land — so channels the kid has
      * never opened still open instantly afterwards (and feed the surprise pool).
+     * Podcasts go first: there are few of them and their covers are on home.
      */
     private suspend fun warmCaches() {
+        warmPodcasts()
         for (source in sources) {
             val videos = runCatching { yt.uploadsPage(source, background = true).videos }
                 .getOrElse { e ->

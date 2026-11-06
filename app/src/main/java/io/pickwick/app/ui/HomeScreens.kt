@@ -92,6 +92,7 @@ internal fun ChannelGrid(
     hasNetworkCatalogs: Boolean = false,
     onOpenNetworkCatalogs: () -> Unit = {},
     podcasts: List<PodcastFeed> = emptyList(),
+    podcastCovers: Map<String, String?> = emptyMap(),
     onOpenPodcast: (PodcastFeed) -> Unit = {},
     hasWatchLater: Boolean = false,
     onOpenWatchLater: () -> Unit = {},
@@ -108,7 +109,6 @@ internal fun ChannelGrid(
         EmptyHome(onOpenSettings)
         return
     }
-    val podcastCovers = rememberPodcastCovers(podcasts)
     LazyVerticalGrid(
         columns = GridCells.Adaptive(minSize = ChannelGridMinWidth),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -431,6 +431,7 @@ internal fun TvHomeRows(
     hasNetworkCatalogs: Boolean = false,
     onOpenNetworkCatalogs: () -> Unit = {},
     podcasts: List<PodcastFeed> = emptyList(),
+    podcastCovers: Map<String, String?> = emptyMap(),
     onOpenPodcast: (PodcastFeed) -> Unit = {},
     liveVideos: List<VideoItem> = emptyList(),
     onPlayLive: (VideoItem) -> Unit = {},
@@ -447,7 +448,6 @@ internal fun TvHomeRows(
         EmptyHome(onOpenSettings)
         return
     }
-    val podcastCovers = rememberPodcastCovers(podcasts)
     val firstTileFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     LaunchedEffect(Unit) { runCatching { firstTileFocus.requestFocus() } }
 

@@ -156,6 +156,7 @@ fun PickwickScreen(
                             hasNetworkCatalogs = state.hasNetworkCatalogs,
                             onOpenNetworkCatalogs = { networkOpen = true },
                             podcasts = state.podcasts,
+                            podcastCovers = state.podcastCovers,
                             onOpenPodcast = { podcastOpen = it.id },
                             liveVideos = state.liveVideos,
                             onPlayLive = onPlay,
@@ -186,6 +187,7 @@ fun PickwickScreen(
                                 hasNetworkCatalogs = state.hasNetworkCatalogs,
                                 onOpenNetworkCatalogs = { networkOpen = true },
                                 podcasts = state.podcasts,
+                                podcastCovers = state.podcastCovers,
                                 onOpenPodcast = { podcastOpen = it.id },
                                 hasWatchLater = state.watchLater.isNotEmpty(),
                                 onOpenWatchLater = vm::openWatchLater,
@@ -289,9 +291,8 @@ fun PickwickScreen(
                             state.podcasts.filter { matches(it.name) }
                         }
                         // Out here rather than in the row: the row is a grid item,
-                        // disposed once scrolled away, and would refetch covers and
-                        // re-grab focus every time it came back.
-                        val podcastCovers = rememberPodcastCovers(podcastHits)
+                        // disposed once scrolled away, and would re-grab focus
+                        // every time it came back.
                         if (channelHits.isNotEmpty() || podcastHits.isNotEmpty()) {
                             if (isTv) LaunchedEffect(s.query) {
                                 runCatching { searchHitsFocus.requestFocus() }
@@ -300,7 +301,7 @@ fun PickwickScreen(
                                 SearchHitsRow(
                                     channels = channelHits,
                                     podcasts = podcastHits,
-                                    podcastCovers = podcastCovers,
+                                    podcastCovers = state.podcastCovers,
                                     newBadges = state.newBadges,
                                     isTv = isTv,
                                     firstFocus = searchHitsFocus,

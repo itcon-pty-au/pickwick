@@ -38,6 +38,12 @@ data class UiState(
     val networkTimePercents: Map<String, Int> = emptyMap(),
     /** RSS podcasts this kid may hear — each gets its own home tile. */
     val podcasts: List<io.pickwick.app.data.PodcastFeed> = emptyList(),
+    /**
+     * Feed id to cover URL. Held here, like a channel's avatarUrl, so a tile has
+     * its image on the first frame instead of flashing the fallback while the
+     * URL is looked up each time the home screen is rebuilt.
+     */
+    val podcastCovers: Map<String, String?> = emptyMap(),
     /** Hand-picked live broadcasts on air right now — the TV's Live row. */
     val liveVideos: List<VideoItem> = emptyList(),
     val screen: Screen = Screen.Home,
