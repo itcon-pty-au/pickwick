@@ -58,8 +58,9 @@ with no ads.
   your OK* until a parent allows or blocks it (works with AI screening off)
 - **📡 Live** — on the TV home, streams a parent has added that are on air
   right now get their own row, under Podcasts; press OK to watch. The row only
-  appears while something is live, and the same video wears a red **LIVE**
-  badge in its playlist (then dims and reads **Offline** when it stops)
+  appears while something is live, and on the TV that row is the one place a
+  playlist's stream shows up. On a phone it stays in its playlist with a red
+  **LIVE** badge (then dims and reads **Offline** when it stops)
 - **Unwatched first** — a channel opens on what they haven't seen; everything
   already watched moves behind a **Watched** tile at the end, so a favourite
   is still one tap away without cluttering the row

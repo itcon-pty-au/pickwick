@@ -2,6 +2,8 @@ package io.pickwick.app
 
 import io.pickwick.app.data.ConfigStore
 import io.pickwick.app.data.CustomVideo
+import io.pickwick.app.data.LiveRowVideos
+import io.pickwick.app.data.Source
 import io.pickwick.app.data.SourceKind
 import io.pickwick.app.data.Video
 import io.pickwick.app.data.VideoStatus
@@ -73,5 +75,44 @@ class VideoStatusTest {
             .sources.single().customVideos
         assertEquals(listOf(true, false), back.map { it.live })
         assertTrue(back[0].toVideo().live)
+    }
+
+    private fun picked(vararg videos: CustomVideo, profileIds: Set<String> = emptySet()) =
+        WhitelistEntry(
+            id = "list", url = "custom:list", label = "List", kind = SourceKind.CUSTOM,
+            profileIds = profileIds, customVideos = videos.toList()
+        )
+
+    private fun custom(id: String, live: Boolean) = CustomVideo(id, "T", "C", null, 60, live)
+
+    @Test fun `only the live items of a list belong to the Live row`() {
+        val ids = LiveRowVideos.ids(listOf(picked(custom("aaaaaaaaaaa", true), custom("bbbbbbbbbbb", false))), "kid")
+        assertEquals(setOf("aaaaaaaaaaa"), ids)
+    }
+
+    @Test fun `another kid's list doesn't claim a stream`() {
+        val list = picked(custom("aaaaaaaaaaa", true), profileIds = setOf("other"))
+        assertTrue(LiveRowVideos.ids(listOf(list), "kid").isEmpty())
+    }
+
+    @Test fun `a stream in the row leaves the channel view and a clip stays`() {
+        assertEquals(listOf(clip), LiveRowVideos.withoutLiveRow(listOf(live, clip), setOf(live.videoId!!)))
+    }
+
+    @Test fun `a stream only in a channel's own feed stays`() {
+        assertEquals(listOf(live, clip), LiveRowVideos.withoutLiveRow(listOf(live, clip), setOf("zzzzzzzzzzz")))
+    }
+
+    @Test fun `a replay of the same video that isn't live stays`() {
+        val replay = live.copy(live = false)
+        assertEquals(listOf(replay), LiveRowVideos.withoutLiveRow(listOf(replay), setOf(live.videoId!!)))
+    }
+
+    @Test fun `a list of only streams has nothing to open onto`() {
+        val only = Source("list", "custom:list", "List", null, SourceKind.CUSTOM, customVideos = listOf(live))
+        assertTrue(LiveRowVideos.isOnlyStreams(only))
+        assertFalse(LiveRowVideos.isOnlyStreams(only.copy(customVideos = listOf(live, clip))))
+        assertFalse(LiveRowVideos.isOnlyStreams(only.copy(customVideos = emptyList())))
+        assertFalse(LiveRowVideos.isOnlyStreams(only.copy(kind = SourceKind.CHANNEL)))
     }
 }

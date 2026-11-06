@@ -62,7 +62,9 @@ class MainViewModel(
     private val activeProfileId: String? = null,
     /** Search index; null in tests. The crawler runs only on the master device. */
     private val channelIndex: ChannelIndex? = null,
-    private val yt: YouTubeRepository = YouTubeRepository()
+    private val yt: YouTubeRepository = YouTubeRepository(),
+    /** The Live row exists only on TV, so only there may it take over a stream. */
+    private val hasLiveRow: Boolean = false
 ) : ViewModel() {
 
     private val crawler = channelIndex?.let { IndexCrawler(yt, it) }
@@ -512,6 +514,7 @@ class MainViewModel(
         // distinctBy: two whitelist entries (URL form + UC id) can canonicalize
         // to the same channel — duplicate grid keys crash Compose.
         val distinct = channels.distinctBy { it.id }
+            .filterNot { hasLiveRow && io.pickwick.app.data.LiveRowVideos.isOnlyStreams(it) }
         // Tiles/rows/badges all re-read every source's cache file — a whole
         // whitelist of disk reads, so computed off-main, applied in one write.
         val (tiles, keepWatching, badges) = withContext(Dispatchers.IO) {
@@ -868,8 +871,15 @@ class MainViewModel(
         if (items != _state.value.liveVideos) _state.value = _state.value.copy(liveVideos = items)
     }
 
+    /** A channel view's videos: on TV, minus the streams the Live row already shows. */
+    private fun channelVisibleVideos(): List<io.pickwick.app.data.Video> =
+        if (!hasLiveRow || channelSource() == null) rawVideos
+        else io.pickwick.app.data.LiveRowVideos.withoutLiveRow(
+            rawVideos, io.pickwick.app.data.LiveRowVideos.ids(pickedLists, activeProfileId)
+        )
+
     private fun annotated(includeFinished: Boolean): List<VideoItem> =
-        (if (videoStatus.isEmpty()) rawVideos else rawVideos.map { v ->
+        (if (videoStatus.isEmpty()) channelVisibleVideos() else channelVisibleVideos().map { v ->
             io.pickwick.app.data.VideoStatus.apply(v, videoStatus[v.videoId])
         }).mapNotNull { video ->
             if (video.videoId in blockedVideoIds || tooShort(video)) return@mapNotNull null
