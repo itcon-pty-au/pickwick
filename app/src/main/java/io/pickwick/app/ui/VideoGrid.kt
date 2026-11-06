@@ -91,6 +91,10 @@ internal fun QueueList(
     if (grabFocus) {
         LaunchedEffect(videos.isNotEmpty()) { runCatching { firstRowFocus.requestFocus() } }
     }
+    // Removing a row destroys the button that had focus, which would leave the
+    // remote pointing at nothing. The ✕ that takes its place gets focus instead,
+    // once the shorter list has actually arrived, so clearing several is one key.
+    var refocusRemove by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     androidx.compose.foundation.lazy.LazyColumn(
         verticalArrangement = Arrangement.spacedBy(8.dp),
         contentPadding = PaddingValues(8.dp)
@@ -98,35 +102,50 @@ internal fun QueueList(
         items(videos.size, key = { videos[it].video.url }) { i ->
             val item = videos[i]
             var focused by remember { mutableStateOf(false) }
+            val removeFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+            if (refocusRemove == (i to videos.size)) {
+                LaunchedEffect(Unit) {
+                    runCatching { removeFocus.requestFocus() }
+                    refocusRemove = null
+                }
+            }
+            // The row itself must not be clickable: a focused node's D-pad moves
+            // look outside it, so buttons nested inside could never be reached.
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = (if (grabFocus && i == 0) Modifier.focusRequester(firstRowFocus)
-                    else Modifier)
+                modifier = Modifier
                     .fillMaxWidth()
                     .tvFocusHighlight { focused = it }
-                    .clickable { onPlayFrom(i) }
             ) {
-                // The Box itself must carry the size: WatchedProgressBar fills
-                // the parent's max width, and an unconstrained Box in a Row
-                // balloons to the whole row once a bar appears — crushing the
-                // title and the ▲▼✕ buttons to zero width.
-                Box(Modifier.width(120.dp).aspectRatio(16f / 9f)) {
-                    AsyncImage(
-                        model = item.video.thumbnailUrl,
-                        contentDescription = item.video.title,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                    item.progress?.let { fraction -> WatchedProgressBar(fraction) }
-                }
-                Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                    MarqueeTitle(item.video.title, focused)
-                    Text(
-                        item.video.channelName, maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = (if (grabFocus && i == 0) Modifier.focusRequester(firstRowFocus)
+                        else Modifier)
+                        .weight(1f)
+                        .clickable { onPlayFrom(i) }
+                ) {
+                    // The Box itself must carry the size: WatchedProgressBar fills
+                    // the parent's max width, and an unconstrained Box in a Row
+                    // balloons to the whole row once a bar appears — crushing the
+                    // title and the ▲▼✕ buttons to zero width.
+                    Box(Modifier.width(120.dp).aspectRatio(16f / 9f)) {
+                        AsyncImage(
+                            model = item.video.thumbnailUrl,
+                            contentDescription = item.video.title,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        item.progress?.let { fraction -> WatchedProgressBar(fraction) }
+                    }
+                    Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                        MarqueeTitle(item.video.title, focused)
+                        Text(
+                            item.video.channelName, maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
                 // Ends are no-ops (the store clamps) — buttons stay in place so
                 // the D-pad landscape doesn't shift under the kid's focus.
@@ -137,7 +156,12 @@ internal fun QueueList(
                     onClick = { onMove(item, +1) },
                 ) { Text("▼") }
                 IconButton(
-                    onClick = { onRemove(item) },
+                    onClick = {
+                        val left = videos.size - 1
+                        if (left > 0) refocusRemove = i.coerceAtMost(left - 1) to left
+                        onRemove(item)
+                    },
+                    modifier = Modifier.focusRequester(removeFocus)
                 ) { Text("✕") }
             }
         }
