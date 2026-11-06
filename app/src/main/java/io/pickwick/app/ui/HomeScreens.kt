@@ -20,6 +20,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import io.pickwick.app.data.*
@@ -613,6 +614,64 @@ private fun WatchLaterTile(modifier: Modifier = Modifier, onClick: () -> Unit) =
 internal fun PodcastTile(feed: PodcastFeed, cover: String?, modifier: Modifier = Modifier, onClick: () -> Unit) =
     ArtworkTile(title = feed.name, thumbnail = cover, fallback = "🎙️", source = SourceBadge.PODCAST,
         modifier = modifier, onClick = onClick)
+
+/**
+ * The channels and podcasts whose names match a search, as the same tiles the
+ * home screen uses, so a kid recognises them and the NEW and screen-time badges
+ * carry over.
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+internal fun SearchHitsRow(
+    channels: List<Source>,
+    podcasts: List<PodcastFeed>,
+    podcastCovers: Map<String, String?>,
+    newBadges: Set<String>,
+    isTv: Boolean,
+    firstFocus: androidx.compose.ui.focus.FocusRequester,
+    onOpenChannel: (Source) -> Unit,
+    onOpenPodcast: (PodcastFeed) -> Unit
+) {
+    CompositionLocalProvider(
+        androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides
+            if (isTv) TvRowPivot
+            else androidx.compose.foundation.gestures.LocalBringIntoViewSpec.current
+    ) {
+        androidx.compose.foundation.lazy.LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            // Room for the focus lift, which the row would otherwise clip.
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+            modifier = Modifier
+                // Out over the grid's own 8dp padding: that cancels the padding
+                // above, so the first card lines up with the videos below.
+                .layout { measurable, constraints ->
+                    val bleed = 8.dp.roundToPx()
+                    val width = constraints.maxWidth + bleed * 2
+                    val placeable = measurable.measure(constraints.copy(minWidth = width, maxWidth = width))
+                    layout(constraints.maxWidth, placeable.height) { placeable.place(-bleed, 0) }
+                }
+                .dpadHeldScrollThrottle(keys = DPAD_HORIZONTAL)
+        ) {
+            items(channels.size, key = { "channel-" + channels[it].id }) { i ->
+                ChannelTile(
+                    channels[i],
+                    isNew = channels[i].id in newBadges,
+                    onOpen = onOpenChannel,
+                    modifier = (if (i == 0) Modifier.focusRequester(firstFocus)
+                        else Modifier).width(150.dp)
+                )
+            }
+            items(podcasts.size, key = { "podcast-" + podcasts[it].id }) { i ->
+                PodcastTile(
+                    podcasts[i], podcastCovers[podcasts[i].id],
+                    modifier = (if (i == 0 && channels.isEmpty()) Modifier.focusRequester(firstFocus)
+                        else Modifier).width(150.dp),
+                    onClick = { onOpenPodcast(podcasts[i]) }
+                )
+            }
+        }
+    }
+}
 
 @Composable
 private fun TvRowTitle(text: String) {

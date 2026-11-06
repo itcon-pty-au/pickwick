@@ -276,7 +276,8 @@ fun PickwickScreen(
                     // names match sit above the matching videos. Same lists the
                     // home shelves draw from, so a kid's scope and the parent's
                     // blocks already apply.
-                    (state.screen as? Screen.SearchResults)?.let { s ->
+                    val searchHitsFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+                    val searchHits: (@Composable () -> Unit)? = (state.screen as? Screen.SearchResults)?.let { s ->
                         val words = remember(s.query) {
                             s.query.lowercase().split(Regex("\\s+")).filter { it.isNotBlank() }
                         }
@@ -287,27 +288,28 @@ fun PickwickScreen(
                         val podcastHits = remember(words, state.podcasts) {
                             state.podcasts.filter { matches(it.name) }
                         }
+                        // Out here rather than in the row: the row is a grid item,
+                        // disposed once scrolled away, and would refetch covers and
+                        // re-grab focus every time it came back.
+                        val podcastCovers = rememberPodcastCovers(podcastHits)
                         if (channelHits.isNotEmpty() || podcastHits.isNotEmpty()) {
-                            androidx.compose.foundation.lazy.LazyRow(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
-                            ) {
-                                items(channelHits.size) { i ->
-                                    val c = channelHits[i]
-                                    AssistChip(
-                                        onClick = { vm.openChannel(c) },
-                                        label = { Text(c.name, maxLines = 1) },
-                                    )
-                                }
-                                items(podcastHits.size) { i ->
-                                    val p = podcastHits[i]
-                                    AssistChip(
-                                        onClick = { podcastOpen = p.id },
-                                        label = { Text("🎙️ ${p.name}", maxLines = 1) },
-                                    )
-                                }
+                            if (isTv) LaunchedEffect(s.query) {
+                                runCatching { searchHitsFocus.requestFocus() }
                             }
-                        }
+                            val row: @Composable () -> Unit = {
+                                SearchHitsRow(
+                                    channels = channelHits,
+                                    podcasts = podcastHits,
+                                    podcastCovers = podcastCovers,
+                                    newBadges = state.newBadges,
+                                    isTv = isTv,
+                                    firstFocus = searchHitsFocus,
+                                    onOpenChannel = vm::openChannel,
+                                    onOpenPodcast = { podcastOpen = it.id }
+                                )
+                            }
+                            row
+                        } else null
                     }
                     if (state.screen is Screen.Queue) {
                         QueueList(
@@ -347,7 +349,9 @@ fun PickwickScreen(
                         onToggleQueue = vm::toggleQueue,
                         onToggleWatched = vm::toggleWatched,
                         onReport = vm::reportVideo,
-                        grabFocus = isTv,
+                        // Name matches lead the page, so they get first focus.
+                        grabFocus = isTv && searchHits == null,
+                        header = searchHits,
                         onNearEnd = when (state.screen) {
                             is Screen.ChannelVideos -> vm::loadMoreUploads
                             // Scrolling deep extends the screening window — the
