@@ -203,11 +203,16 @@ internal fun VideoGrid(
     extraTile: (@Composable (androidx.compose.ui.focus.FocusRequester?) -> Unit)? = null,
     /** One-shot jump, see [UiState.scrollTo]. Report back via [onScrolled]. */
     scrollTo: Int? = null,
-    onScrolled: (() -> Unit)? = null
+    onScrolled: (() -> Unit)? = null,
+    /** Full-width content above the tiles that scrolls away with them. */
+    header: (@Composable () -> Unit)? = null
 ) {
     // A channel whose every video has been watched still needs its shelf: the
     // grid is empty, but the way to the watched ones must not vanish with it.
-    if (videos.isEmpty() && extraTile == null) {
+    // A header keeps the grid too, and says [emptyText] from inside it: switching
+    // layouts when the first video lands would rebuild the header under the
+    // kid's focus.
+    if (videos.isEmpty() && extraTile == null && header == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(
                 emptyText,
@@ -361,7 +366,9 @@ internal fun VideoGrid(
             onScrolled?.invoke()
         }
     }
-    if (onNearEnd != null) {
+    // A lone header is always "near the end", and search pays the AI per near-end
+    // call, so nothing fires until there are videos to be near the end of.
+    if (onNearEnd != null && (videos.isNotEmpty() || header == null)) {
         // Fire on every scroll-position change, not on a boolean edge: if one page
         // fetch fails, the next nudge of the scroll retries instead of going dead.
         LaunchedEffect(gridState) {
@@ -386,6 +393,17 @@ internal fun VideoGrid(
         // pivot is pre-composed, so unpaced steps stick mid-scroll).
         modifier = Modifier.dpadHeldScrollThrottle()
     ) {
+        if (header != null) item(key = "grid-header", span = { GridItemSpan(maxLineSpan) }) {
+            header()
+        }
+        if (videos.isEmpty() && extraTile == null) item(key = "grid-empty", span = { GridItemSpan(maxLineSpan) }) {
+            Text(
+                emptyText,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth().padding(24.dp)
+            )
+        }
         // Split around the injected tile rather than appending it: its index is
         // pinned to the first page, and pages loaded later join the tail below.
         val cut = extraTileAt?.coerceIn(0, videos.size)?.takeIf { extraTile != null }
