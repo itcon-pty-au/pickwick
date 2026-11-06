@@ -597,26 +597,6 @@ private fun AdminScreen(
                 HubPage.Screening -> {
                     SectionTitle("AI content screening")
                     SettingsCard { AiScreeningSection(ai, profiles, onChanged = { ai = it }) }
-                    // Kid reports land here too, so the queue is there with AI off.
-                    run {
-                        SectionTitle("Waiting for your OK")
-                        SettingsCard {
-                            AiReviewSection(
-                                ai = ai,
-                                profiles = profiles,
-                                pairingStore = pairingStore,
-                                resolved = blocked + aiAllowed + blockedFor.keys + allowedFor.keys,
-                                onAllow = { id, forKids ->
-                                    if (forKids == null) aiAllowed = aiAllowed + id
-                                    else allowedFor = allowedFor + (id to forKids)
-                                },
-                                onBlock = { id, forKids ->
-                                    if (forKids == null) blocked = blocked + id
-                                    else blockedFor = blockedFor + (id to forKids)
-                                }
-                            )
-                        }
-                    }
                     SectionTitle("Discover with AI")
                     SettingsCard {
                         AiDiscoverySection(ai, entries, yt) { e ->
@@ -631,6 +611,33 @@ private fun AdminScreen(
                             categories = sponsorCategories,
                             onEnabled = { sponsorSkip = it },
                             onCategories = { sponsorCategories = it }
+                        )
+                    }
+                }
+                // Its own page, not part of Content screening: kid reports and the
+                // parent's blocks both exist with AI screening off.
+                HubPage.Blocked -> {
+                    SectionTitle("Waiting for your OK")
+                    SettingsCard {
+                        AiReviewSection(
+                            ai = ai,
+                            profiles = profiles,
+                            pairingStore = pairingStore,
+                            resolved = blocked + aiAllowed + blockedFor.keys + allowedFor.keys,
+                            blockedForAll = blocked,
+                            blockedForKids = blockedFor,
+                            onAllow = { id, forKids ->
+                                if (forKids == null) aiAllowed = aiAllowed + id
+                                else allowedFor = allowedFor + (id to forKids)
+                            },
+                            onBlock = { id, forKids ->
+                                if (forKids == null) blocked = blocked + id
+                                else blockedFor = blockedFor + (id to forKids)
+                            },
+                            onUnblock = { id ->
+                                blocked = blocked - id
+                                blockedFor = blockedFor - id
+                            }
                         )
                     }
                 }
@@ -781,9 +788,14 @@ private fun AdminScreen(
             SettingsDivider()
             HubRow(
                 "🛡️", "Content screening",
-                (if (ai.enabled) "AI screening on · review queue, discover" else "AI screening off") +
+                (if (ai.enabled) "AI screening on · discover" else "AI screening off") +
                     " · sponsor skipping"
             ) { page = HubPage.Screening }
+            SettingsDivider()
+            HubRow(
+                "🚫", "Blocked & reported",
+                "${(blocked + blockedFor.keys).size} blocked · reports · waiting for OK"
+            ) { page = HubPage.Blocked }
             SettingsDivider()
             HubRow("📱", "Devices", "Kid devices, downloads, search index") { page = HubPage.Devices }
             SettingsDivider()
@@ -818,6 +830,7 @@ private enum class HubPage(val title: String) {
     Kids("Kids"),
     Channels("YouTube"),
     Screening("Content screening"),
+    Blocked("Blocked & reported"),
     Devices("Devices"),
     Playback("Playback"),
     Backup("Backup & app")

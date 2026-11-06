@@ -106,7 +106,9 @@ object Stats {
         val aiScreened: Int? = null,
         /** Cached-feed videos with no verdict yet — hidden on the device until screened. */
         val aiPending: Int = 0,
-        val aiFlagged: List<AiFlagged> = emptyList()
+        val aiFlagged: List<AiFlagged> = emptyList(),
+        /** Details of videos the parent blocked, for the phone's list of those blocks. */
+        val aiBlocked: List<AiFlagged> = emptyList()
     )
 
     /** [profileId] names the kid asked about; unknown or null falls back to
@@ -189,39 +191,56 @@ object Stats {
         // device actually enforced — not what the phone believes it pushed.
         root.put("multipliers", config.sources.any { it.timeMultiplierPercent != 100 })
 
-        if (config.ai.enabled) {
-            val screening = ScreeningStore(app)
-            val version = config.ai.rulesVersion
-            // Already-resolved items (parent allowed or permanently blocked) drop out.
-            val resolved = config.aiAllowedVideoIds + config.blockedVideoIds
-            // Cached-feed videos still waiting for a verdict. They are hidden on
-            // this device (fail-closed), so a stalled screening run must show up
-            // here as a number — not read as "nothing new".
-            val pending = known.mapNotNull { it.videoId }.distinct()
-                .count { id -> id !in resolved && screening.get(id)?.rulesVersion != version }
-            root.put("ai", JSONObject()
-                .put("screened", screening.screenedCount(version))
-                .put("pending", pending)
-                .put("flagged", JSONArray().apply {
-                    screening.flagged(version)
-                        .filterNot { (id, _) -> id in resolved }
-                        // Soft cap so a runaway store can't bloat the payload; in
-                        // practice the parent sees every held-back video.
-                        .take(500)
-                        .forEach { (id, e) ->
-                            put(JSONObject()
-                                .put("id", id)
-                                .put("title", e.title)
-                                .put("channel", e.channel)
-                                .put("thumb", e.thumb ?: "")
-                                .put("verdict", e.verdict.name)
-                                .put("why", e.reason)
-                                .apply { if (e.reported) put("reported", true) }
-                                .put("at", e.at))
-                        }
-                }))
-        }
+        aiJson(config, ScreeningStore(app), known.mapNotNull { it.videoId }.distinct())
+            ?.let { root.put("ai", it) }
         return root.toString()
+    }
+
+    /**
+     * The payload's "ai" section; null when there is nothing to say. Without
+     * "screened" the phone reads AI as off. Kid reports are sent either way: a
+     * report hides the video with screening off too, and leaving it out here
+     * would strand it until the phone's next verdict sync.
+     */
+    internal fun aiJson(config: Whitelist, screening: ScreeningStore, knownIds: List<String>): JSONObject? {
+        val version = config.ai.rulesVersion
+        // Already-resolved items (parent allowed or permanently blocked) drop out.
+        val resolved = config.aiAllowedVideoIds + config.blockedVideoIds
+        val flagged = screening.flagged(version)
+            .filterNot { (id, _) -> id in resolved }
+            .filter { (_, e) -> config.ai.enabled || e.reported }
+        // The phone lists what the parent blocked, but only this device may still
+        // know the title of a video a kid reported here.
+        val blocked = (config.blockedVideoIds + config.blockedFor.keys)
+            .mapNotNull { id -> screening.get(id)?.let { id to it } }
+        if (!config.ai.enabled && flagged.isEmpty() && blocked.isEmpty()) return null
+        return JSONObject().apply {
+            if (config.ai.enabled) {
+                put("screened", screening.screenedCount(version))
+                // Cached-feed videos still waiting for a verdict. They are hidden on
+                // this device (fail-closed), so a stalled screening run must show up
+                // here as a number — not read as "nothing new".
+                put("pending", knownIds.count { id -> id !in resolved && screening.get(id)?.rulesVersion != version })
+            }
+            // Soft cap so a runaway store can't bloat the payload; in practice the
+            // parent sees every held-back video.
+            put("flagged", flaggedJson(flagged.take(500)))
+            put("blocked", flaggedJson(blocked.take(500)))
+        }
+    }
+
+    private fun flaggedJson(entries: List<Pair<String, ScreeningStore.Entry>>) = JSONArray().apply {
+        entries.forEach { (id, e) ->
+            put(JSONObject()
+                .put("id", id)
+                .put("title", e.title)
+                .put("channel", e.channel)
+                .put("thumb", e.thumb ?: "")
+                .put("verdict", e.verdict.name)
+                .put("why", e.reason)
+                .apply { if (e.reported) put("reported", true) }
+                .put("at", e.at))
+        }
     }
 
     fun parse(json: String): Payload? = runCatching {
@@ -262,19 +281,21 @@ object Stats {
         }
 
         val aiObj = root.optJSONObject("ai")
-        val flaggedArr = aiObj?.optJSONArray("flagged") ?: JSONArray()
-        val flagged = (0 until flaggedArr.length()).map { i ->
-            val o = flaggedArr.getJSONObject(i)
-            AiFlagged(
-                videoId = o.getString("id"),
-                title = o.optString("title"),
-                channel = o.optString("channel"),
-                thumbnailUrl = o.optString("thumb").ifEmpty { null },
-                verdict = o.optString("verdict"),
-                reason = o.optString("why"),
-                at = o.optLong("at"),
-                reported = o.optBoolean("reported")
-            )
+        fun flaggedList(name: String): List<AiFlagged> {
+            val arr = aiObj?.optJSONArray(name) ?: return emptyList()
+            return (0 until arr.length()).map { i ->
+                val o = arr.getJSONObject(i)
+                AiFlagged(
+                    videoId = o.getString("id"),
+                    title = o.optString("title"),
+                    channel = o.optString("channel"),
+                    thumbnailUrl = o.optString("thumb").ifEmpty { null },
+                    verdict = o.optString("verdict"),
+                    reason = o.optString("why"),
+                    at = o.optLong("at"),
+                    reported = o.optBoolean("reported")
+                )
+            }
         }
 
         Payload(
@@ -292,9 +313,10 @@ object Stats {
             history = hist,
             watchlistCount = root.optInt("watchlistCount"),
             multipliersActive = root.optBoolean("multipliers", false),
-            aiScreened = aiObj?.optInt("screened"),
+            aiScreened = aiObj?.takeIf { it.has("screened") }?.optInt("screened"),
             aiPending = aiObj?.optInt("pending") ?: 0,
-            aiFlagged = flagged
+            aiFlagged = flaggedList("flagged"),
+            aiBlocked = flaggedList("blocked")
         )
     }.getOrNull()
 }

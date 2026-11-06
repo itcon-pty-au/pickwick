@@ -100,8 +100,8 @@ Fully D-pad navigable on TV (colored focus glow, remote shortcuts: OK = pause,
 ## What the parent controls (all from their phone)
 
 Open settings (fingerprint-gated, with a 4-digit parent PIN as fallback) on the
-phone. It opens on a short list of six pages — Kids, Content Sources,
-Content screening, Devices, Playback, Backup & app — each with its own screen.
+phone. It opens on a short list of seven pages — Kids, Content Sources,
+Content screening, Blocked & reported, Devices, Playback, Backup & app — each with its own screen.
 Inline changes save automatically; connection, catalog and content-group dialogs
 have their own Save action. Saved changes reach the kids' devices on their own,
 catching up later with any device that was asleep.
@@ -171,8 +171,10 @@ catching up later with any device that was asleep.
   **deep check** — description, tags and the English transcript — runs once on
   the first press of a video ("Checking this one…", a few seconds) before it
   plays. Verdicts are allow / block / **review** — unsure ones queue under
-  *Waiting for your OK*, hard blocks collect in a collapsed *Blocked videos*
-  list where **Allow overrules the AI everywhere**; a blocked video shows the
+  *Waiting for your OK*, hard blocks collect in a collapsed *Blocked by AI*
+  list where **Allow overrules the AI everywhere**, and your own blocks are
+  listed under *Blocked by you*, where **Unblock** undoes them (all on the
+  *Blocked & reported* page); a blocked video shows the
   kid a gentle, reason-free message (the AI's actual reason is for your phone).
   With kid profiles, **one call returns a verdict per kid by age** ("fine for
   the 12-year-old, held for the 4-year-old"); in the queue, tap rules for
