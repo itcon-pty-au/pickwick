@@ -73,6 +73,11 @@ The app polls `version.json` at the repo root of `main` (URL is baked into
    installed one — forgetting this silently ships nothing.
 2. `gradlew assembleRelease`, attach the APK to a GitHub Release tagged `vX.Y.Z`.
 3. Update `version.json` to point at that asset.
+4. Once `version.json` is live, delete the branches this release has made
+   redundant: every local and remote branch fully merged into `origin/main`,
+   except `main`. Skip any with an open PR. Use `git branch -d`, which refuses
+   unmerged work, and never force-delete; list anything unmerged for the
+   maintainer to decide on. Tags stay, because releases depend on them.
 
 Always publish the release APK. Self-updating a family's TV onto a debug build
 would hand them the 10-second cold start.
