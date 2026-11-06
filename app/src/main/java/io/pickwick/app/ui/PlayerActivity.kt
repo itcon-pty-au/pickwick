@@ -5,25 +5,16 @@ import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -34,9 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.lifecycleScope
@@ -121,8 +110,12 @@ class PlayerActivity : ComponentActivity() {
     private val timeUpMessage = mutableStateOf<String?>(null)
     /** True while ExoPlayer waits for data (initial buffer, seek, stall). */
     private val buffering = mutableStateOf(false)
-    /** TV controls overlay stays visible until this timestamp (poked by remote keys). */
-    private val controlsVisibleUntil = mutableStateOf(0L)
+    /** The TV controls: what they show, driven by the remote in [onKeyDown]. */
+    private val tv = TvControlsState()
+    private val scrubAccelerator = ScrubAccelerator()
+    private var scrubCommit: kotlinx.coroutines.Job? = null
+    /** Queue position whose up-next card the kid waved away with Back. */
+    private var upNextDismissedAt = -1
     private val playerControlsVisible = mutableStateOf(false)
     /** Transient top-of-screen pill: time-left warnings, subtitles toggled, … */
     private val notice = mutableStateOf<Notice?>(null)
@@ -220,8 +213,31 @@ class PlayerActivity : ComponentActivity() {
     /** Kid-facing line while a window has playback down to sound only. */
     private val listenOnlyMessage = mutableStateOf<String?>(null)
 
+    /** A paused video keeps its controls up for longer: that's when they get read. */
     private fun pokeControls() {
-        controlsVisibleUntil.value = System.currentTimeMillis() + 3_000
+        val forMs = if (player?.playWhenReady == false) 30_000 else 4_000
+        tv.visibleUntil.longValue = System.currentTimeMillis() + forMs
+    }
+
+    /**
+     * True when the overlay can really be on screen. The block, time-up and error
+     * screens replace it, and Back there must leave rather than dismiss nothing.
+     */
+    private fun tvControlsPossible() =
+        playbackState.value != null && timeUpMessage.value == null &&
+            blockedGently.value == null && contentBlocked.value == null && errorState.value == null
+
+    private fun tvControlsShown() = tvControlsPossible() && (
+        System.currentTimeMillis() < tv.visibleUntil.longValue || tv.scrubTargetMs.value != null)
+
+    private fun tvButtonsNow(): List<TvButton> {
+        val pb = playbackState.value
+        return tvButtons(
+            queueSize = queue.size,
+            audioTracks = pb?.audioTracks?.size ?: 0,
+            subtitles = pb?.subtitles?.size ?: 0,
+            hasQualityPicker = pb?.hasQualityPicker() == true
+        )
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -435,6 +451,7 @@ class PlayerActivity : ComponentActivity() {
             while (isActive) {
                 delay(500)
                 val exo = player ?: continue
+                if (isTv) updateUpNext(exo)
                 if (!exo.isPlaying) continue
                 val pos = exo.currentPosition
                 // 300ms tail guard: landing exactly on endMs must not re-match
@@ -515,7 +532,7 @@ class PlayerActivity : ComponentActivity() {
                     // sources only an approaching bedtime counts down). A parent
                     // grant that lifts the countdown re-arms the warnings.
                     if (timeUpMessage.value == null)
-                        sessionGuard.remainingMs(drain, listenActive)?.let { left ->
+                        sessionGuard.remainingMs(drain, listenActive).also { tv.timeLeftMs.value = it }?.let { left ->
                         val threshold = when {
                             left <= 60_000L -> 1
                             left <= 5 * 60_000L -> 5
@@ -562,7 +579,7 @@ class PlayerActivity : ComponentActivity() {
         }
 
         setContent {
-            MaterialTheme(colorScheme = PickwickDarkColors) {
+            PickwickTheme(PickwickDarkColors) {
                 val playback by playbackState
                 val error by errorState
                 val played by everPlayed
@@ -661,28 +678,41 @@ class PlayerActivity : ComponentActivity() {
                     ) {
                         CircularProgressIndicator()
                     }
-                    if (isTv && timeUp == null && blocked == null && contentBlocked.value == null) {
+                    if (isTv && playback != null && timeUp == null && blocked == null &&
+                        contentBlocked.value == null && error == null
+                    ) {
                         TvControlsOverlay(
-                            controlsVisibleUntil,
-                            sponsorSegments.value,
-                            trackPanel,
-                            trackCursor,
-                            playback,
-                            selectedAudioTrack.intValue,
-                            selectedSubtitleTrack.intValue,
-                            captionsOn,
-                            qualityPref.intValue,
+                            state = tv,
+                            playback = playback!!,
+                            channel = currentChannel,
+                            queuePosition = (indexState.intValue + 1 to queue.size).takeIf { queue.size > 1 },
+                            buttons = tvButtonsNow(),
+                            sponsorSegments = sponsorSegments.value,
+                            contentCap = contentRemaining.value?.let { (group, left) ->
+                                "${group.name}: ${formatClock((left + 999) / 1000)} this session"
+                            },
+                            panel = trackPanel.value,
+                            cursor = trackCursor.intValue,
+                            selectedAudio = selectedAudioTrack.intValue,
+                            selectedSubtitle = selectedSubtitleTrack.intValue,
+                            captionsOn = captionsOn,
+                            qualityPref = qualityPref.intValue,
                             onVisibilityChanged = { playerControlsVisible.value = it }
                         ) { player }
+                        if (!playerControlsVisible.value) TvUpNextCard(tv.upNext.value)
+                        TvFlashOverlay(tv.flash)
                     }
                     if (!isTv && playerControlsVisible.value && timeUp == null && contentBlocked.value == null &&
                         error == null && playback?.hasQualityPicker() == true
                     ) {
                         PhoneQualityButton(playback!!, qualityPref.intValue) { selectQuality(it) }
                     }
-                    if (timeUp == null) SkipHint(skipHint)
-                    if (timeUp == null) NoticeOverlay(notice, if (contentRemaining.value != null && playerControlsVisible.value) 72.dp else 28.dp)
-                    if (playerControlsVisible.value && contentBlocked.value == null && timeUp == null) contentRemaining.value?.let { (group, left) ->
+                    // Below the TV controls' title bar rather than on top of it.
+                    val tvBarUp = isTv && playerControlsVisible.value
+                    if (timeUp == null) SkipHint(skipHint, if (tvBarUp) 96.dp else 20.dp)
+                    if (timeUp == null) NoticeOverlay(notice, if (tvBarUp) 96.dp else if (contentRemaining.value != null && playerControlsVisible.value) 72.dp else 28.dp)
+                    // On a TV this is a chip in the controls' title bar.
+                    if (!isTv && playerControlsVisible.value && contentBlocked.value == null && timeUp == null) contentRemaining.value?.let { (group, left) ->
                         Text("${group.name}: ${formatClock((left + 999) / 1000)} this session",
                             color = Color.White, style = MaterialTheme.typography.bodySmall,
                             maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
@@ -759,6 +789,9 @@ class PlayerActivity : ComponentActivity() {
         selectedAudioTrack.intValue = 0
         selectedSubtitleTrack.intValue = -1
         trackPanel.value = TvTrackPanel.Hidden
+        cancelScrub()
+        tv.upNext.value = null
+        tv.timeLeftMs.value = null
         resolveJob?.cancel()
         resolveJob = lifecycleScope.launch {
             playbackState.value = null
@@ -1034,7 +1067,11 @@ class PlayerActivity : ComponentActivity() {
             )
             exo.prepare()
             exo.playWhenReady = true
-            if (isTv) pokeControls()
+            if (isTv) {
+                tv.liveSince.longValue = android.os.SystemClock.elapsedRealtime()
+                refreshTimeLeft()
+                pokeControls()
+            }
             return
         }
         if (audioOnly && audioUrl != null) {
@@ -1081,7 +1118,10 @@ class PlayerActivity : ComponentActivity() {
             }
         }
         exo.playWhenReady = wasPlaying
-        if (isTv) pokeControls() // brief position peek at start
+        if (isTv) {
+            refreshTimeLeft()
+            pokeControls() // brief title and position peek at start
+        }
     }
 
     /**
@@ -1200,7 +1240,7 @@ class PlayerActivity : ComponentActivity() {
     /** Friendly full-screen block (bedtime / session limits) instead of the player. */
     private fun showBlockedScreen(reason: String) {
         setContent {
-            MaterialTheme(colorScheme = PickwickDarkColors) {
+            PickwickTheme(PickwickDarkColors) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
                         reason,
@@ -1216,7 +1256,121 @@ class PlayerActivity : ComponentActivity() {
         }
     }
 
-    /** TV remote: OK toggles play/pause, ◀ ▶ seek ±10s, with a time overlay. */
+    /**
+     * The first screen-time chip, without waiting for the 5-second tick. Not under
+     * a podcast: every screen-time rule stands aside for those.
+     */
+    private fun refreshTimeLeft() {
+        tv.timeLeftMs.value = if (isPodcastItem()) null else sessionGuard.remainingMs(timePercent)
+    }
+
+    private fun updateUpNext(exo: ExoPlayer) {
+        val i = indexState.intValue
+        val pb = playbackState.value
+        val seconds = upNextSeconds(
+            hasNext = i < queue.lastIndex && i != upNextDismissedAt && pb != null && !pb.live,
+            playing = exo.playWhenReady && tv.scrubTargetMs.value == null,
+            remainingMs = if (exo.duration > 0) exo.duration - exo.currentPosition else 0
+        )
+        tv.upNext.value = seconds?.let {
+            val url = queue[i + 1]
+            val known = PlayerQueueInfo.byUrl[url]
+            TvUpNext(
+                seconds = it,
+                title = known?.title
+                    ?: url.takeIf(io.pickwick.app.data.SmbPaths::isNetwork)
+                        ?.let { u -> io.pickwick.app.data.SmbPaths.parse(u).second.substringAfterLast('/').substringBeforeLast('.') }
+                    ?: "Next video",
+                thumbnailUrl = known?.thumbnailUrl
+                    ?: io.pickwick.app.data.SponsorBlock.videoIdOf(url)?.let { id -> "https://i.ytimg.com/vi/$id/mqdefault.jpg" }
+            )
+        }
+    }
+
+    private fun scrub(direction: Int, event: android.view.KeyEvent?) {
+        val exo = player ?: return
+        val duration = exo.duration
+        tv.zone.value = TvZone.Timeline
+        // Nothing to seek in a live stream; the press still wakes the controls.
+        if (duration <= 0 || playbackState.value?.live == true) return
+        // Every key event pushes back the commit, even one the rate limit drops.
+        scrubCommit?.cancel()
+        scrubCommit = lifecycleScope.launch {
+            delay(900)
+            commitScrub()
+        }
+        val step = scrubAccelerator.next(
+            android.os.SystemClock.uptimeMillis(), (event?.repeatCount ?: 0) > 0, duration
+        ) ?: return
+        val from = tv.scrubTargetMs.value ?: exo.currentPosition
+        tv.scrubTargetMs.value = scrubTarget(from, direction, step, duration)
+    }
+
+    /** One seek at the end of a scrub: seeking on every press rebuffers on every press. */
+    private fun commitScrub() {
+        scrubCommit?.cancel()
+        val target = tv.scrubTargetMs.value ?: return
+        tv.scrubTargetMs.value = null
+        player?.seekTo(target)
+        pokeControls()
+    }
+
+    private fun cancelScrub() {
+        scrubCommit?.cancel()
+        tv.scrubTargetMs.value = null
+    }
+
+    private fun togglePlayPause(exo: ExoPlayer) {
+        // playWhenReady, not isPlaying: mid-buffer isPlaying is false, and a press
+        // meant as "pause" would otherwise do nothing the kid can see.
+        if (exo.playWhenReady) exo.pause() else exo.play()
+        tv.flash.value = TvFlash(if (exo.playWhenReady) TvGlyph.Play else TvGlyph.Pause)
+    }
+
+    private fun playNext() {
+        if (indexState.intValue >= queue.lastIndex) return
+        saveProgress()
+        tv.flash.value = TvFlash(TvGlyph.Next)
+        playIndex(indexState.intValue + 1)
+    }
+
+    private fun playPrevious(exo: ExoPlayer) {
+        tv.flash.value = TvFlash(TvGlyph.Previous)
+        if (previousGoesBack(indexState.intValue, exo.currentPosition)) {
+            saveProgress()
+            playIndex(indexState.intValue - 1)
+        } else exo.seekTo(0)
+    }
+
+    private fun openTrackPanel(panel: TvTrackPanel) {
+        trackCursor.intValue = when (panel) {
+            TvTrackPanel.Audio -> selectedAudioTrack.intValue
+            TvTrackPanel.Subtitles -> if (captionsOn) selectedSubtitleTrack.intValue + 1 else 0
+            // Row 0 is Auto, then the offered heights tallest-first.
+            TvTrackPanel.Quality -> playbackState.value?.videoOptions.orEmpty()
+                .indexOfFirst { it.height == qualityPref.intValue }
+                .let { if (qualityPref.intValue == 0 || it < 0) 0 else it + 1 }
+            TvTrackPanel.Hidden -> 0
+        }
+        trackPanel.value = panel
+    }
+
+    private fun activateFocusedButton(exo: ExoPlayer) {
+        when (tv.focused.value) {
+            TvButton.Previous -> playPrevious(exo)
+            TvButton.PlayPause -> togglePlayPause(exo)
+            TvButton.Next -> playNext()
+            TvButton.Audio -> openTrackPanel(TvTrackPanel.Audio)
+            TvButton.Subtitles -> openTrackPanel(TvTrackPanel.Subtitles)
+            TvButton.Quality -> openTrackPanel(TvTrackPanel.Quality)
+        }
+    }
+
+    /**
+     * The TV remote. Controls hidden: ◀ ▶ scrub, OK pauses, ▲ ▼ wake them. Up:
+     * the timeline and button row are two zones, ▼ into the buttons and ▲ back,
+     * and Back steps out one level at a time before it leaves the video.
+     */
     override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent?): Boolean {
         if (!isTv) return super.onKeyDown(keyCode, event)
         val exo = player ?: return super.onKeyDown(keyCode, event)
@@ -1224,34 +1378,89 @@ class PlayerActivity : ComponentActivity() {
             pokeControls()
             return true
         }
-        val handled = when (keyCode) {
+        val shown = tvControlsShown()
+        val inButtons = shown && tv.zone.value == TvZone.Buttons
+        // With the controls out of the way, OK and Back answer the up-next card.
+        if (!shown && tv.upNext.value != null) when (keyCode) {
             android.view.KeyEvent.KEYCODE_DPAD_CENTER,
-            android.view.KeyEvent.KEYCODE_ENTER,
-            android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
-                if (exo.isPlaying) exo.pause() else exo.play(); true
+            android.view.KeyEvent.KEYCODE_ENTER -> {
+                playNext()
+                return true
             }
-            android.view.KeyEvent.KEYCODE_MEDIA_PLAY -> { exo.play(); true }
-            android.view.KeyEvent.KEYCODE_MEDIA_PAUSE -> { exo.pause(); true }
-            android.view.KeyEvent.KEYCODE_DPAD_RIGHT,
-            android.view.KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
-                exo.seekTo(exo.currentPosition + 10_000); true
+            android.view.KeyEvent.KEYCODE_BACK -> {
+                upNextDismissedAt = indexState.intValue
+                tv.upNext.value = null
+                return true
             }
-            android.view.KeyEvent.KEYCODE_DPAD_LEFT,
-            android.view.KeyEvent.KEYCODE_MEDIA_REWIND -> {
-                exo.seekTo((exo.currentPosition - 10_000).coerceAtLeast(0)); true
+        }
+        val handled = when (keyCode) {
+            android.view.KeyEvent.KEYCODE_BACK -> when {
+                tv.scrubTargetMs.value != null -> { cancelScrub(); true }
+                shown -> {
+                    tv.visibleUntil.longValue = 0
+                    tv.zone.value = TvZone.Timeline
+                    // Already out of sight: no poke below may bring it back.
+                    return true
+                }
+                else -> false
             }
-            // Up just peeks at the time without changing anything.
-            android.view.KeyEvent.KEYCODE_DPAD_UP -> true
+            android.view.KeyEvent.KEYCODE_DPAD_CENTER,
+            android.view.KeyEvent.KEYCODE_ENTER -> {
+                when {
+                    tv.scrubTargetMs.value != null -> commitScrub()
+                    inButtons -> activateFocusedButton(exo)
+                    else -> togglePlayPause(exo)
+                }
+                true
+            }
+            android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> { togglePlayPause(exo); true }
+            android.view.KeyEvent.KEYCODE_MEDIA_PLAY -> {
+                exo.play()
+                tv.flash.value = TvFlash(TvGlyph.Play)
+                true
+            }
+            android.view.KeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                exo.pause()
+                tv.flash.value = TvFlash(TvGlyph.Pause)
+                true
+            }
+            android.view.KeyEvent.KEYCODE_MEDIA_NEXT -> { playNext(); true }
+            android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS -> { playPrevious(exo); true }
+            android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                if (inButtons) tv.focused.value = tvButtonsNow().moved(tv.focused.value, 1)
+                else scrub(1, event)
+                true
+            }
+            android.view.KeyEvent.KEYCODE_DPAD_LEFT -> {
+                if (inButtons) tv.focused.value = tvButtonsNow().moved(tv.focused.value, -1)
+                else scrub(-1, event)
+                true
+            }
+            android.view.KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { scrub(1, event); true }
+            android.view.KeyEvent.KEYCODE_MEDIA_REWIND -> { scrub(-1, event); true }
+            android.view.KeyEvent.KEYCODE_DPAD_UP -> {
+                when {
+                    !shown -> tv.zone.value = TvZone.Timeline
+                    inButtons -> tv.zone.value = TvZone.Timeline
+                    else -> {
+                        tv.visibleUntil.longValue = 0
+                        return true
+                    }
+                }
+                true
+            }
             android.view.KeyEvent.KEYCODE_DPAD_DOWN -> {
-                trackCursor.intValue = 0
-                trackPanel.value = TvTrackPanel.Toolbar
+                if (!inButtons) {
+                    if (tv.scrubTargetMs.value != null) commitScrub()
+                    tv.zone.value = TvZone.Buttons
+                    tv.focused.value = TvButton.PlayPause
+                }
                 true
             }
             android.view.KeyEvent.KEYCODE_CAPTIONS -> {
-                trackCursor.intValue = if (captionsOn) {
-                    selectedSubtitleTrack.intValue + 1
-                } else 0
-                trackPanel.value = TvTrackPanel.Subtitles
+                tv.zone.value = TvZone.Buttons
+                tv.focused.value = TvButton.Subtitles
+                openTrackPanel(TvTrackPanel.Subtitles)
                 true
             }
             else -> false
@@ -1267,46 +1476,8 @@ class PlayerActivity : ComponentActivity() {
         val pb = playbackState.value ?: return false
         return when (trackPanel.value) {
             TvTrackPanel.Hidden -> false
-            TvTrackPanel.Toolbar -> when (keyCode) {
-                android.view.KeyEvent.KEYCODE_DPAD_LEFT -> {
-                    trackCursor.intValue = (trackCursor.intValue - 1).coerceAtLeast(0); true
-                }
-                android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                    trackCursor.intValue = (trackCursor.intValue + 1)
-                        .coerceAtMost(if (pb.hasQualityPicker()) 2 else 1)
-                    true
-                }
-                android.view.KeyEvent.KEYCODE_DPAD_CENTER,
-                android.view.KeyEvent.KEYCODE_ENTER -> {
-                    trackPanel.value = when (trackCursor.intValue) {
-                        0 -> {
-                            trackCursor.intValue = selectedAudioTrack.intValue
-                            TvTrackPanel.Audio
-                        }
-                        1 -> {
-                            trackCursor.intValue = if (captionsOn) {
-                                selectedSubtitleTrack.intValue + 1
-                            } else 0
-                            TvTrackPanel.Subtitles
-                        }
-                        else -> {
-                            // Row 0 is Auto, then the offered heights tallest-first.
-                            trackCursor.intValue = pb.videoOptions
-                                .indexOfFirst { it.height == qualityPref.intValue }
-                                .let { if (qualityPref.intValue == 0 || it < 0) 0 else it + 1 }
-                            TvTrackPanel.Quality
-                        }
-                    }
-                    true
-                }
-                android.view.KeyEvent.KEYCODE_DPAD_UP,
-                android.view.KeyEvent.KEYCODE_BACK -> {
-                    trackPanel.value = TvTrackPanel.Hidden; true
-                }
-                else -> false
-            }
             TvTrackPanel.Audio -> handleOptionKey(
-                keyCode, pb.audioTracks.size.coerceAtLeast(1), toolbarCursor = 0
+                keyCode, pb.audioTracks.size.coerceAtLeast(1)
             ) {
                 val chosen = if (pb.audioTracks.isEmpty()) 0
                     else trackCursor.intValue.coerceIn(0, pb.audioTracks.lastIndex)
@@ -1325,7 +1496,7 @@ class PlayerActivity : ComponentActivity() {
                 )
             }
             TvTrackPanel.Quality -> handleOptionKey(
-                keyCode, (1 + pb.videoOptions.size).coerceAtLeast(1), toolbarCursor = 2
+                keyCode, (1 + pb.videoOptions.size).coerceAtLeast(1)
             ) {
                 if (pb.videoOptions.isNotEmpty()) {
                     val chosen = trackCursor.intValue.coerceIn(0, pb.videoOptions.size)
@@ -1333,7 +1504,7 @@ class PlayerActivity : ComponentActivity() {
                 }
             }
             TvTrackPanel.Subtitles -> handleOptionKey(
-                keyCode, pb.subtitles.size + 1, toolbarCursor = 1
+                keyCode, pb.subtitles.size + 1
             ) {
                 val chosen = trackCursor.intValue - 1
                 selectedSubtitleTrack.intValue = chosen
@@ -1343,16 +1514,16 @@ class PlayerActivity : ComponentActivity() {
                 applyCaptionsPreference()
                 notice.value = Notice(
                     if (chosen < 0) "Subtitles off"
-                    else "Subtitles: ${pb.subtitles[chosen].name}"
+                    else "Subtitles: ${pb.subtitles[chosen].label}"
                 )
             }
         }
     }
 
+    /** Up and down choose, OK picks, and anything that leaves goes back to the buttons. */
     private fun handleOptionKey(
         keyCode: Int,
         optionCount: Int,
-        toolbarCursor: Int,
         select: () -> Unit
     ): Boolean = when (keyCode) {
         android.view.KeyEvent.KEYCODE_DPAD_UP -> {
@@ -1364,16 +1535,18 @@ class PlayerActivity : ComponentActivity() {
         android.view.KeyEvent.KEYCODE_DPAD_CENTER,
         android.view.KeyEvent.KEYCODE_ENTER -> {
             select()
-            trackPanel.value = TvTrackPanel.Toolbar
-            trackCursor.intValue = toolbarCursor
+            trackPanel.value = TvTrackPanel.Hidden
+            tv.zone.value = TvZone.Buttons
             true
         }
         android.view.KeyEvent.KEYCODE_DPAD_LEFT,
         android.view.KeyEvent.KEYCODE_BACK -> {
-            trackPanel.value = TvTrackPanel.Toolbar
-            trackCursor.intValue = toolbarCursor
+            trackPanel.value = TvTrackPanel.Hidden
+            tv.zone.value = TvZone.Buttons
             true
         }
+        // Swallowed: it mustn't fall through and scrub behind the open panel.
+        android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> true
         else -> false
     }
 
@@ -1553,11 +1726,6 @@ class PlayerActivity : ComponentActivity() {
 /** A transient kid-facing message; `at` gives repeats a fresh identity. */
 private data class Notice(val text: String, val at: Long = System.currentTimeMillis())
 
-private enum class TvTrackPanel { Hidden, Toolbar, Audio, Subtitles, Quality }
-
-/** A picker is worth showing only when we know what's playing (not for local files or shares). */
-private fun YouTubeRepository.Playback.hasQualityPicker() = videoOptions.isNotEmpty() || videoHeight > 0
-
 /** Top-center pill that shows a notice for a few seconds, then fades away. */
 @Composable
 private fun BoxScope.NoticeOverlay(state: MutableState<Notice?>, topPadding: androidx.compose.ui.unit.Dp = 28.dp) {
@@ -1585,11 +1753,11 @@ private fun BoxScope.NoticeOverlay(state: MutableState<Notice?>, topPadding: and
  * jump, it shouldn't ask for attention.
  */
 @Composable
-private fun BoxScope.SkipHint(state: MutableState<Long?>) {
+private fun BoxScope.SkipHint(state: MutableState<Long?>, topPadding: androidx.compose.ui.unit.Dp = 20.dp) {
     val at = state.value
     androidx.compose.animation.AnimatedVisibility(
         visible = at != null,
-        modifier = Modifier.align(Alignment.TopEnd).padding(top = 20.dp, end = 24.dp),
+        modifier = Modifier.align(Alignment.TopEnd).padding(top = topPadding, end = 24.dp),
         enter = androidx.compose.animation.fadeIn(),
         exit = androidx.compose.animation.fadeOut()
     ) {
@@ -1606,166 +1774,6 @@ private fun BoxScope.SkipHint(state: MutableState<Long?>) {
         if (at == null) return@LaunchedEffect
         delay(2_000)
         if (state.value == at) state.value = null
-    }
-}
-
-/** Bottom overlay: elapsed / remaining / total time and a red progress bar. */
-@Composable
-private fun BoxScope.TvControlsOverlay(
-    visibleUntil: State<Long>,
-    sponsorSegments: List<io.pickwick.app.data.SponsorBlock.Segment>,
-    panelState: State<TvTrackPanel>,
-    cursorState: State<Int>,
-    playback: YouTubeRepository.Playback?,
-    selectedAudio: Int,
-    selectedSubtitle: Int,
-    captionsOn: Boolean,
-    qualityPref: Int,
-    onVisibilityChanged: (Boolean) -> Unit,
-    playerProvider: () -> ExoPlayer?
-) {
-    val until by visibleUntil
-    val panel by panelState
-    val cursor by cursorState
-    var visible by remember { mutableStateOf(false) }
-    var positionMs by remember { mutableLongStateOf(0L) }
-    var durationMs by remember { mutableLongStateOf(0L) }
-    var bufferedMs by remember { mutableLongStateOf(0L) }
-
-    LaunchedEffect(until) {
-        while (System.currentTimeMillis() < until) {
-            playerProvider()?.let {
-                positionMs = it.currentPosition.coerceAtLeast(0)
-                durationMs = it.duration.coerceAtLeast(0)
-                bufferedMs = it.bufferedPosition.coerceAtLeast(0)
-            }
-            visible = true
-            delay(250)
-        }
-        visible = false
-    }
-
-    val controlsShown = (visible || panel != TvTrackPanel.Hidden) && durationMs > 0
-    androidx.compose.runtime.SideEffect { onVisibilityChanged(controlsShown) }
-    androidx.compose.runtime.DisposableEffect(Unit) {
-        onDispose { onVisibilityChanged(false) }
-    }
-    if (controlsShown) {
-        if (panel == TvTrackPanel.Audio || panel == TvTrackPanel.Subtitles || panel == TvTrackPanel.Quality) {
-            TvTrackSheet(
-                panel = panel,
-                cursor = cursor,
-                playback = playback,
-                selectedAudio = selectedAudio,
-                selectedSubtitle = selectedSubtitle,
-                captionsOn = captionsOn,
-                qualityPref = qualityPref
-            )
-        }
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .background(Color(0x80000000))
-                // Slim on purpose: the bar sits over the picture, so it takes only
-                // what the controls themselves need.
-                .padding(horizontal = 32.dp, vertical = 8.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    formatClock(positionMs / 1000) + " / " + formatClock(durationMs / 1000) +
-                        "  ·  −" + formatClock((durationMs - positionMs).coerceAtLeast(0) / 1000),
-                    color = Color.White,
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (panel != TvTrackPanel.Hidden) {
-                        TvTrackIcon(
-                            TvTrackGlyph.Audio,
-                            "Audio",
-                            panel == TvTrackPanel.Toolbar && cursor == 0
-                        )
-                        Spacer(Modifier.width(16.dp))
-                        TvTrackIcon(
-                            TvTrackGlyph.Captions,
-                            "Subtitles",
-                            panel == TvTrackPanel.Toolbar && cursor == 1
-                        )
-                        if (playback?.hasQualityPicker() == true) {
-                            Spacer(Modifier.width(16.dp))
-                            TvTrackIcon(
-                                TvTrackGlyph.Quality,
-                                "Quality",
-                                panel == TvTrackPanel.Toolbar && cursor == 2
-                            )
-                        }
-                        Spacer(Modifier.width(24.dp))
-                    }
-                }
-            }
-            Spacer(Modifier.height(4.dp))
-            // Three layers, YouTube's convention: dim track for the whole
-            // video, a lighter band for how far ahead is downloaded, red for
-            // what has been played. The buffered band is the honest answer to
-            // "why did it stop?" — a band that stays hard up against the red
-            // is a starving connection, not a broken app.
-            BoxWithConstraints(
-                Modifier
-                    .fillMaxWidth()
-                    .height(14.dp)
-            ) {
-                Box(
-                    Modifier
-                        .align(Alignment.CenterStart)
-                        .fillMaxWidth()
-                        .height(4.dp)
-                        .background(Color(0x40FFFFFF))
-                )
-                Box(
-                    Modifier
-                        .align(Alignment.CenterStart)
-                        .fillMaxWidth((bufferedMs.toFloat() / durationMs).coerceIn(0f, 1f))
-                        .height(4.dp)
-                        .background(Color(0x8CFFFFFF))
-                )
-                // Green skip marks sit under playback state: an already-viewed
-                // stretch stays red, while upcoming sponsor stretches stay green.
-                sponsorSegments.forEach { s ->
-                    val start = (s.startMs.toFloat() / durationMs).coerceIn(0f, 1f)
-                    val end = (s.endMs.toFloat() / durationMs).coerceIn(0f, 1f)
-                    if (end > start) Box(
-                        Modifier
-                            .align(Alignment.CenterStart)
-                            .padding(start = maxWidth * start)
-                            .width(maxWidth * (end - start))
-                            .height(4.dp)
-                            .background(SponsorSegmentGreen)
-                    )
-                }
-                Box(
-                    Modifier
-                        .align(Alignment.CenterStart)
-                        .fillMaxWidth((positionMs.toFloat() / durationMs).coerceIn(0f, 1f))
-                        .height(4.dp)
-                        .background(WatchedProgressRed)
-                )
-                Box(
-                    Modifier
-                        .align(Alignment.CenterStart)
-                        .padding(
-                            start = (maxWidth - 12.dp) *
-                                (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
-                        )
-                        .size(12.dp)
-                        .clip(CircleShape)
-                        .background(WatchedProgressRed)
-                )
-            }
-        }
     }
 }
 
@@ -1805,174 +1813,6 @@ private fun BoxScope.PhoneQualityButton(
                         onClick = { open = false; onPick(value) }
                     )
                 }
-            }
-        }
-    }
-}
-
-private enum class TvTrackGlyph { Audio, Captions, Quality }
-
-@Composable
-private fun TvTrackIcon(glyph: TvTrackGlyph, label: String, selected: Boolean) {
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = Modifier
-            .size(44.dp)
-            .clip(CircleShape)
-            .background(if (selected) Color.White else Color.Transparent)
-    ) {
-        val ink = if (selected) Color(0xFF0F0F0F) else Color.White
-        when (glyph) {
-            TvTrackGlyph.Audio -> Box(contentAlignment = Alignment.Center) {
-                Box(
-                    Modifier
-                        .offset(x = (-7).dp)
-                        .size(width = 7.dp, height = 12.dp)
-                        .background(ink, RoundedCornerShape(1.dp))
-                )
-                Box(
-                    Modifier
-                        .offset(x = 1.dp)
-                        .size(width = 10.dp, height = 18.dp)
-                        .clip(
-                            androidx.compose.foundation.shape.GenericShape { size, _ ->
-                                moveTo(0f, size.height * 0.28f)
-                                lineTo(size.width * 0.55f, 0f)
-                                lineTo(size.width, 0f)
-                                lineTo(size.width, size.height)
-                                lineTo(size.width * 0.55f, size.height)
-                                lineTo(0f, size.height * 0.72f)
-                                close()
-                            }
-                        )
-                        .background(ink)
-                )
-                Text(
-                    ")))",
-                    color = ink,
-                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                    modifier = Modifier.padding(start = 22.dp)
-                )
-            }
-            TvTrackGlyph.Captions -> Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .size(width = 30.dp, height = 22.dp)
-                    .border(2.dp, ink, RoundedCornerShape(3.dp))
-            ) {
-                Text(
-                    "CC",
-                    color = ink,
-                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold)
-                )
-            }
-            TvTrackGlyph.Quality -> Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .size(width = 30.dp, height = 22.dp)
-                    .border(2.dp, ink, RoundedCornerShape(3.dp))
-            ) {
-                Text(
-                    "HD",
-                    color = ink,
-                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun BoxScope.TvTrackSheet(
-    panel: TvTrackPanel,
-    cursor: Int,
-    playback: YouTubeRepository.Playback?,
-    selectedAudio: Int,
-    selectedSubtitle: Int,
-    captionsOn: Boolean,
-    qualityPref: Int
-) {
-    val options = if (panel == TvTrackPanel.Audio) {
-        playback?.audioTracks.orEmpty().mapIndexed { index, track ->
-            Triple(
-                track.name + if (track.original) "  ·  Original" else "",
-                index == selectedAudio,
-                index
-            )
-        }.ifEmpty { listOf(Triple("Original", true, 0)) }
-    } else if (panel == TvTrackPanel.Quality) {
-        val offered = playback?.videoOptions.orEmpty()
-        if (offered.isEmpty()) {
-            listOf(Triple("${playback?.videoHeight ?: 0}p", true, 0))
-        } else {
-            listOf(
-                Triple(
-                    "Auto" + if (qualityPref == 0) "  ·  ${playback?.videoHeight ?: 0}p" else "",
-                    qualityPref == 0,
-                    0
-                )
-            ) + offered.mapIndexed { index, option ->
-                Triple("${option.height}p", qualityPref == option.height, index + 1)
-            }
-        }
-    } else {
-        listOf(Triple("Off", !captionsOn, 0)) +
-            playback?.subtitles.orEmpty().mapIndexed { index, track ->
-                Triple(track.name, captionsOn && index == selectedSubtitle, index + 1)
-            }
-    }
-    Column(
-        modifier = Modifier
-            .align(Alignment.BottomStart)
-            .padding(start = 48.dp, bottom = 118.dp)
-            // Audio/subtitle names vary a lot, so those keep a fixed width; the
-            // quality list is short and uniform, so it hugs its content.
-            .then(
-                if (panel == TvTrackPanel.Quality) {
-                    Modifier.width(IntrinsicSize.Max).widthIn(min = 160.dp)
-                } else Modifier.width(330.dp)
-            )
-            .background(Color(0xE6000000), RoundedCornerShape(8.dp))
-            .padding(vertical = 8.dp)
-    ) {
-        Text(
-            when (panel) {
-                TvTrackPanel.Audio -> "Audio"
-                TvTrackPanel.Quality -> "Quality"
-                else -> "Subtitles"
-            },
-            color = Color.White,
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)
-        )
-        val windowStart = (cursor - 3).coerceIn(0, (options.size - 7).coerceAtLeast(0))
-        options.drop(windowStart).take(7).forEach { (label, checked, index) ->
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        if (index == cursor) Color(0x33FFFFFF) else Color.Transparent
-                    )
-                    .padding(horizontal = 16.dp, vertical = 10.dp)
-            ) {
-                Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
-                    if (checked) {
-                        Icon(
-                            Icons.Filled.Check,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
-                Text(
-                    label,
-                    color = Color.White,
-                    style = MaterialTheme.typography.bodyLarge,
-                    maxLines = 1,
-                    modifier = Modifier.padding(start = 12.dp)
-                )
             }
         }
     }

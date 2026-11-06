@@ -134,7 +134,7 @@ class PodcastPlayerActivity : ComponentActivity() {
             }
         }
 
-        setContent { MaterialTheme(colorScheme = PickwickDarkColors) { Screen() } }
+        setContent { PickwickTheme(PickwickDarkColors) { Screen() } }
     }
 
     private suspend fun load(i: Int) {
@@ -282,7 +282,7 @@ class PodcastPlayerActivity : ComponentActivity() {
         enabled: Boolean = true, large: Boolean = false, onClick: () -> Unit) {
         FilledTonalButton(
             onClick = onClick, enabled = enabled,
-            modifier = modifier.tvFocusHighlight().semanticsLabel(description).size(if (large) 72.dp else 56.dp),
+            modifier = modifier.semanticsLabel(description).size(if (large) 72.dp else 56.dp),
             contentPadding = PaddingValues(0.dp),
             shape = androidx.compose.foundation.shape.CircleShape
         ) {

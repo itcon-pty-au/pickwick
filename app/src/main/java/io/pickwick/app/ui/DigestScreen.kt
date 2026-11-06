@@ -106,7 +106,7 @@ fun WeeklyDigestScreen(
                     style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
                     modifier = Modifier.weight(1f)
                 )
-                TextButton(modifier = Modifier.tvFocusHighlight(), onClick = onBack) { Text("Close") }
+                TextButton(modifier = Modifier, onClick = onBack) { Text("Close") }
             }
 
             val list = digests
@@ -251,7 +251,6 @@ private fun DeviceWeekCard(
                     Text(it, style = MaterialTheme.typography.bodyMedium)
                 } ?: FilledTonalButton(
                     enabled = !busy,
-                    modifier = Modifier.tvFocusHighlight(),
                     onClick = {
                         busy = true; error = null
                         scope.launch {

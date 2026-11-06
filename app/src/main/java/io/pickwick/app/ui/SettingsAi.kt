@@ -131,7 +131,6 @@ internal fun AiScreeningSection(
     ) {
         AI_PRESETS.forEach { preset ->
             FilterChip(
-                modifier = Modifier.tvFocusHighlight(),
                 selected = ai.baseUrl == preset.baseUrl,
                 onClick = { onChanged(ai.copy(baseUrl = preset.baseUrl, model = preset.modelHint)) },
                 label = { Text(preset.name) }
@@ -326,13 +325,11 @@ internal fun AiReviewSection(
             },
             confirmButton = {
                 TextButton(
-                    modifier = Modifier.tvFocusHighlight(),
                     onClick = { onUnblock(row.videoId); confirmUnblock = null }
                 ) { Text("Unblock") }
             },
             dismissButton = {
                 TextButton(
-                    modifier = Modifier.tvFocusHighlight(),
                     onClick = { confirmUnblock = null }
                 ) { Text("Cancel") }
             }
@@ -547,7 +544,6 @@ internal fun AiReviewSection(
                     youTubeButton(row.videoId)
                     Spacer(Modifier.weight(1f))
                     TextButton(
-                        modifier = Modifier.tvFocusHighlight(),
                         onClick = { confirmUnblock = row }
                     ) { Text("Unblock") }
                 }
@@ -622,7 +618,7 @@ internal fun AiReviewSection(
                             style = MaterialTheme.typography.labelLarge,
                             modifier = Modifier
                                 .tvFocusHighlight()
-                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
+                                .clipOnPhone(androidx.compose.foundation.shape.RoundedCornerShape(18.dp))
                                 .dpadLongPress {
                                     if (profiles.size >= 2) perKid = videoId to isAllow
                                 }
@@ -704,7 +700,7 @@ internal fun AiReviewSection(
             style = MaterialTheme.typography.labelLarge,
             modifier = Modifier
                 .tvFocusHighlight()
-                .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                .clipOnPhone(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
                 .combinedClickable(onClick = { parentBlocksExpanded = !parentBlocksExpanded })
                 .padding(horizontal = 4.dp, vertical = 8.dp)
         )
@@ -729,7 +725,6 @@ internal fun AiReviewSection(
             matches.take(parentBlocksShown).forEach { parentBlockCard(it) }
             if (matches.size > parentBlocksShown) {
                 TextButton(
-                    modifier = Modifier.tvFocusHighlight(),
                     onClick = { parentBlocksShown += PARENT_BLOCK_PAGE }
                 ) { Text("Show more (${matches.size - parentBlocksShown} left)") }
             }
@@ -759,7 +754,7 @@ internal fun AiReviewSection(
             style = MaterialTheme.typography.labelLarge,
             modifier = Modifier
                 .tvFocusHighlight()
-                .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                .clipOnPhone(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
                 .combinedClickable(onClick = { blockedExpanded = !blockedExpanded })
                 .padding(horizontal = 4.dp, vertical = 8.dp)
         )

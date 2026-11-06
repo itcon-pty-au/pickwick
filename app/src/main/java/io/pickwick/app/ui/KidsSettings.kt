@@ -12,12 +12,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -85,7 +82,6 @@ fun KidsSection(
     }
 
     Button(
-        modifier = Modifier.tvFocusHighlight(),
         onClick = {
             onOpen(
                 Profile(
@@ -139,7 +135,6 @@ fun KidToggleChips(
         profiles.forEach { profile ->
             val on = profile.id in effective
             FilterChip(
-                modifier = Modifier.tvFocusHighlight(),
                 selected = on,
                 onClick = {
                     val next = if (on) effective - profile.id else effective + profile.id
@@ -166,7 +161,6 @@ fun KidSelectorChips(
     ) {
         profiles.forEach { profile ->
             FilterChip(
-                modifier = Modifier.tvFocusHighlight(),
                 selected = profile.id == selectedId,
                 onClick = { onSelect(profile.id) },
                 label = { Text(profile.name) }

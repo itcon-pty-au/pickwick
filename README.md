@@ -89,13 +89,14 @@ with no ads.
 - **Time price tags** on tiles (0.5x … FREE, or 1.5x for "junk food" channels) —
   cheaper channels drain the clock slower, so kids can spend their time knowingly
 - **Subtitles, audio language and quality** on demand — CC button on phones and
-  a quality pill (e.g. "720p"), ▼ on the TV remote opens the track controls
-  (Audio, CC and **HD**); choices stick
+  a quality pill (e.g. "720p"), on the TV buttons in the player that open a side
+  panel; choices stick
 - Gentle **"5 minutes left" / "1 minute left"** warnings before time runs out
 - Friendly screens when time is up: "Time for a break! ⏰", "It's bedtime! 🌙"
 
-Fully D-pad navigable on TV (colored focus glow, remote shortcuts: OK = pause,
-◀ ▶ = seek ±10s, ▼ = subtitles, any key shows elapsed/remaining time).
+Fully D-pad navigable on TV: focused tiles lift and buttons fill white. In the
+player, OK pauses, ◀ ▶ scrub (hold to go faster, with a preview, and one seek when
+you stop), ▼ reaches the buttons, and Back steps out one level at a time.
 
 ## What the parent controls (all from their phone)
 

@@ -39,8 +39,8 @@ internal fun PodcastSettings(feeds: List<PodcastFeed>, profiles: List<Profile>, 
                     SourceBadgeIcon(SourceBadge.PODCAST)
                     Spacer(Modifier.width(8.dp))
                     Text(feed.name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                    IconButton(onClick = { editing = feed }, modifier = Modifier.tvFocusHighlight()) { Icon(Icons.Default.Edit, "Edit ${feed.name}") }
-                    IconButton(onClick = { deleting = feed }, modifier = Modifier.tvFocusHighlight()) { Icon(Icons.Default.Delete, "Remove ${feed.name}") }
+                    IconButton(onClick = { editing = feed }, modifier = Modifier) { Icon(Icons.Default.Edit, "Edit ${feed.name}") }
+                    IconButton(onClick = { deleting = feed }, modifier = Modifier) { Icon(Icons.Default.Delete, "Remove ${feed.name}") }
                 }
                 Text(feed.url, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
@@ -53,7 +53,7 @@ internal fun PodcastSettings(feeds: List<PodcastFeed>, profiles: List<Profile>, 
         }
     }
     Spacer(Modifier.height(8.dp))
-    Button(onClick = { adding = true }, modifier = Modifier.tvFocusHighlight()) { Icon(Icons.Default.Add, null); Text("Add RSS podcast") }
+    Button(onClick = { adding = true }, modifier = Modifier) { Icon(Icons.Default.Add, null); Text("Add RSS podcast") }
     if (adding || editing != null) PodcastFeedDialog(editing, feeds,
         onDismiss = { adding = false; editing = null },
         onSave = { f ->
@@ -106,7 +106,7 @@ private fun PodcastFeedDialog(initial: PodcastFeed?, existing: List<PodcastFeed>
                     singleLine = true, modifier = Modifier.fillMaxWidth(),
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Uri))
                 OutlinedButton(onClick = { check() }, enabled = !busy && trimmed.isNotEmpty(),
-                    modifier = Modifier.tvFocusHighlight()) { Text(if (busy) "Checking…" else "Check feed") }
+                    modifier = Modifier) { Text(if (busy) "Checking…" else "Check feed") }
                 if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                 summary?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                 if (duplicate) Text("This podcast is already added.", color = MaterialTheme.colorScheme.error,
@@ -123,9 +123,8 @@ private fun PodcastFeedDialog(initial: PodcastFeed?, existing: List<PodcastFeed>
                     onSave(base.copy(url = trimmed, name = name.trim()))
                 },
                 enabled = !busy && !duplicate && checkedUrl == trimmed && name.isNotBlank(),
-                modifier = Modifier.tvFocusHighlight()
             ) { Text("Save") }
         },
-        dismissButton = { TextButton(onClick = onDismiss, modifier = Modifier.tvFocusHighlight()) { Text("Cancel") } }
+        dismissButton = { TextButton(onClick = onDismiss, modifier = Modifier) { Text("Cancel") } }
     )
 }

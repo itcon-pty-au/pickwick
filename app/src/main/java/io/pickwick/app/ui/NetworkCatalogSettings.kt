@@ -60,8 +60,8 @@ internal fun NetworkCatalogSettings(shares: List<SmbShare>, catalogs: List<SmbCa
                 ) { marquee = !marquee }) {
                     MarqueeTitle(c.name, marquee)
                 }
-                IconButton(onClick = { editing = c }, modifier = Modifier.tvFocusHighlight()) { Icon(Icons.Default.Edit, "Edit ${c.name}") }
-                IconButton(onClick = { deleting = c }, modifier = Modifier.tvFocusHighlight()) { Icon(Icons.Default.Delete, "Remove ${c.name}") }
+                IconButton(onClick = { editing = c }, modifier = Modifier) { Icon(Icons.Default.Edit, "Edit ${c.name}") }
+                IconButton(onClick = { deleting = c }, modifier = Modifier) { Icon(Icons.Default.Delete, "Remove ${c.name}") }
             }
             Text(c.root.ifBlank { "/" }, style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -73,13 +73,13 @@ internal fun NetworkCatalogSettings(shares: List<SmbShare>, catalogs: List<SmbCa
           }
         }
         }
-        TextButton(onClick = { addingFolderTo = share }, modifier = Modifier.tvFocusHighlight()) {
+        TextButton(onClick = { addingFolderTo = share }, modifier = Modifier) {
             Icon(Icons.Default.Add, null); Text("Add catalog folder")
         }
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
     }
     Spacer(Modifier.height(8.dp))
-    Button(onClick = { adding = true }, modifier = Modifier.tvFocusHighlight()) { Icon(Icons.Default.Add, null); Text("Add network share") }
+    Button(onClick = { adding = true }, modifier = Modifier) { Icon(Icons.Default.Add, null); Text("Add network share") }
     if (adding || editingShare != null) NetworkShareDialog(editingShare?.catalog(),
         onDismiss = { adding = false; editingShare = null },
         onSave = { c ->

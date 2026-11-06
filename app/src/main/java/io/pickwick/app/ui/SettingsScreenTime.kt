@@ -406,7 +406,6 @@ private fun DayChips(days: Set<Int>, onChanged: (Set<Int>) -> Unit) {
             val day = index + 1
             val on = day in days
             FilterChip(
-                modifier = Modifier.tvFocusHighlight(),
                 selected = on,
                 // Clearing the last day would leave a window that blocks
                 // nothing but still looks configured; Remove is how you mean
@@ -815,7 +814,6 @@ internal fun GrantTimeSection(
             }
         }
         OutlinedButton(
-            modifier = Modifier.tvFocusHighlight(),
             onClick = {
                 apply("Took back", { it.takeBackExtraMinutes(minutes) }) {
                     LanClient.takeBack(it, minutes, kidId)
@@ -824,7 +822,6 @@ internal fun GrantTimeSection(
         ) { Text("Take back") }
         Spacer(Modifier.width(8.dp))
         Button(
-            modifier = Modifier.tvFocusHighlight(),
             onClick = {
                 apply("Granted", { it.grantExtraMinutes(minutes) }) {
                     LanClient.grant(it, minutes, kidId)
@@ -900,7 +897,6 @@ internal fun PauseTodayRow(pausedUntil: Long?, kidName: String? = null, onChange
                 color = MaterialTheme.colorScheme.primary
             )
             Button(
-                modifier = Modifier.tvFocusHighlight(),
                 onClick = { onChanged(null) }
             ) { Text("Resume") }
         } else {

@@ -120,6 +120,13 @@ can't take the slot with a no-preflight cross-site POST.
   in-place and are worth preserving.
 - Colors live in `ui/Theme.kt`. Watched/played progress is
   `WatchedProgressRed` (YouTube convention) — deliberately not the brand teal.
+- TV focus never uses an outline. Tiles take `onTileFocus` (before the clickable),
+  `tvFocusLift` (after it, or the page jitters on every press) and `tvTileColors`;
+  rows and plain controls take `tvFocusHighlight`, and buttons and chips need
+  neither: same-named wrappers in `ui/TvSquareButtons.kt` make them square and
+  fill them white on focus. Those wrappers outrank the `material3.*` star import,
+  so don't import Material's `Button`, `IconButton`, `FilterChip` etc. by name in
+  `ui/`. Screens use `PickwickTheme`, which drops Material's focus layer on TV.
 - `LaunchedEffect` and composable bodies run on the **main thread**. Disk I/O,
   SharedPreferences and JSON parsing must go through
   `withContext(Dispatchers.IO)`; `ConfigStore`/`PairingStore` calls are all

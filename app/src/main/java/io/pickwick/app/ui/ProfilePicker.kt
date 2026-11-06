@@ -17,11 +17,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -145,14 +144,17 @@ fun WhosWatchingScreen(
             ) {
                 items(profiles.size, key = { profiles[it].id }) { i ->
                     val profile = profiles[i]
+                    var focused by remember { mutableStateOf(false) }
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = (if (i == 0) Modifier.focusRequester(firstFocus) else Modifier)
+                            .onTileFocus { focused = it }
                             .tvFocusHighlight()
-                            .clip(MaterialTheme.shapes.medium)
+                            .clipOnPhone(MaterialTheme.shapes.medium)
                             .clickable {
                                 if (profile.pin != null) pinFor = profile else onPicked(profile)
                             }
+                            .tvFocusLift(focused)
                             .padding(12.dp)
                     ) {
                         ProfileAvatar(profile, size = 108)
@@ -181,11 +183,12 @@ fun WhosWatchingScreen(
             // Still gated by the parent check inside — this is a doorway, not a hole.
             TextButton(
                 onClick = onOpenSettings,
-                modifier = Modifier.tvFocusHighlight()
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             ) {
                 Text(
                     "Parent settings",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall
                 )
             }

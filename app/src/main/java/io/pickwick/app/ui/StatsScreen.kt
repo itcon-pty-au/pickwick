@@ -111,7 +111,7 @@ fun StatsScreen(
                         )
                     }
                 }
-                TextButton(modifier = Modifier.tvFocusHighlight(), onClick = onBack) { Text("Close") }
+                TextButton(modifier = Modifier, onClick = onBack) { Text("Close") }
             }
 
             val data = payload
@@ -167,7 +167,6 @@ fun StatsScreen(
                         var sending by remember { mutableStateOf(false) }
                         FilledTonalButton(
                             enabled = !sending,
-                            modifier = Modifier.tvFocusHighlight(),
                             onClick = {
                                 sending = true
                                 scope.launch {

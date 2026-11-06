@@ -242,7 +242,6 @@ fun PickwickScreen(
                                     onPlay(next)
                                 },
                                 label = { Text("▶ Continue") },
-                                modifier = Modifier.tvFocusHighlight()
                             )
                         }
                         if (screen is Screen.Queue && state.videos.isNotEmpty()) {
@@ -250,7 +249,6 @@ fun PickwickScreen(
                                 selected = false,
                                 onClick = { onPlayQueue(0) },
                                 label = { Text("▶ Play") },
-                                modifier = Modifier.tvFocusHighlight()
                             )
                         }
                     }
@@ -299,7 +297,6 @@ fun PickwickScreen(
                                     AssistChip(
                                         onClick = { vm.openChannel(c) },
                                         label = { Text(c.name, maxLines = 1) },
-                                        modifier = Modifier.tvFocusHighlight()
                                     )
                                 }
                                 items(podcastHits.size) { i ->
@@ -307,7 +304,6 @@ fun PickwickScreen(
                                     AssistChip(
                                         onClick = { podcastOpen = p.id },
                                         label = { Text("🎙️ ${p.name}", maxLines = 1) },
-                                        modifier = Modifier.tvFocusHighlight()
                                     )
                                 }
                             }

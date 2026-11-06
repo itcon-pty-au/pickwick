@@ -76,7 +76,7 @@ fun SettingsFlow(
 
     BackHandler { onDone(false) }
 
-    MaterialTheme(colorScheme = AdminDarkColors) {
+    PickwickTheme(AdminDarkColors) {
     Surface(Modifier.fillMaxSize()) {
         when (stage) {
             Stage.Biometric -> {
@@ -745,7 +745,7 @@ private fun AdminScreen(
                 style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
                 modifier = Modifier.weight(1f)
             )
-            TextButton(modifier = Modifier.tvFocusHighlight(), onClick = ::close) { Text("Done") }
+            TextButton(modifier = Modifier, onClick = ::close) { Text("Done") }
         }
         Text(
             "Changes apply as you make them and reach the kids' devices on their own.",
@@ -846,7 +846,7 @@ internal fun SubPage(title: String, onBack: () -> Unit, content: @Composable Col
             .padding(24.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            TextButton(modifier = Modifier.tvFocusHighlight(), onClick = onBack) { Text("‹ Back") }
+            TextButton(modifier = Modifier, onClick = onBack) { Text("‹ Back") }
             Text(
                 title,
                 style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
@@ -988,7 +988,7 @@ private fun SearchIndexSection(
         // re-read. This forces one.
         IconButton(
             onClick = { scope.launch(kotlinx.coroutines.Dispatchers.IO) { index.refresh() } },
-            modifier = Modifier.size(32.dp).tvFocusHighlight()
+            modifier = Modifier.size(32.dp)
         ) {
             // material-icons-core shipped here has no Refresh; a glyph does the job.
             Text("↻", style = MaterialTheme.typography.titleMedium)

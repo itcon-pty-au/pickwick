@@ -102,7 +102,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         // worker itself no-ops on any device that isn't the master.
         io.pickwick.app.data.IndexCrawlWorker.schedule(applicationContext)
         setContent {
-            MaterialTheme(colorScheme = PickwickDarkColors) {
+            PickwickTheme(PickwickDarkColors) {
                 // The family config drives who exists and whether this device is
                 // dedicated; reloaded whenever a push lands or settings close.
                 var family by remember { mutableStateOf(initialConfig) }
@@ -430,6 +430,9 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                             // wide value would misbill every other video.
                             val items = vm.state.value.videos
                             if (items.isNotEmpty()) {
+                                PlayerQueueInfo.byUrl = items.associate {
+                                    it.video.url to PlayerQueueInfo.Item(it.video.title, it.video.thumbnailUrl)
+                                }
                                 val intent = Intent(this, PlayerActivity::class.java)
                                 intent.putStringArrayListExtra(
                                     PlayerActivity.EXTRA_QUEUE,
@@ -480,6 +483,9 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                             (screen.source.kind == SourceKind.PLAYLIST ||
                                 (screen.source.kind == SourceKind.CUSTOM && vm.customAutoplay))
                         ) {
+                            PlayerQueueInfo.byUrl = s.videos.associate {
+                                it.video.url to PlayerQueueInfo.Item(it.video.title, it.video.thumbnailUrl)
+                            }
                             intent.putStringArrayListExtra(
                                 PlayerActivity.EXTRA_QUEUE,
                                 ArrayList(s.videos.map { it.video.url })
