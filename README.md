@@ -71,7 +71,7 @@ with no ads.
 - **📚 Up next** — hold any poster (long-press / hold OK) for one menu: add to
   the queue, save to Favorites or Watch later, mark it watched, or request an
   offline copy; queued videos play in order and clear themselves only when
-  truly finished
+  truly finished. ▲ ▼ ✕ on each row reorder and remove them, by touch or remote
 - **🎧 Listen mode** *(only if a parent enables it)* — press the power button and
   the audio keeps playing with the screen off, for audiobooks and music at
   bedtime; minutes drain at a rate the parent chooses
@@ -82,7 +82,8 @@ with no ads.
   auto-play in order, and in-video sponsor segments are skipped automatically
   (via SponsorBlock's community data) — parents choose which kinds to skip:
   sponsor reads, self-promotion and "like & subscribe" pleas by default, with
-  intros, outros, recaps and filler opt-in
+  intros, outros, recaps and filler opt-in. A faint "Skipped ahead" note shows
+  when it happens
 - **NEW badges** when an allowed channel has fresh uploads
 - **Source icons** on tiles — YouTube, network share or podcast — so a mixed
   home screen stays easy to read
@@ -298,8 +299,8 @@ ranged chunks the way official clients do — defeating server-side throttling �
 with a five-minute read-ahead buffer, so a Wi-Fi dip drains the buffer instead
 of stalling playback.
 
-**Choosing a quality.** The player's HD control (on the TV remote: press ▼, then
-move to **HD**; on phones: the pill at the top right) lists **Auto** plus every
+**Choosing a quality.** The player's quality control (on the TV remote: press ▼,
+then move to **Quality**; on phones: the pill at the top right) lists **Auto** plus every
 height the video offers. Picking one swaps the picture in place and resumes where
 it was; the choice is remembered. Step down to 720p if a TV box is struggling.
 
@@ -334,7 +335,7 @@ Appstore, allow it to install unknown apps (Settings → My Fire TV → Develope
 options; the switch is called "Apps from Unknown Sources" on older Fire OS), then
 enter the code above. These boxes have less memory than a
 Chromecast, and the app is tuned for that, but a busy Fire TV can still stutter
-on 1080p — drop to 720p with the HD control if it does.
+on 1080p — drop to 720p with the player's **Quality** button if it does.
 
 ## Privacy & good-citizen notes
 
@@ -522,3 +523,6 @@ persists across retries and app restarts.
 - [x] In-player quality picker; parents choose which SponsorBlock kinds to skip
 - [x] Kid reports, custom playlists from single videos, per-source AI switch
 - [x] Live streams: LIVE badge, Offline state and a Live row on the TV
+- [x] New TV player: scrubbing with previews, chapters, an up next card and side
+      panels, plus a new focus style across the TV
+- [x] A Blocked & reported page with search and undo for parent blocks
