@@ -34,8 +34,8 @@ android {
         // a desugared library API (see coreLibraryDesugaring below).
         minSdk = 25
         targetSdk = 34
-        versionCode = 42
-        versionName = "0.14.1"
+        versionCode = 43
+        versionName = "0.14.2"
 
         // Self-update manifest: JSON with versionCode/versionName/apkUrl.
         buildConfigField(

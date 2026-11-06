@@ -30,6 +30,28 @@ object VideoStatus {
         )
 }
 
+/**
+ * Streams a parent added to a custom playlist belong to the TV's Live row, not to
+ * channel views, where they'd appear twice. A stream in a YouTube channel's own
+ * feed stays: nothing else on the TV leads to it.
+ */
+object LiveRowVideos {
+
+    /** Off-air ones count too: a dimmed Offline tile is no use to a kid. */
+    fun ids(picked: List<WhitelistEntry>, profileId: String?): Set<String> =
+        picked.filter { it.kind == SourceKind.CUSTOM && it.visibleTo(profileId) }
+            .flatMap { e -> e.customVideos.filter { it.live }.map { it.id } }
+            .toSet()
+
+    fun withoutLiveRow(videos: List<Video>, ids: Set<String>): List<Video> =
+        if (ids.isEmpty()) videos else videos.filterNot { it.live && it.videoId in ids }
+
+    /** A playlist of nothing but streams would open onto an empty page. */
+    fun isOnlyStreams(source: Source): Boolean =
+        source.kind == SourceKind.CUSTOM && source.customVideos.isNotEmpty() &&
+            source.customVideos.all { it.live }
+}
+
 /** Last known [VideoStatus] per video id, so checks stay short and the tiles paint at once. */
 class VideoStatusCache(context: Context) {
 
