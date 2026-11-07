@@ -491,7 +491,9 @@ class YouTubeRepository {
         /** Uploader-marked sections, earliest first; empty when the video has none. */
         val chapters: List<Chapter> = emptyList(),
         /** Sprite sheets for the scrub preview; null when YouTube offers none. */
-        val storyboard: Storyboard? = null
+        val storyboard: Storyboard? = null,
+        /** Known before the player loads the stream; 0 for live and local files. */
+        val durationSeconds: Long = 0
     )
 
     data class VideoOption(val height: Int, val url: String)
@@ -655,7 +657,8 @@ class YouTubeRepository {
                         description = info.description?.content.orEmpty(),
                         tags = info.tags.orEmpty(), uploaderUrl = info.uploaderUrl,
                         videoOptions = options, videoHeight = bestVideo.height,
-                        chapters = chaptersOf(info), storyboard = storyboardOf(info)
+                        chapters = chaptersOf(info), storyboard = storyboardOf(info),
+                        durationSeconds = info.duration.coerceAtLeast(0)
                     )
                 }
             }
@@ -674,7 +677,8 @@ class YouTubeRepository {
                 description = info.description?.content.orEmpty(),
                 tags = info.tags.orEmpty(), uploaderUrl = info.uploaderUrl,
                 videoHeight = muxed.height,
-                chapters = chaptersOf(info), storyboard = storyboardOf(info)
+                chapters = chaptersOf(info), storyboard = storyboardOf(info),
+                durationSeconds = info.duration.coerceAtLeast(0)
             )
         }
 

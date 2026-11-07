@@ -370,6 +370,7 @@ private fun AdminScreen(
     var networkShares by remember(initial) { mutableStateOf(migratedNetwork.networkShares) }
     var contentGroups by remember(initial) { mutableStateOf(initial.contentGroups) }
     var podcasts by remember(initial) { mutableStateOf(initial.podcasts) }
+    var quizBonus by remember(initial) { mutableStateOf(initial.quizBonus) }
     var baseline by remember(initial) { mutableStateOf(initial) }
     /** Entries added by this session's URL import — shown with a NEW tag for review. */
     var newIds by remember { mutableStateOf(setOf<String>()) }
@@ -455,7 +456,8 @@ private fun AdminScreen(
             networkCatalogs = networkCatalogs.map { it.copy(profileIds = it.profileIds.intersect(validIds)) },
             networkShares = networkShares,
             contentGroups = contentGroups,
-            podcasts = podcasts.map { it.copy(profileIds = it.profileIds.intersect(validIds)) }
+            podcasts = podcasts.map { it.copy(profileIds = it.profileIds.intersect(validIds)) },
+            quizBonus = quizBonus
         )
     }
 
@@ -702,6 +704,77 @@ private fun AdminScreen(
                         }
                     }
                 }
+                HubPage.QuizBonus -> {
+                    val quizChannels = entries.filter { it.quiz }
+                        .map { it.label ?: resolvedNames[it.url] ?: it.id }
+                    SectionTitle("How it works")
+                    SettingsCard {
+                        Text(
+                            "On channels you choose, kids get a short quiz after a video " +
+                                "that teaches something, and earn screen time for right " +
+                                "answers. The AI skips videos with nothing worth asking, " +
+                                "and kids can always skip the quiz.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (!ai.enabled) {
+                            Text(
+                                "Needs AI screening, which is off. Turn it on under " +
+                                    "Content screening.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                        Text(
+                            if (quizChannels.isEmpty()) "No channels have quizzes yet."
+                            else "On for: ${quizChannels.joinToString(", ")}",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            "Tap 🎓 on a channel under Content Sources → YouTube to switch it " +
+                                "on. To opt a kid out, use the switch on their page.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    SectionTitle("Rewards")
+                    SettingsCard {
+                        StepperRow(
+                            label = "Bonus per correct answer",
+                            value = quizBonus.secondsPerQuestion, step = 5, min = 5, max = 300,
+                            allowOff = false, format = { "$it sec" },
+                            onChanged = { v -> v?.let { quizBonus = quizBonus.copy(secondsPerQuestion = it) } }
+                        )
+                        SettingsDivider()
+                        StepperRow(
+                            label = "Most questions per video",
+                            value = quizBonus.maxQuestions, step = 1, min = 1, max = 5,
+                            allowOff = false, format = { "$it" },
+                            onChanged = { v -> v?.let { quizBonus = quizBonus.copy(maxQuestions = it) } }
+                        )
+                        Text(
+                            "A limit for the AI, not a target: it may ask fewer. Videos " +
+                                "already quizzed keep the questions they have, up to this limit.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        SettingsDivider()
+                        StepperRow(
+                            label = "Most bonus time per day",
+                            value = quizBonus.maxMinutesPerDay, step = 5, min = 5, max = 120,
+                            allowOff = false, format = { "$it min" },
+                            onChanged = { v -> v?.let { quizBonus = quizBonus.copy(maxMinutesPerDay = it) } }
+                        )
+                        Text(
+                            "Bonus time adds to the kid's daily limit and expires at midnight. " +
+                                "It doesn't get around blocked times, breaks, pauses or content " +
+                                "group limits. With no daily limit set, there's nothing to add " +
+                                "to, so quizzes still run but earn nothing.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
                 HubPage.Backup -> {
                     SectionTitle("App")
                     SettingsCard { UpdateSection(onUpdateFound = {}) }
@@ -801,6 +874,11 @@ private fun AdminScreen(
             SettingsDivider()
             HubRow("▶️", "Playback", "Screen-off listening") { page = HubPage.Playback }
             SettingsDivider()
+            HubRow(
+                "🎓", "Quiz bonus",
+                entries.count { it.quiz }.let { if (it == 0) "Off · earn time with quizzes" else "On for $it · earn time with quizzes" }
+            ) { page = HubPage.QuizBonus }
+            SettingsDivider()
             HubRow("💾", "Backup & app", "Import, export, updates") { page = HubPage.Backup }
         }
 
@@ -833,6 +911,7 @@ private enum class HubPage(val title: String) {
     Blocked("Blocked & reported"),
     Devices("Devices"),
     Playback("Playback"),
+    QuizBonus("Quiz bonus"),
     Backup("Backup & app")
 }
 

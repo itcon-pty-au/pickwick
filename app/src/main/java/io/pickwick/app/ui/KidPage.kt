@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -17,6 +18,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -64,10 +66,12 @@ internal fun KidPage(
     var pin by remember { mutableStateOf(profile.pin) }
     var settingPin by remember { mutableStateOf(false) }
     var limits by remember { mutableStateOf(profile.limits) }
+    var quizOff by remember { mutableStateOf(profile.quizOff) }
     var confirmRemove by remember { mutableStateOf(false) }
 
     val built = profile.copy(
-        name = name.trim(), age = age, colorArgb = color, avatar = avatar, pin = pin, limits = limits
+        name = name.trim(), age = age, colorArgb = color, avatar = avatar, pin = pin, limits = limits,
+        quizOff = quizOff
     )
     LaunchedEffect(built) {
         if (built != profile && built.name.isNotBlank()) onChanged(built)
@@ -126,6 +130,19 @@ internal fun KidPage(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        SettingsDivider()
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Quizzes after videos")
+                Text(
+                    "Off means no quizzes for ${name.ifBlank { "this kid" }}, even on " +
+                        "channels that have them switched on.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Switch(checked = !quizOff, onCheckedChange = { quizOff = !it })
+        }
         SettingsDivider()
         Text("Color", style = MaterialTheme.typography.labelLarge)
         FlowRow(

@@ -26,7 +26,9 @@ data class Profile(
     val age: Int? = null,
     val limits: Limits = Limits(),
     /** 4 chars of U/D/L/R; null = anyone can pick this profile. */
-    val pin: String? = null
+    val pin: String? = null,
+    /** No quizzes for this kid, whichever sources have them switched on. */
+    val quizOff: Boolean = false
 ) {
     companion object {
         fun newId(): String = ByteArray(4)

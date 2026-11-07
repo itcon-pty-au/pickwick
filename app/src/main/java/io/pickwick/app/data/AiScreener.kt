@@ -382,7 +382,9 @@ object AiScreener {
         cfg: AiConfig,
         profiles: List<Profile> = emptyList(),
         /** The parents' channel-specific instructions, if any. */
-        channelNote: String? = null
+        channelNote: String? = null,
+        /** Also ask for a quiz, so a quiz-enabled video still costs one call. */
+        quiz: QuizRequest? = null
     ): String = buildString {
         if (profiles.isEmpty()) {
             append("A child")
@@ -422,6 +424,7 @@ object AiScreener {
             append("older child and blocked for a younger one.\n")
         }
         append("Include the id exactly once.")
+        quiz?.let { append(Quiz.promptSection(it)) }
     }
 
     fun deepUserPrompt(
@@ -460,15 +463,44 @@ object AiScreener {
         transcript: String?,
         profiles: List<Profile> = emptyList(),
         channelNote: String? = null
-    ): Result = parseVerdicts(
-        chatCompletion(
+    ): Result = deepScreenWithQuiz(
+        cfg, videoId, title, channel, description, tags, transcript, profiles, channelNote, null
+    ).result
+
+    /**
+     * [quiz] is the quiz this one call produced: null when none was requested or
+     * the attempt failed, empty when the model declined or there was nothing to
+     * work from. A malformed quiz never costs the verdict, which is the safety
+     * decision and is parsed on its own.
+     */
+    data class DeepOutcome(val result: Result, val quiz: List<QuizQuestion>?)
+
+    suspend fun deepScreenWithQuiz(
+        cfg: AiConfig,
+        videoId: String,
+        title: String,
+        channel: String,
+        description: String,
+        tags: List<String>,
+        transcript: String?,
+        profiles: List<Profile>,
+        channelNote: String?,
+        quiz: QuizRequest?
+    ): DeepOutcome {
+        val asked = quiz?.takeIf { Quiz.transcriptUsable(transcript) }
+        val reply = chatCompletion(
             cfg,
-            deepSystemPrompt(cfg, profiles, channelNote),
+            deepSystemPrompt(cfg, profiles, channelNote, asked),
             deepUserPrompt(videoId, title, channel, description, tags, transcript)
-        ),
-        setOf(videoId),
-        profileKeys(profiles)
-    ).first()
+        )
+        val result = parseVerdicts(reply, setOf(videoId), profileKeys(profiles)).first()
+        val questions = when {
+            quiz == null -> null
+            asked == null -> emptyList()
+            else -> Quiz.parse(reply, transcript.orEmpty(), asked.maxQuestions)
+        }
+        return DeepOutcome(result, questions)
+    }
 
     // --- Discovery: parent's natural-language ask → channel/playlist candidates ---
 

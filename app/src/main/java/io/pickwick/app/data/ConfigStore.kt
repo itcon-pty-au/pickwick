@@ -191,6 +191,8 @@ class ConfigStore(context: Context) {
                     }
                     // Append-only-when-off: on is the default and keeps old hashes.
                     if (!it.aiCheck) append("|a0")
+                    // Append-only-when-on: off is the default and keeps old hashes.
+                    if (it.quiz) append("|q1")
                     // The picked videos are content: adding or removing one must push.
                     if (it.customVideos.isNotEmpty()) {
                         append("|c"); append(it.customVideos.joinToString(",") { v -> v.id })
@@ -231,6 +233,7 @@ class ConfigStore(context: Context) {
                         // family one above: it has to move the hash or the
                         // offline reconcile would never carry it to the TV.
                         p.limits.pausedUntilMillis?.let { append(";P:"); append(it) }
+                        if (p.quizOff) append(";QO")
                         append('\n')
                     }
                 }
@@ -266,6 +269,13 @@ class ConfigStore(context: Context) {
                 // Append-only-when-set, same reasoning — and it must be in the
                 // hash so the offline reconcile re-pushes a rate change.
                 w.listenPercent?.let { append(";LN:"); append(it) }
+                // Only a departure from the defaults, same reasoning again.
+                if (w.quizBonus != QuizBonus()) {
+                    append(";QB:")
+                    append(w.quizBonus.secondsPerQuestion); append(',')
+                    append(w.quizBonus.maxQuestions); append(',')
+                    append(w.quizBonus.maxMinutesPerDay)
+                }
             }
             return java.security.MessageDigest.getInstance("SHA-256")
                 .digest(canonical.toByteArray())
@@ -327,6 +337,7 @@ class ConfigStore(context: Context) {
                         if (e.profileIds.isNotEmpty()) put("profiles", JSONArray(e.profileIds.toList()))
                         if (!e.aiNote.isNullOrBlank()) put("note", e.aiNote.trim())
                         if (!e.aiCheck) put("aiCheck", false)
+                        if (e.quiz) put("quiz", true)
                         if (e.customVideos.isNotEmpty()) put("videos", JSONArray().apply {
                             e.customVideos.forEach { v ->
                                 put(JSONObject().apply {
@@ -365,6 +376,7 @@ class ConfigStore(context: Context) {
                             put("avatar", p.avatar)
                             p.age?.let { put("age", it) }
                             p.pin?.let { put("pin", it) }
+                            if (p.quizOff) put("quizOff", true)
                             put("limits", limitsToJson(p.limits))
                         })
                     }
@@ -391,6 +403,12 @@ class ConfigStore(context: Context) {
             }
             // Written only when set — absent means listening off (see Whitelist).
             w.listenPercent?.let { root.put("listen", it) }
+            // Written only when changed — absent means the defaults.
+            if (w.quizBonus != QuizBonus()) root.put("quizBonus", JSONObject().apply {
+                put("secondsPerQuestion", w.quizBonus.secondsPerQuestion)
+                put("maxQuestions", w.quizBonus.maxQuestions)
+                put("maxMinutesPerDay", w.quizBonus.maxMinutesPerDay)
+            })
             return root.toString(2)
         }
 
@@ -562,6 +580,7 @@ class ConfigStore(context: Context) {
                     } ?: emptySet(),
                     aiNote = o.optString("note").ifEmpty { null },
                     aiCheck = o.optBoolean("aiCheck", true),
+                    quiz = o.optBoolean("quiz", false),
                     customVideos = o.optJSONArray("videos")?.let { va ->
                         (0 until va.length()).mapNotNull { i ->
                             val v = va.getJSONObject(i)
@@ -608,7 +627,8 @@ class ConfigStore(context: Context) {
                         avatar = o.optString("avatar").ifEmpty { PROFILE_AVATARS.first() },
                         age = if (o.has("age")) o.getInt("age") else null,
                         limits = limitsFromJson(o.optJSONObject("limits") ?: JSONObject()),
-                        pin = o.optString("pin").takeIf { isValidDirectionPin(it) }
+                        pin = o.optString("pin").takeIf { isValidDirectionPin(it) },
+                        quizOff = o.optBoolean("quizOff", false)
                     )
                 }
             }
@@ -656,7 +676,15 @@ class ConfigStore(context: Context) {
                 podcasts = root.optJSONArray("podcasts")?.let { a ->
                     require(a.length() <= 500) { "Too many podcasts" }
                     (0 until a.length()).map { PodcastFeed.fromJson(a.getJSONObject(it)) }.distinctBy { it.id }
-                }.orEmpty()
+                }.orEmpty(),
+                quizBonus = root.optJSONObject("quizBonus")?.let { q ->
+                    val defaults = QuizBonus()
+                    QuizBonus(
+                        q.optInt("secondsPerQuestion", defaults.secondsPerQuestion),
+                        q.optInt("maxQuestions", defaults.maxQuestions),
+                        q.optInt("maxMinutesPerDay", defaults.maxMinutesPerDay)
+                    ).normalized()
+                } ?: QuizBonus()
             ).resolveNetworkShares()
         }
     }
