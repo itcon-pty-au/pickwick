@@ -56,11 +56,10 @@ with no ads.
 - **🚩 Report a video** — hold OK on a tile and choose *Report this video*: it
   vanishes for every kid on that device at once and waits under *Waiting for
   your OK* until a parent allows or blocks it (works with AI screening off)
-- **📡 Live** — on the TV home, streams a parent has added that are on air
-  right now get their own row, under Podcasts; press OK to watch. The row only
-  appears while something is live, and on the TV that row is the one place a
-  playlist's stream shows up. On a phone it stays in its playlist with a red
-  **LIVE** badge (then dims and reads **Offline** when it stops)
+- **📡 Live** — on every device's home, streams a parent has added that are on
+  air right now get their own row; tap or press OK to watch. The row only
+  appears while something is live, and it is the one place a playlist's stream
+  shows up
 - **Unwatched first** — a channel opens on what they haven't seen; everything
   already watched moves behind a **Watched** tile at the end, so a favourite
   is still one tap away without cluttering the row

@@ -27,6 +27,15 @@ class HomeRowTest {
         assertTrue(ConfigStore.fromJson("{\"entries\":[],\"blocked\":[]}").homeRows.isEmpty())
     }
 
+    @Test fun `phone layout choice round trips and must reach paired devices`() {
+        val config = Whitelist(emptyList(), emptySet())
+        assertFalse(ConfigStore.toJson(config).contains("phoneHomeRows"))
+        assertFalse(ConfigStore.fromJson("{\"entries\":[],\"blocked\":[]}").phoneHomeRows)
+        val rows = config.copy(phoneHomeRows = true)
+        assertTrue(ConfigStore.fromJson(ConfigStore.toJson(rows)).phoneHomeRows)
+        assertNotEquals(ConfigStore.fingerprint(config), ConfigStore.fingerprint(rows))
+    }
+
     @Test fun `row order in the config decides the fingerprint`() {
         val other = row.copy(id = "learning", name = "Learning")
         val config = Whitelist(emptyList(), emptySet(), homeRows = listOf(row, other))

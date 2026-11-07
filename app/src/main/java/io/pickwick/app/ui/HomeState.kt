@@ -34,8 +34,10 @@ data class UiState(
     val refreshing: Boolean = false,
     val error: String? = null,
     val channels: List<Source> = emptyList(),
-    /** Parent-made TV rows this kid gets, top to bottom. */
+    /** Parent-made rows this kid gets, top to bottom. */
     val homeRows: List<io.pickwick.app.data.HomeRow> = emptyList(),
+    /** Parent's choice for this phone or tablet; TVs always draw rows. */
+    val phoneHomeRows: Boolean = false,
     val hasNetworkCatalogs: Boolean = false,
     val networkTimePercents: Map<String, Int> = emptyMap(),
     /** RSS podcasts this kid may hear — each gets its own home tile. */
@@ -46,7 +48,7 @@ data class UiState(
      * URL is looked up each time the home screen is rebuilt.
      */
     val podcastCovers: Map<String, String?> = emptyMap(),
-    /** Hand-picked live broadcasts on air right now — the TV's Live row. */
+    /** Hand-picked live broadcasts on air right now — the home's Live section. */
     val liveVideos: List<VideoItem> = emptyList(),
     val screen: Screen = Screen.Home,
     val videos: List<VideoItem> = emptyList(),

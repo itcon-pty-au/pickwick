@@ -72,9 +72,7 @@ class MainViewModel(
     private val activeProfileId: String? = null,
     /** Search index; null in tests. The crawler runs only on the master device. */
     private val channelIndex: ChannelIndex? = null,
-    private val yt: YouTubeRepository = YouTubeRepository(),
-    /** The Live row exists only on TV, so only there may it take over a stream. */
-    private val hasLiveRow: Boolean = false
+    private val yt: YouTubeRepository = YouTubeRepository()
 ) : ViewModel() {
 
     private val crawler = channelIndex?.let { IndexCrawler(yt, it) }
@@ -524,7 +522,7 @@ class MainViewModel(
         // distinctBy: two whitelist entries (URL form + UC id) can canonicalize
         // to the same channel — duplicate grid keys crash Compose.
         val distinct = channels.distinctBy { it.id }
-            .filterNot { hasLiveRow && io.pickwick.app.data.LiveRowVideos.isOnlyStreams(it) }
+            .filterNot { io.pickwick.app.data.LiveRowVideos.isOnlyStreams(it) }
         // Tiles/rows/badges all re-read every source's cache file — a whole
         // whitelist of disk reads, so computed off-main, applied in one write.
         val (tiles, keepWatching, badges) = withContext(Dispatchers.IO) {
@@ -560,7 +558,10 @@ class MainViewModel(
         // plain Channels row a moment later would take the TV's focus with it.
         val loaded = runCatching { whitelist.load() }
         loaded.getOrNull()?.let { list ->
-            _state.value = _state.value.copy(homeRows = list.homeRows.filter { it.visibleTo(activeProfileId) })
+            _state.value = _state.value.copy(
+                homeRows = list.homeRows.filter { it.visibleTo(activeProfileId) },
+                phoneHomeRows = list.phoneHomeRows
+            )
         }
 
         // Paint instantly from the last successful run while the fresh list loads.
@@ -929,7 +930,7 @@ class MainViewModel(
         }
     }
 
-    /** The TV's Live row: picked videos on air right now, for this kid. */
+    /** The home's Live section: picked videos on air right now, for this kid. */
     private fun publishLive() {
         val items = pickedLists.filter { it.visibleTo(activeProfileId) }
             .flatMap { it.customVideos }
@@ -941,9 +942,9 @@ class MainViewModel(
         if (items != _state.value.liveVideos) _state.value = _state.value.copy(liveVideos = items)
     }
 
-    /** A channel view's videos: on TV, minus the streams the Live row already shows. */
+    /** A channel view's videos, minus the streams the Live section already shows. */
     private fun channelVisibleVideos(): List<io.pickwick.app.data.Video> =
-        if (!hasLiveRow || channelSource() == null) rawVideos
+        if (channelSource() == null) rawVideos
         else io.pickwick.app.data.LiveRowVideos.withoutLiveRow(
             rawVideos, io.pickwick.app.data.LiveRowVideos.ids(pickedLists, activeProfileId)
         )

@@ -261,6 +261,7 @@ class ConfigStore(context: Context) {
                 if (!w.sponsorSkip) append(";SB:off")
                 // Appended only when on, same rule: the default keeps old hashes.
                 if (w.customAutoplay) append(";CA:on")
+                if (w.phoneHomeRows) append(";PR:on")
                 // Same rule for the category choice: only a departure from the
                 // shipped set is appended, and it must move the hash or the
                 // offline reconcile would never carry it to a sleeping TV.
@@ -400,6 +401,7 @@ class ConfigStore(context: Context) {
             // saved by builds that predate the flag.
             if (!w.sponsorSkip) root.put("sponsorSkip", false)
             if (w.customAutoplay) root.put("customAutoplay", true)
+            if (w.phoneHomeRows) root.put("phoneHomeRows", true)
             // Written only when it differs from the shipped set; an empty
             // array is a real choice (nothing selected), not "absent".
             if (w.sponsorCategories != SponsorBlock.DEFAULT_CATEGORIES) {
@@ -660,6 +662,7 @@ class ConfigStore(context: Context) {
                 masterDeviceToken = root.optString("master").ifEmpty { null },
                 sponsorSkip = root.optBoolean("sponsorSkip", true),
                 customAutoplay = root.optBoolean("customAutoplay", false),
+                phoneHomeRows = root.optBoolean("phoneHomeRows", false),
                 sponsorCategories = root.optJSONArray("sponsorCategories")?.let { a ->
                     // Bounded: this payload can arrive from the LAN.
                     (0 until minOf(a.length(), 32)).map { a.optString(it) }.toSet()

@@ -143,8 +143,9 @@ fun PickwickScreen(
                     // TV gets the ten-foot layout: horizontal rows under a pinned
                     // focus, like every streaming app's browse screen. No touch, so
                     // no pull-to-refresh either (auto + poll refresh cover it).
-                    if (isTv) {
-                        TvHomeRows(
+                    // Phones and tablets show the same rows if a parent chose them.
+                    val homeRows: @Composable () -> Unit = {
+                        HomeRows(
                             channels = state.channels,
                             homeRows = state.homeRows,
                             newBadges = state.newBadges,
@@ -165,21 +166,28 @@ fun PickwickScreen(
                             onOpenWatchLater = vm::openWatchLater,
                             hasQueue = state.queued.isNotEmpty(),
                             onOpenQueue = vm::openQueue,
+                            // Downloads are phone-only: the TV stays on home Wi-Fi.
+                            hasDownloads = !isTv && state.downloaded.isNotEmpty(),
+                            onOpenDownloads = vm::openDownloads,
                             onOpenSettings = onOpenSettings,
                             activeProfile = activeProfile,
                             onSwitchProfile = onSwitchProfile,
                             onSearch = vm::search
                         )
+                    }
+                    if (isTv) {
+                        homeRows()
                     } else {
                         PullToRefreshBox(
                             isRefreshing = state.refreshing,
                             onRefresh = { vm.refresh(userInitiated = true) },
                             modifier = Modifier.fillMaxSize()
                         ) {
-                            ChannelGrid(
+                            if (state.phoneHomeRows) homeRows() else ChannelGrid(
                                 state.channels,
                                 newBadges = state.newBadges,
                                 keepWatching = state.keepWatching,
+                                liveVideos = state.liveVideos,
                                 onPlay = onPlay,
                                 onDismissKeepWatching = vm::dismissKeepWatching,
                                 onOpen = vm::openChannel,

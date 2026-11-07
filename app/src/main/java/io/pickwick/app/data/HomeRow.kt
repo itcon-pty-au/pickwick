@@ -5,8 +5,8 @@ import org.json.JSONObject
 import java.util.UUID
 
 /**
- * A parent-named row on the TV home. Deliberately separate from [ContentGroup]:
- * groups carry session time limits, and rearranging the TV must never change a
+ * A parent-named row on the home screen. Deliberately separate from [ContentGroup]:
+ * groups carry session time limits, and rearranging a home must never change a
  * child's screen time.
  */
 data class HomeRow(
