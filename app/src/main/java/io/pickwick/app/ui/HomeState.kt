@@ -34,6 +34,8 @@ data class UiState(
     val refreshing: Boolean = false,
     val error: String? = null,
     val channels: List<Source> = emptyList(),
+    /** Parent-made TV rows this kid gets, top to bottom. */
+    val homeRows: List<io.pickwick.app.data.HomeRow> = emptyList(),
     val hasNetworkCatalogs: Boolean = false,
     val networkTimePercents: Map<String, Int> = emptyMap(),
     /** RSS podcasts this kid may hear — each gets its own home tile. */

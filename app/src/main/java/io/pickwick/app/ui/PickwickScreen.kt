@@ -146,6 +146,7 @@ fun PickwickScreen(
                     if (isTv) {
                         TvHomeRows(
                             channels = state.channels,
+                            homeRows = state.homeRows,
                             newBadges = state.newBadges,
                             keepWatching = state.keepWatching,
                             onPlay = onPlay,
