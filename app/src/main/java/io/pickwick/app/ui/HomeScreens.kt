@@ -413,7 +413,7 @@ private fun HomeHeader(
 
 /**
  * The ten-foot home: a vertical stack of horizontal rows — Keep watching,
- * Channels (most-watched first), Explore — with the focused tile pinned near
+ * parent-made rows, Channels (most-watched first), Explore — with the focused tile pinned near
  * the left edge of its row. The row structure plus the pivot scroll specs is
  * what gives streaming apps their steady, predictable D-pad motion.
  */
@@ -421,6 +421,7 @@ private fun HomeHeader(
 @Composable
 internal fun TvHomeRows(
     channels: List<Source>,
+    homeRows: List<io.pickwick.app.data.HomeRow> = emptyList(),
     newBadges: Set<String>,
     keepWatching: List<VideoItem>,
     onPlay: (VideoItem) -> Unit,
@@ -450,6 +451,7 @@ internal fun TvHomeRows(
     }
     val firstTileFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     LaunchedEffect(Unit) { runCatching { firstTileFocus.requestFocus() } }
+    val layout = remember(channels, homeRows) { io.pickwick.app.data.arrangeHome(channels, homeRows) }
 
     androidx.compose.foundation.lazy.LazyColumn(
         verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -472,29 +474,17 @@ internal fun TvHomeRows(
             }
         }
 
-        if (channels.isNotEmpty()) item(key = "channels") {
-            Column {
-                TvRowTitle("Channels")
-                CompositionLocalProvider(
-                    androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides TvRowPivot
-                ) {
-                    androidx.compose.foundation.lazy.LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
-                        modifier = Modifier.dpadHeldScrollThrottle(keys = DPAD_HORIZONTAL)
-                    ) {
-                        items(channels.size, key = { channels[it].id }) { i ->
-                            ChannelTile(
-                                channels[i],
-                                isNew = channels[i].id in newBadges,
-                                onOpen = onOpen,
-                                modifier = (if (i == 0) Modifier.focusRequester(firstTileFocus)
-                                    else Modifier).width(150.dp)
-                            )
-                        }
-                    }
-                }
+        layout.rows.forEachIndexed { index, (row, rowChannels) ->
+            item(key = "home-row-" + row.id) {
+                TvChannelRow(row.name, rowChannels, newBadges, onOpen, firstTileFocus.takeIf { index == 0 })
             }
+        }
+
+        if (layout.rest.isNotEmpty()) item(key = "channels") {
+            TvChannelRow(
+                if (layout.rows.isEmpty()) "Channels" else "More channels",
+                layout.rest, newBadges, onOpen, firstTileFocus.takeIf { layout.rows.isEmpty() }
+            )
         }
 
         if (podcasts.isNotEmpty()) item(key = "podcasts") {
@@ -668,6 +658,40 @@ internal fun SearchHitsRow(
                         else Modifier).width(150.dp),
                     onClick = { onOpenPodcast(podcasts[i]) }
                 )
+            }
+        }
+    }
+}
+
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun TvChannelRow(
+    title: String,
+    channels: List<Source>,
+    newBadges: Set<String>,
+    onOpen: (Source) -> Unit,
+    /** Given to the row that holds the home's first tile. */
+    firstTileFocus: androidx.compose.ui.focus.FocusRequester?
+) {
+    Column {
+        TvRowTitle(title)
+        CompositionLocalProvider(
+            androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides TvRowPivot
+        ) {
+            androidx.compose.foundation.lazy.LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                modifier = Modifier.dpadHeldScrollThrottle(keys = DPAD_HORIZONTAL)
+            ) {
+                items(channels.size, key = { channels[it].id }) { i ->
+                    ChannelTile(
+                        channels[i],
+                        isNew = channels[i].id in newBadges,
+                        onOpen = onOpen,
+                        modifier = (if (i == 0 && firstTileFocus != null) Modifier.focusRequester(firstTileFocus)
+                            else Modifier).width(150.dp)
+                    )
+                }
             }
         }
     }

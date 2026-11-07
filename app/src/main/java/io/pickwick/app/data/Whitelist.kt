@@ -265,6 +265,8 @@ data class Whitelist(
     val networkCatalogs: List<SmbCatalog> = emptyList(),
     val networkShares: List<SmbShare> = emptyList(),
     val contentGroups: List<ContentGroup> = emptyList(),
+    /** The TV home's parent-made rows, top to bottom. */
+    val homeRows: List<HomeRow> = emptyList(),
     val podcasts: List<PodcastFeed> = emptyList(),
     val quizBonus: QuizBonus = QuizBonus()
 ) {

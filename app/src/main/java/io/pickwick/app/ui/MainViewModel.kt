@@ -556,6 +556,13 @@ class MainViewModel(
         refreshInFlight = true
         if (userInitiated) _state.value = _state.value.copy(refreshing = true)
 
+        // Rows must be known before the first tiles paint: a tile moving out of the
+        // plain Channels row a moment later would take the TV's focus with it.
+        val loaded = runCatching { whitelist.load() }
+        loaded.getOrNull()?.let { list ->
+            _state.value = _state.value.copy(homeRows = list.homeRows.filter { it.visibleTo(activeProfileId) })
+        }
+
         // Paint instantly from the last successful run while the fresh list loads.
         val cached = sourceCache.load()
         if (cached.isNotEmpty()) {
@@ -564,7 +571,7 @@ class MainViewModel(
         } else if (_state.value.screen == Screen.Home) {
             _state.value = _state.value.copy(loading = true)
         }
-        runCatching { whitelist.load() }
+        loaded
             .onSuccess { list ->
                 val podcasts = list.podcasts.filter { list.podcastFor(it.id, activeProfileId) != null }
                 val podcastCovers = podcastLibrary?.let { library ->

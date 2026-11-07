@@ -162,6 +162,7 @@ class ConfigStore(context: Context) {
         fun fingerprint(w: Whitelist): String {
             val canonical = buildString {
                 w.contentGroups.forEach { append("CONTENT:"); append(it.toJson()); append('\n') }
+                w.homeRows.forEach { append("HOMEROW:"); append(it.toJson()); append('\n') }
                 w.podcasts.forEach { append("POD:"); append(it.toJson()); append('\n') }
                 w.networkShares.forEach {
                     append("SHARE:"); append(it.toJson(false)); append('|'); append(it.password); append('\n')
@@ -312,6 +313,9 @@ class ConfigStore(context: Context) {
             root.put("updatedAt", System.currentTimeMillis())
             if (w.contentGroups.isNotEmpty()) root.put("contentGroups", JSONArray().apply {
                 w.contentGroups.forEach { put(it.toJson()) }
+            })
+            if (w.homeRows.isNotEmpty()) root.put("homeRows", JSONArray().apply {
+                w.homeRows.forEach { put(it.toJson()) }
             })
             // Own top-level key, not an entry kind: older builds carry it along untouched.
             if (w.podcasts.isNotEmpty()) root.put("podcasts", JSONArray().apply {
@@ -668,6 +672,13 @@ class ConfigStore(context: Context) {
                     require(a.length() <= 200) { "Too many content groups" }
                     (0 until a.length()).map { ContentGroup.fromJson(a.getJSONObject(it)) }.also { groups ->
                         require(groups.map { it.id }.distinct().size == groups.size) { "Duplicate content group" }
+                    }
+                }.orEmpty(),
+                homeRows = root.optJSONArray("homeRows")?.let { a ->
+                    // Bounded: this payload can arrive from the LAN.
+                    require(a.length() <= HomeRow.MAX_ROWS) { "Too many home rows" }
+                    (0 until a.length()).map { HomeRow.fromJson(a.getJSONObject(it)) }.also { rows ->
+                        require(rows.map { it.id }.distinct().size == rows.size) { "Duplicate home row" }
                     }
                 }.orEmpty(),
                 networkShares = root.optJSONArray("networkShares")?.let { a ->

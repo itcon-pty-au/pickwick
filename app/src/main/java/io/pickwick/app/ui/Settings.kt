@@ -369,6 +369,7 @@ private fun AdminScreen(
     var networkCatalogs by remember(initial) { mutableStateOf(migratedNetwork.networkCatalogs) }
     var networkShares by remember(initial) { mutableStateOf(migratedNetwork.networkShares) }
     var contentGroups by remember(initial) { mutableStateOf(initial.contentGroups) }
+    var homeRows by remember(initial) { mutableStateOf(initial.homeRows) }
     var podcasts by remember(initial) { mutableStateOf(initial.podcasts) }
     var quizBonus by remember(initial) { mutableStateOf(initial.quizBonus) }
     var baseline by remember(initial) { mutableStateOf(initial) }
@@ -440,6 +441,7 @@ private fun AdminScreen(
         fun scrub(overlay: Map<String, Set<String>>) = overlay
             .mapValues { (_, pids) -> pids.intersect(validIds) }
             .filterValues { it.isNotEmpty() }
+        val entryUrls = entries.map { it.url }.toSet()
         return Whitelist(
             entries.map { e ->
                 if (e.profileIds.isEmpty()) e
@@ -456,6 +458,10 @@ private fun AdminScreen(
             networkCatalogs = networkCatalogs.map { it.copy(profileIds = it.profileIds.intersect(validIds)) },
             networkShares = networkShares,
             contentGroups = contentGroups,
+            // A removed channel leaves its rows too, or their counts would drift.
+            homeRows = homeRows.map {
+                it.copy(sourceUrls = it.sourceUrls.intersect(entryUrls), profileIds = it.profileIds.intersect(validIds))
+            },
             podcasts = podcasts.map { it.copy(profileIds = it.profileIds.intersect(validIds)) },
             quizBonus = quizBonus
         )
@@ -549,7 +555,7 @@ private fun AdminScreen(
     // eighteen sections, and "where is X" was the first support question.
     var page by remember { mutableStateOf<HubPage?>(null) }
     page?.let { p ->
-        val backToParent = { page = if (p in listOf(HubPage.Channels, HubPage.Network, HubPage.Podcasts, HubPage.ContentGroups)) HubPage.ContentSources else null }
+        val backToParent = { page = if (p in listOf(HubPage.Channels, HubPage.Network, HubPage.Podcasts, HubPage.ContentGroups, HubPage.HomeRows)) HubPage.ContentSources else null }
         BackHandler { backToParent() }
         SubPage(title = p.title, onBack = backToParent) {
             when (p) {
@@ -562,8 +568,13 @@ private fun AdminScreen(
                         HubRow("🎙️", "Podcasts", "${podcasts.size} RSS podcasts") { page = HubPage.Podcasts }
                         SettingsDivider()
                         HubRow("📚", "Content groups", "${contentGroups.size} groups") { page = HubPage.ContentGroups }
+                        SettingsDivider()
+                        HubRow("🗂️", "TV home rows", "${homeRows.size} rows") { page = HubPage.HomeRows }
                     }
                 }
+                HubPage.HomeRows -> HomeRowSettings(homeRows,
+                    entries.map { if (it.label == null) it.copy(label = resolvedNames[it.url]) else it },
+                    profiles) { homeRows = it }
                 HubPage.ContentGroups -> ContentGroupSettings(contentGroups,
                     entries.map { if (it.label == null) it.copy(label = resolvedNames[it.url]) else it },
                     networkCatalogs, profiles) { contentGroups = it }
@@ -903,6 +914,7 @@ private fun AdminScreen(
 private enum class HubPage(val title: String) {
     ContentSources("Content Sources"),
     ContentGroups("Content groups"),
+    HomeRows("TV home rows"),
     Network("Network shares"),
     Podcasts("Podcasts"),
     Kids("Kids"),
