@@ -548,14 +548,20 @@ internal fun VideoTile(
                     // as text; a 16:9 crop would cut it off. Same tile geometry,
                     // art shown whole over a dimmed, blurred fill of itself.
                     Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(androidx.compose.ui.graphics.RectangleShape)) {
-                        AsyncImage(
+                        // One painter for both layers: two AsyncImages would each
+                        // download an uncached image, as Coil doesn't merge requests.
+                        val art = coil.compose.rememberAsyncImagePainter(
                             model = item.video.thumbnailUrl,
+                            contentScale = ContentScale.Fit
+                        )
+                        androidx.compose.foundation.Image(
+                            painter = art,
                             contentDescription = null,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize().blur(24.dp).graphicsLayer { alpha = 0.45f }
                         )
-                        AsyncImage(
-                            model = item.video.thumbnailUrl,
+                        androidx.compose.foundation.Image(
+                            painter = art,
                             contentDescription = item.video.title,
                             contentScale = ContentScale.Fit,
                             modifier = Modifier.fillMaxSize()

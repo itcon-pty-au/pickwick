@@ -231,9 +231,32 @@ object PodcastParser {
 }
 
 /** Fetches feeds and keeps the last good parse per feed on disk, for instant (and offline) browsing. */
-class PodcastLibrary(context: Context) {
-    private val dir = File(context.filesDir, "podcasts").apply { mkdirs() }
+class PodcastLibrary internal constructor(private val dir: File) {
+    constructor(context: Context) : this(File(context.filesDir, "podcasts"))
+
+    init { dir.mkdirs() }
+
     private fun file(feedId: String) = File(dir, LocalLibrary.idFor(feedId) + ".json")
+    private fun coverFile(feedId: String) = File(dir, LocalLibrary.idFor(feedId) + ".cover")
+
+    /**
+     * The show's cover URL, kept beside the listing because home needs it for
+     * every feed on every refresh and a listing can run to thousands of episodes.
+     * Listings saved before this file existed are parsed once to create it.
+     */
+    fun cover(feedId: String): String? = runCatching {
+        val saved = coverFile(feedId)
+        if (saved.exists()) return@runCatching saved.readText().ifBlank { null }
+        cached(feedId)?.also { saveCover(feedId, it.imageUrl) }?.imageUrl
+    }.getOrNull()
+
+    fun hasListing(feedId: String) = file(feedId).exists()
+
+    private fun saveCover(feedId: String, imageUrl: String?) {
+        val tmp = File(dir, coverFile(feedId).name + ".tmp")
+        tmp.writeText(imageUrl.orEmpty())
+        tmp.renameTo(coverFile(feedId))
+    }
 
     fun cached(feedId: String): PodcastChannel? = runCatching {
         val o = JSONObject(file(feedId).readText())
@@ -248,14 +271,15 @@ class PodcastLibrary(context: Context) {
 
     fun episode(feedId: String, key: String): PodcastEpisode? = cached(feedId)?.episodes?.firstOrNull { it.key == key }
 
-    fun drop(feedId: String) { file(feedId).delete() }
+    fun drop(feedId: String) { file(feedId).delete(); coverFile(feedId).delete() }
 
-    private fun save(feedId: String, c: PodcastChannel) {
+    internal fun save(feedId: String, c: PodcastChannel) {
         val o = JSONObject().put("title", c.title).put("image", c.imageUrl ?: "")
             .put("episodes", JSONArray().apply { c.episodes.forEach { put(it.toJson()) } })
         val tmp = File(dir, file(feedId).name + ".tmp")
         tmp.writeText(o.toString())
         tmp.renameTo(file(feedId))
+        saveCover(feedId, c.imageUrl)
     }
 
     companion object {

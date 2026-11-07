@@ -96,6 +96,22 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 }
             }
         }
+        // Coil decodes even when only the disk copy is wanted, and with no target
+        // that means full size: 36 MB for a typical 3000px cover. The small size
+        // keeps that decode cheap; the disk cache still gets the original bytes.
+        val prefetchPodcastArt: suspend (List<String>) -> Unit = { urls ->
+            val loader = coil.Coil.imageLoader(appContext)
+            for (url in urls) {
+                runCatching {
+                    loader.execute(
+                        coil.request.ImageRequest.Builder(appContext).data(url)
+                            .size(64)
+                            .memoryCachePolicy(coil.request.CachePolicy.DISABLED)
+                            .build()
+                    )
+                }
+            }
+        }
         // Once-a-day silent update check; drives the dot on the settings gear.
         lifecycleScope.launch { io.pickwick.app.data.Updater(applicationContext).autoCheck() }
         // The channel-index crawl runs whether or not the app is open — the
@@ -214,6 +230,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                             }
                         },
                         prefetchThumbs = prefetchThumbs,
+                        prefetchPodcastArt = prefetchPodcastArt,
+                        podcastLibrary = io.pickwick.app.data.PodcastLibrary(applicationContext),
                         screener = screener,
                         statusCache = io.pickwick.app.data.VideoStatusCache(applicationContext),
                         activeProfileId = activeProfileId,

@@ -14,25 +14,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/**
- * Home-tile artwork for podcasts: the cached feed's cover right away, and a
- * background fetch for feeds never fetched on this device (a fresh push from
- * the parent's phone) so their tiles don't sit on the fallback forever.
- */
-@Composable
-internal fun rememberPodcastCovers(feeds: List<PodcastFeed>): Map<String, String?> {
-    val context = LocalContext.current
-    val covers by produceState<Map<String, String?>>(emptyMap(), feeds) {
-        val library = PodcastLibrary(context)
-        value = withContext(Dispatchers.IO) { feeds.associate { it.id to library.cached(it.id)?.imageUrl } }
-        feeds.filter { library.cached(it.id) == null }.forEach { feed ->
-            val image = withContext(Dispatchers.IO) { runCatching { library.refresh(feed).imageUrl }.getOrNull() }
-            if (image != null) value = value + (feed.id to image)
-        }
-    }
-    return covers
-}
-
 /** Where the Listened tile sits: after about one YouTube uploads page, as on a channel. */
 private const val PODCAST_SHELF_AT = 30
 
