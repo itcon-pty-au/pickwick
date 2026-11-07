@@ -47,13 +47,17 @@ object DeepCheck {
         channel: String,
         pb: YouTubeRepository.Playback,
         timeoutMs: Long,
-        channelNote: String? = null
+        channelNote: String? = null,
+        /** Have this same call write a quiz, saved to [quizStore]. */
+        quiz: QuizRequest? = null,
+        quizStore: QuizStore? = null
     ): ScreeningStore.Entry? = withContext(Dispatchers.IO) {
         val started = System.currentTimeMillis()
         val fallbackAction = if (ai.reviewIncompleteChecks) "holding for parent review"
             else "allowing unchecked this once"
         var timedOut = false
         var transcriptChars = -1
+        var questions: List<QuizQuestion>? = null
         val checked = try {
             withTimeoutOrNull(timeoutMs) {
                 if (pb.description.isBlank()) {
@@ -61,17 +65,18 @@ object DeepCheck {
                         return@withTimeoutOrNull it
                     }
                 }
-                val transcript = Captions.pickEnglish(pb.subtitles)?.let { Captions.fetchText(it) }
+                val track = Captions.pickEnglish(pb.subtitles)
+                val transcript = track?.let { Captions.fetchText(it) }
                 transcriptChars = transcript?.length ?: -1
                 if (transcript.isNullOrBlank()) {
                     incompleteResult(ai, videoId, "English subtitles unavailable; parent review required")?.let {
                         return@withTimeoutOrNull it
                     }
                 }
-                AiScreener.deepScreen(
+                AiScreener.deepScreenWithQuiz(
                     ai, videoId, title, channel, pb.description, pb.tags, transcript,
-                    profiles, channelNote
-                )
+                    profiles, channelNote, quiz.takeIf { canDecideQuiz(track != null, transcript) }
+                ).also { questions = it.quiz }.result
             }.also { if (it == null) timedOut = true }
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
@@ -116,7 +121,64 @@ object DeepCheck {
             noteHash = AiScreener.noteHash(channelNote)
         )
         store.putAll(mapOf(videoId to entry))
+        // A kid who can't watch this has no use for its quiz.
+        if (quiz != null && quizStore != null &&
+            entry.verdictFor(quiz.profileId) == AiScreener.Verdict.ALLOW
+        ) {
+            questions?.let { quizStore.put(videoId, QuizStore.Entry(quiz.age, it, entry.at)) }
+        }
         entry
+    }
+
+    /**
+     * A failed caption download says nothing about the video, so it mustn't be
+     * remembered as "no quiz here". No English track at all can be.
+     */
+    private fun canDecideQuiz(hasTrack: Boolean, transcript: String?): Boolean =
+        !hasTrack || transcript != null
+
+    /**
+     * For a video the deep check won't run on: already judged before the parent
+     * switched quizzes on, or exempt from AI checking. The same prompt, so there is
+     * one quiz format, but the verdict is thrown away. Replacing a cached verdict
+     * would relitigate it, and an exempt video has no verdict to replace. Runs
+     * beside playback, so a slow model only delays the hint. Any failure just means
+     * no quiz this time.
+     */
+    suspend fun writeQuizOnly(
+        ai: AiConfig,
+        profiles: List<Profile>,
+        quizStore: QuizStore,
+        videoId: String,
+        title: String,
+        channel: String,
+        pb: YouTubeRepository.Playback,
+        channelNote: String?,
+        quiz: QuizRequest,
+        timeoutMs: Long
+    ) = withContext(Dispatchers.IO) {
+        try {
+            withTimeoutOrNull(timeoutMs) {
+                val track = Captions.pickEnglish(pb.subtitles)
+                val transcript = track?.let { Captions.fetchText(it) }
+                if (!canDecideQuiz(track != null, transcript)) return@withTimeoutOrNull
+                // This call exists only for the quiz, so don't pay for one that can't have any.
+                if (!Quiz.transcriptUsable(transcript)) {
+                    quizStore.put(videoId, QuizStore.Entry(quiz.age, emptyList(), System.currentTimeMillis()))
+                    return@withTimeoutOrNull
+                }
+                AiScreener.deepScreenWithQuiz(
+                    ai, videoId, title, channel, pb.description, pb.tags, transcript,
+                    profiles, channelNote, quiz
+                ).quiz?.let {
+                    quizStore.put(videoId, QuizStore.Entry(quiz.age, it, System.currentTimeMillis()))
+                }
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("Pickwick", "Quiz for $videoId failed; none this time", e)
+        }
     }
 
     /**

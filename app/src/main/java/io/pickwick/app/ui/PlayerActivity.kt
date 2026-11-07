@@ -177,6 +177,20 @@ class PlayerActivity : ComponentActivity() {
     private val everPlayed = mutableStateOf(false)
     private var resolveJob: kotlinx.coroutines.Job? = null
 
+    private val quizStore by lazy { io.pickwick.app.data.QuizStore(this) }
+    /** Separate from [resolveJob]: its isActive means "mid-advance" to the listen swaps. */
+    private var quizJob: kotlinx.coroutines.Job? = null
+    /** The current video's quiz, once one exists and the player has promised it. */
+    private var quizQuestions: List<io.pickwick.app.data.QuizQuestion>? = null
+    /** The deep check already tried this video's quiz, so don't pay to try again this play. */
+    private var quizAttemptedFor: String? = null
+    /** Actual playback, for the watched-enough rule; a seek to the end adds nothing. */
+    private var playedMs = 0L
+    private val quizHint = mutableStateOf<String?>(null)
+    /** Phones have no title bar to carry the hint, so it shows alone for a moment. */
+    private val quizHintPeek = mutableStateOf(false)
+    private val quizSession = mutableStateOf<QuizSession?>(null)
+
     /**
      * Up next can mix podcast episodes in with videos. Those play here, in
      * this one player, rather than handing off to [PodcastPlayerActivity]:
@@ -224,7 +238,7 @@ class PlayerActivity : ComponentActivity() {
      * screens replace it, and Back there must leave rather than dismiss nothing.
      */
     private fun tvControlsPossible() =
-        playbackState.value != null && timeUpMessage.value == null &&
+        quizSession.value == null && playbackState.value != null && timeUpMessage.value == null &&
             blockedGently.value == null && contentBlocked.value == null && errorState.value == null
 
     private fun tvControlsShown() = tvControlsPossible() && (
@@ -405,7 +419,7 @@ class PlayerActivity : ComponentActivity() {
                                     queueStore?.remove(url)
                                 }
                             }
-                            advanceQueue()
+                            onVideoEnded()
                         }
                     }
 
@@ -480,6 +494,7 @@ class PlayerActivity : ComponentActivity() {
                 delay(5_000)
                 saveProgress()
                 val exo = player ?: continue
+                if (exo.isPlaying) playedMs += 5_000
                 // Publish now-playing for the parent's stats screen.
                 currentPageUrl?.takeIf(io.pickwick.app.data.SmbPaths::isNetwork)?.let { url ->
                     val config = kotlinx.coroutines.withContext(Dispatchers.IO) {
@@ -679,7 +694,7 @@ class PlayerActivity : ComponentActivity() {
                         CircularProgressIndicator()
                     }
                     if (isTv && playback != null && timeUp == null && blocked == null &&
-                        contentBlocked.value == null && error == null
+                        contentBlocked.value == null && error == null && quizSession.value == null
                     ) {
                         TvControlsOverlay(
                             state = tv,
@@ -691,6 +706,7 @@ class PlayerActivity : ComponentActivity() {
                             contentCap = contentRemaining.value?.let { (group, left) ->
                                 "${group.name}: ${formatClock((left + 999) / 1000)} this session"
                             },
+                            quizHint = quizHint.value,
                             panel = trackPanel.value,
                             cursor = trackCursor.intValue,
                             selectedAudio = selectedAudioTrack.intValue,
@@ -719,6 +735,29 @@ class PlayerActivity : ComponentActivity() {
                             modifier = Modifier.align(Alignment.TopStart).padding(start = 12.dp, end = 12.dp, top = 8.dp)
                                 .background(Color(0xCC000000)).padding(8.dp))
                     }
+                    // On a TV this is a chip in the controls' title bar.
+                    if (!isTv && timeUp == null && contentBlocked.value == null && error == null &&
+                        listenOnly == null && (quizHintPeek.value || playerControlsVisible.value)
+                    ) quizHint.value?.let { hint ->
+                        QuizHintChip(
+                            hint,
+                            Modifier.align(Alignment.TopCenter).padding(
+                                start = 16.dp, end = 16.dp,
+                                // Clear of the content-time line and the quality button.
+                                top = 52.dp
+                            )
+                        )
+                    }
+                    // Last, so it covers everything the finished video left behind.
+                    quizSession.value?.let { session ->
+                        key(session) {
+                            QuizOverlay(
+                                session,
+                                onAnswered = { correct -> recordQuizAnswer(correct) },
+                                onDone = { finishQuiz() }
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -729,6 +768,132 @@ class PlayerActivity : ComponentActivity() {
     private fun advanceQueue() {
         if (indexState.intValue < queue.lastIndex) playIndex(indexState.intValue + 1)
         else finish()
+    }
+
+    /**
+     * Whether the deep check's call should also write this video's quiz: the
+     * channel has quizzes on, this kid isn't opted out, and there's no answer yet
+     * for their age. Null otherwise. Reads files, so call off-main.
+     */
+    private fun quizRequestFor(
+        cfg: io.pickwick.app.data.Whitelist,
+        videoId: String,
+        pb: YouTubeRepository.Playback
+    ): io.pickwick.app.data.QuizRequest? {
+        val ai = cfg.ai
+        if (!ai.enabled || ai.model.isBlank() || pb.live) return null
+        if (pb.durationSeconds < io.pickwick.app.data.Quiz.MIN_VIDEO_SECONDS) return null
+        if (!quizApplies(cfg, videoId, pb) || sessionGuard.quizTaken(videoId)) return null
+        val age = cfg.profile(gateProfileId)?.age ?: ai.childAge
+        if (quizStore.get(videoId, age) != null) return null
+        return io.pickwick.app.data.QuizRequest(cfg.quizBonus.maxQuestions, age, gateProfileId)
+    }
+
+    private fun quizApplies(
+        cfg: io.pickwick.app.data.Whitelist,
+        videoId: String,
+        pb: YouTubeRepository.Playback
+    ): Boolean = cfg.quizAllowedFor(gateProfileId) && io.pickwick.app.data.Quiz.enabledFor(
+        cfg.sources,
+        io.pickwick.app.data.SourceCache(this).load(),
+        videoId, currentChannel, pb.uploaderUrl, intent.getStringExtra(EXTRA_SOURCE_URL)
+    )
+
+    /**
+     * Beside playback: finds this video's quiz and, if the player can honestly
+     * promise it, shows the hint. Only a video the deep check skipped ever pays for
+     * a call here. Downloads and local files carry no duration, so they get no quiz.
+     */
+    private fun prepareQuiz(pageUrl: String, pb: YouTubeRepository.Playback) {
+        val videoId = io.pickwick.app.data.SponsorBlock.videoIdOf(pageUrl) ?: return
+        if (pb.durationSeconds <= 0 || isPodcastItem()) return
+        quizJob = lifecycleScope.launch {
+            val hint = kotlinx.coroutines.withContext(Dispatchers.IO) {
+                val cfg = io.pickwick.app.data.ConfigStore(this@PlayerActivity).load()
+                    .also { familyConfig = it }
+                if (!quizApplies(cfg, videoId, pb) || sessionGuard.quizTaken(videoId)) return@withContext null
+                if (!io.pickwick.app.data.Quiz.canPromise(
+                        pb.durationSeconds, System.currentTimeMillis(), sessionGuard.lastQuizAt()
+                    )
+                ) return@withContext null
+                if (quizAttemptedFor != videoId) quizRequestFor(cfg, videoId, pb)?.let { request ->
+                    val note = io.pickwick.app.data.DeepCheck.customNotesByVideoId(cfg.sources)[videoId]
+                        ?: io.pickwick.app.data.DeepCheck.notesByChannelName(
+                            cfg.sources, io.pickwick.app.data.SourceCache(this@PlayerActivity).load()
+                        )[currentChannel]
+                    io.pickwick.app.data.DeepCheck.writeQuizOnly(
+                        cfg.ai, cfg.profiles, quizStore, videoId, pb.title, currentChannel,
+                        pb, note, request, timeoutMs = 60_000
+                    )
+                }
+                val age = cfg.profile(gateProfileId)?.age ?: cfg.ai.childAge
+                val questions = quizStore.get(videoId, age)?.questions.orEmpty()
+                    .take(cfg.quizBonus.maxQuestions)
+                if (questions.isEmpty()) return@withContext null
+                quizQuestions = questions
+                if (sessionGuard.canEarnQuizBonus(cfg.quizBonus)) {
+                    "Watch closely! Quiz after this video for bonus time"
+                } else "Watch closely! Quiz after this video"
+            } ?: return@launch
+            quizHint.value = hint
+            if (isTv) pokeControls()
+            else {
+                quizHintPeek.value = true
+                delay(6_000)
+                quizHintPeek.value = false
+            }
+        }
+    }
+
+    /**
+     * Quiz or next video, decided at the moment a video finishes. Never gets in the
+     * way: anything off about the moment just moves on as if no quiz existed.
+     */
+    private fun onVideoEnded() {
+        val questions = quizQuestions
+        val exo = player
+        val videoId = currentPageUrl?.let(io.pickwick.app.data.SponsorBlock::videoIdOf)
+        // Sound-only or backgrounded means nobody is looking at a question.
+        if (questions.isNullOrEmpty() || exo == null || videoId == null || listenActive ||
+            timeUpMessage.value != null || contentBlocked.value != null ||
+            !lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)
+        ) {
+            advanceQueue()
+            return
+        }
+        val durationMs = exo.duration
+        val played = playedMs
+        lifecycleScope.launch {
+            val canEarn = kotlinx.coroutines.withContext(Dispatchers.IO) {
+                val now = System.currentTimeMillis()
+                val show = sessionGuard.quizAllowedNow() && !sessionGuard.quizTaken(videoId) &&
+                    io.pickwick.app.data.Quiz.shouldShow(durationMs, played, now, sessionGuard.lastQuizAt())
+                if (!show) return@withContext null
+                sessionGuard.markQuizShown(now)
+                familyConfig?.quizBonus?.let(sessionGuard::canEarnQuizBonus) == true
+            }
+            if (canEarn == null) advanceQueue()
+            else quizSession.value = QuizSession(io.pickwick.app.data.Quiz.shuffled(questions), canEarn)
+        }
+    }
+
+    /**
+     * The first answer uses the video's quiz up: answers are revealed as you go, so
+     * skipping out and retaking could otherwise replay them for time. Pays as it
+     * goes, so skipping partway keeps what was already earned.
+     */
+    private suspend fun recordQuizAnswer(correct: Boolean): Int {
+        val videoId = currentPageUrl?.let(io.pickwick.app.data.SponsorBlock::videoIdOf)
+        val bonus = familyConfig?.quizBonus
+        return kotlinx.coroutines.withContext(Dispatchers.IO) {
+            videoId?.let(sessionGuard::markQuizTaken)
+            if (correct && bonus != null) sessionGuard.awardQuizBonus(bonus) else 0
+        }
+    }
+
+    private fun finishQuiz() {
+        quizSession.value = null
+        advanceQueue()
     }
 
     /**
@@ -785,6 +950,11 @@ class PlayerActivity : ComponentActivity() {
         contentRemaining.value = null
         contentBlocked.value = null
         contentWarnings.clear()
+        quizJob?.cancel()
+        quizQuestions = null
+        quizHint.value = null
+        quizHintPeek.value = false
+        quizSession.value = null
         indexState.intValue = i
         selectedAudioTrack.intValue = 0
         selectedSubtitleTrack.intValue = -1
@@ -931,6 +1101,7 @@ class PlayerActivity : ComponentActivity() {
             // A podcast carried the queue into the background with listening
             // off for this family; the video after it must not play on unseen.
             if (listenActive && listenPercent == null && !isPodcastItem()) player?.pause()
+            prepareQuiz(queue[i], pb)
         }
     }
 
@@ -976,13 +1147,18 @@ class PlayerActivity : ComponentActivity() {
             return@withContext it.verdictFor(gateProfileId) != AiScreener.Verdict.ALLOW
         }
 
+        // Rides the check's own AI call, so this video still costs one.
+        val quiz = quizRequestFor(cfg, id, pb)
+        if (quiz != null) quizAttemptedFor = id
         deepChecking.value = true
         val entry = try {
             // Bounded overall: past ~20s the kid is staring at a spinner and an
-            // answer that slow follows the parent's incomplete-check setting.
+            // answer that slow follows the parent's incomplete-check setting. A
+            // little longer with a quiz, since the model has more to write.
             io.pickwick.app.data.DeepCheck.runAndStore(
                 ai, cfg.profiles, screeningStore, id, pb.title, currentChannel,
-                pb, timeoutMs = 20_000, channelNote = note
+                pb, timeoutMs = if (quiz != null) 30_000 else 20_000, channelNote = note,
+                quiz = quiz, quizStore = quizStore
             )
         } finally {
             deepChecking.value = false
@@ -1112,9 +1288,15 @@ class PlayerActivity : ComponentActivity() {
         if (resumeMs != null) {
             exo.seekTo(resumeMs)
         } else {
+            // A resumed video counts what came before, or finishing yesterday's
+            // video today could never earn the quiz the hint just promised.
+            playedMs = 0
             currentPageUrl?.let { page ->
                 history.progress(page)?.takeIf { !it.isFinished }
-                    ?.let { exo.seekTo(it.positionMs) }
+                    ?.let {
+                        exo.seekTo(it.positionMs)
+                        playedMs = it.positionMs
+                    }
             }
         }
         exo.playWhenReady = wasPlaying
@@ -1373,6 +1555,8 @@ class PlayerActivity : ComponentActivity() {
      */
     override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent?): Boolean {
         if (!isTv) return super.onKeyDown(keyCode, event)
+        // The quiz holds real focus; what it leaves over (Back) goes to its BackHandler.
+        if (quizSession.value != null) return super.onKeyDown(keyCode, event)
         val exo = player ?: return super.onKeyDown(keyCode, event)
         if (trackPanel.value != TvTrackPanel.Hidden && handleTrackPanelKey(keyCode)) {
             pokeControls()

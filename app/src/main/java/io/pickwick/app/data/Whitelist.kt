@@ -66,6 +66,12 @@ data class WhitelistEntry(
      * a channel feature — a playlist's videos carry their own uploaders' names.
      */
     val aiCheck: Boolean = true,
+    /**
+     * Offer a quiz after this source's videos. Off by default and only ever
+     * switched on per source, because most videos have nothing worth quizzing.
+     * A kid's [Profile.quizOff] overrides it.
+     */
+    val quiz: Boolean = false,
     /** The picked videos, in the order added — [SourceKind.CUSTOM] entries only. */
     val customVideos: List<CustomVideo> = emptyList()
 ) {
@@ -259,9 +265,13 @@ data class Whitelist(
     val networkCatalogs: List<SmbCatalog> = emptyList(),
     val networkShares: List<SmbShare> = emptyList(),
     val contentGroups: List<ContentGroup> = emptyList(),
-    val podcasts: List<PodcastFeed> = emptyList()
+    val podcasts: List<PodcastFeed> = emptyList(),
+    val quizBonus: QuizBonus = QuizBonus()
 ) {
     fun profile(id: String?): Profile? = profiles.firstOrNull { it.id == id }
+
+    /** A kid's blanket switch; sources decide for everyone it leaves on. */
+    fun quizAllowedFor(profileId: String?): Boolean = profile(profileId)?.quizOff != true
 
     /**
      * Effective screen-time rules for one kid. Two pauses can apply: the
@@ -456,6 +466,7 @@ object WhitelistExporter {
             e.aiNote?.trim()?.ifEmpty { null }?.let {
                 append("  # AI note: ").append(it.replace('\n', ' '))
             }
+            if (e.quiz) append("  # quiz on")
             append('\n')
         }
 

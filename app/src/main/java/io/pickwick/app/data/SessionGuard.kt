@@ -169,7 +169,60 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
      * take-back can make negative), or null when not configured.
      */
     private fun dailyBudgetMs(l: Limits): Long? =
-        baseBudgetMs(l)?.let { (it + prefs.getLong("bonusMs", 0)).coerceAtLeast(0) }
+        baseBudgetMs(l)?.let {
+            (it + prefs.getLong("bonusMs", 0) + prefs.getLong("quizBonusMs", 0)).coerceAtLeast(0)
+        }
+
+    // ---- quizzes ----
+
+    /**
+     * Whether a kid may do a quiz right now. An exhausted budget doesn't stop
+     * one, since earning more is the point, but anything meant to get them off
+     * the screen does: a pause, a blocked window or a break.
+     */
+    fun quizAllowedNow(): Boolean {
+        rolloverIfNewDay()
+        val l = limits()
+        if (isPaused(l) || activeWindow(l) != null) return false
+        return l.breakMinutes == null || System.currentTimeMillis() >= prefs.getLong("lockUntil", 0)
+    }
+
+    /** False with no daily budget to add to, or with today's cap already reached. */
+    fun canEarnQuizBonus(bonus: QuizBonus): Boolean {
+        rolloverIfNewDay()
+        return baseBudgetMs(limits()) != null && Quiz.awardMs(prefs.getLong("quizBonusMs", 0), bonus) > 0
+    }
+
+    /**
+     * Pays one correct answer, returning the seconds actually added. Unlike
+     * [grantExtraMinutes] this only grows today's budget: it leaves break locks,
+     * blocked windows and content-group caps exactly as they are. Kept apart from
+     * the parent's bonus so the daily cap counts quiz earnings alone. Resets at
+     * midnight.
+     */
+    fun awardQuizBonus(bonus: QuizBonus): Int {
+        if (!canEarnQuizBonus(bonus)) return 0
+        val earned = prefs.getLong("quizBonusMs", 0)
+        val award = Quiz.awardMs(earned, bonus)
+        prefs.edit().putLong("quizBonusMs", earned + award).apply()
+        return (award / 1_000).toInt()
+    }
+
+    fun lastQuizAt(): Long = prefs.getLong("lastQuizAt", 0)
+
+    fun markQuizShown(now: Long) {
+        prefs.edit().putLong("lastQuizAt", now).apply()
+    }
+
+    /** Once per video, or rewatching would farm the same answers for more time. */
+    fun quizTaken(videoId: String): Boolean =
+        videoId in prefs.getString("quizTaken", "").orEmpty().split('\n')
+
+    fun markQuizTaken(videoId: String) {
+        if (quizTaken(videoId)) return
+        val taken = prefs.getString("quizTaken", "").orEmpty().split('\n').filter { it.isNotEmpty() }
+        prefs.edit().putString("quizTaken", (taken + videoId).takeLast(500).joinToString("\n")).apply()
+    }
 
     /**
      * Parent grant: adds minutes to today's budget, ends any break lock, starts a
@@ -208,7 +261,12 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
         rolloverIfNewDay()
         val now = System.currentTimeMillis()
         prefs.edit()
-            .putLong("bonusMs", shrinkBonus(prefs.getLong("bonusMs", 0), baseBudgetMs(limits()), minutes))
+            // Quiz earnings count as budget to dip into, so a take-back can still reach zero.
+            .putLong("bonusMs", shrinkBonus(
+                prefs.getLong("bonusMs", 0),
+                baseBudgetMs(limits())?.plus(prefs.getLong("quizBonusMs", 0)),
+                minutes
+            ))
             .putLong("windowPassUntil", shrinkPass(prefs.getLong("windowPassUntil", 0), now, minutes))
             .apply()
     }
@@ -394,6 +452,7 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
                 .clearContentUsage()
                 .putLong("lockUntil", 0)
                 .putLong("bonusMs", 0)
+                .putLong("quizBonusMs", 0)
                 .putLong("windowPassUntil", 0)
                 .putLong("breakPassSpent", 0)
                 .apply()
@@ -458,7 +517,7 @@ class SessionGuard(context: Context, private val profileSuffix: String = "") {
         return Snapshot(
             watchedTodayMin = (watched / 60_000).toInt(),
             budgetTodayMin = budget?.let { (it / 60_000).toInt() },
-            bonusTodayMin = (prefs.getLong("bonusMs", 0) / 60_000).toInt(),
+            bonusTodayMin = ((prefs.getLong("bonusMs", 0) + prefs.getLong("quizBonusMs", 0)) / 60_000).toInt(),
             sittingWatchedMin = (prefs.getLong("sittingWatchedMs", 0) / 60_000).toInt(),
             sittingCapMin = l.sessionMinutes,
             state = state,

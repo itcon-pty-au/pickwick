@@ -80,6 +80,12 @@ val PlayerTimeLowAmber = Color(0xFFFFB74D)
  */
 val BonusTimeOrange = Color(0xFFFFA351)
 
+/** "A quiz follows this video", and a right answer: encouragement, so never red-adjacent. */
+val QuizGreen = Color(0xFF2E9E5B)
+
+/** A wrong quiz answer: amber rather than red, since this is learning and not a failure. */
+val QuizWrongAmber = Color(0xFFB26A00)
+
 /** The "newer build available" dot on the settings gear. */
 val UpdateDot = Color(0xFFFF5252)
 

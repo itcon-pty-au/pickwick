@@ -377,6 +377,25 @@ internal fun ChannelsSection(
                 )
                 Spacer(Modifier.width(4.dp))
             }
+            // Quiz after this source's videos: bright = on. Off by default, since
+            // only the parent can say a channel teaches anything worth quizzing.
+            IconButton(
+                onClick = {
+                    onChanged(entries.map {
+                        if (it.id == entry.id) it.copy(quiz = !it.quiz) else it
+                    })
+                }
+            ) {
+                Text(
+                    "🎓",
+                    modifier = Modifier
+                        .alpha(if (entry.quiz) 1f else 0.35f)
+                        .semantics {
+                            contentDescription = "Quiz after videos from ${displayName(entry)}: " +
+                                if (entry.quiz) "on" else "off"
+                        }
+                )
+            }
             // Per-channel AI instructions; dimmed until one exists. Emoji over
             // a vector icon, matching the app's other glyph affordances.
             // Bright = AI is checking this source; dim = it isn't. A YouTube playlist

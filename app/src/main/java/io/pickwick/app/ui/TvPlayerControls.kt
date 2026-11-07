@@ -115,6 +115,8 @@ internal fun BoxScope.TvControlsOverlay(
     sponsorSegments: List<io.pickwick.app.data.SponsorBlock.Segment>,
     /** "Science: 4:12 this session", when a content group's cap applies. */
     contentCap: String?,
+    /** Set when a quiz follows this video. */
+    quizHint: String?,
     panel: TvTrackPanel,
     cursor: Int,
     selectedAudio: Int,
@@ -159,7 +161,7 @@ internal fun BoxScope.TvControlsOverlay(
         enter = fadeIn() + slideInVertically { -it / 4 },
         exit = fadeOut() + slideOutVertically { -it / 4 }
     ) {
-        TvTopBar(playback.title, channel, queuePosition, state.timeLeftMs.value, contentCap)
+        TvTopBar(playback.title, channel, queuePosition, state.timeLeftMs.value, contentCap, quizHint)
     }
 
     AnimatedVisibility(
@@ -227,7 +229,8 @@ private fun TvTopBar(
     channel: String,
     queuePosition: Pair<Int, Int>?,
     timeLeftMs: Long?,
-    contentCap: String?
+    contentCap: String?,
+    quizHint: String?
 ) {
     Row(
         Modifier
@@ -261,6 +264,7 @@ private fun TvTopBar(
             // Amber from the same point the "5 minutes left" warning fires.
             timeLeftMs?.let { TvChip(timeLeftLabel(it), if (it <= 5 * 60_000L) PlayerTimeLowAmber else Color.White) }
             contentCap?.let { TvChip(it, Color.White) }
+            quizHint?.let { QuizHintChip(it) }
         }
     }
 }
