@@ -235,8 +235,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         screener = screener,
                         statusCache = io.pickwick.app.data.VideoStatusCache(applicationContext),
                         activeProfileId = activeProfileId,
-                        channelIndex = io.pickwick.app.data.ChannelIndex(applicationContext),
-                        hasLiveRow = deviceIsTv
+                        channelIndex = io.pickwick.app.data.ChannelIndex(applicationContext)
                     )
                 }
                 // TV: a paired phone just pushed new config — apply it live.

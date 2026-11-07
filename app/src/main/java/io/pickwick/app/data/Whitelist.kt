@@ -265,8 +265,13 @@ data class Whitelist(
     val networkCatalogs: List<SmbCatalog> = emptyList(),
     val networkShares: List<SmbShare> = emptyList(),
     val contentGroups: List<ContentGroup> = emptyList(),
-    /** The TV home's parent-made rows, top to bottom. */
+    /** The home's parent-made rows, top to bottom. */
     val homeRows: List<HomeRow> = emptyList(),
+    /**
+     * Phones and tablets draw the home as horizontal rows instead of the tile
+     * grid. Off by default. TVs ignore it: they always use rows.
+     */
+    val phoneHomeRows: Boolean = false,
     val podcasts: List<PodcastFeed> = emptyList(),
     val quizBonus: QuizBonus = QuizBonus()
 ) {

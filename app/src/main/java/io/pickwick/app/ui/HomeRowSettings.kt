@@ -14,7 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import io.pickwick.app.data.*
 
-/** Parent-side list of the TV home's rows. List order is the order on screen. */
+/** Parent-side list of the home's rows. List order is the order on screen. */
 @Composable
 internal fun HomeRowSettings(rows: List<HomeRow>, sources: List<WhitelistEntry>, profiles: List<Profile>,
     onChanged: (List<HomeRow>) -> Unit) {
@@ -22,7 +22,7 @@ internal fun HomeRowSettings(rows: List<HomeRow>, sources: List<WhitelistEntry>,
     var adding by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf<HomeRow?>(null) }
     fun move(from: Int, to: Int) = onChanged(rows.toMutableList().apply { add(to, removeAt(from)) })
-    Text("Sort channels into named rows on the TV home. Channels in no row appear under More channels.",
+    Text("Sort channels into named rows on the home screen. Channels in no row appear under More channels.",
         color = MaterialTheme.colorScheme.onSurfaceVariant)
     rows.forEachIndexed { index, row ->
         Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
@@ -53,7 +53,7 @@ internal fun HomeRowSettings(rows: List<HomeRow>, sources: List<WhitelistEntry>,
             adding = false; editing = null
         })
     removing?.let { row -> AlertDialog(onDismissRequest = { removing = null }, title = { Text("Remove ${row.name}?") },
-        text = { Text("Its channels stay on the TV, under More channels.") },
+        text = { Text("Its channels stay on the home screen, under More channels.") },
         confirmButton = { TextButton(onClick = { onChanged(rows.filterNot { it.id == row.id }); removing = null }) { Text("Remove") } },
         dismissButton = { TextButton(onClick = { removing = null }) { Text("Cancel") } }) }
 }

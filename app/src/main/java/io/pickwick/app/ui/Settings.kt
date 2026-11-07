@@ -370,6 +370,7 @@ private fun AdminScreen(
     var networkShares by remember(initial) { mutableStateOf(migratedNetwork.networkShares) }
     var contentGroups by remember(initial) { mutableStateOf(initial.contentGroups) }
     var homeRows by remember(initial) { mutableStateOf(initial.homeRows) }
+    var phoneHomeRows by remember(initial) { mutableStateOf(initial.phoneHomeRows) }
     var podcasts by remember(initial) { mutableStateOf(initial.podcasts) }
     var quizBonus by remember(initial) { mutableStateOf(initial.quizBonus) }
     var baseline by remember(initial) { mutableStateOf(initial) }
@@ -462,6 +463,7 @@ private fun AdminScreen(
             homeRows = homeRows.map {
                 it.copy(sourceUrls = it.sourceUrls.intersect(entryUrls), profileIds = it.profileIds.intersect(validIds))
             },
+            phoneHomeRows = phoneHomeRows,
             podcasts = podcasts.map { it.copy(profileIds = it.profileIds.intersect(validIds)) },
             quizBonus = quizBonus
         )
@@ -569,12 +571,33 @@ private fun AdminScreen(
                         SettingsDivider()
                         HubRow("📚", "Content groups", "${contentGroups.size} groups") { page = HubPage.ContentGroups }
                         SettingsDivider()
-                        HubRow("🗂️", "TV home rows", "${homeRows.size} rows") { page = HubPage.HomeRows }
+                        HubRow(
+                            "🗂️", "Home layout",
+                            "Phones: ${if (phoneHomeRows) "rows" else "grid"} · ${homeRows.size} rows"
+                        ) { page = HubPage.HomeRows }
                     }
                 }
-                HubPage.HomeRows -> HomeRowSettings(homeRows,
-                    entries.map { if (it.label == null) it.copy(label = resolvedNames[it.url]) else it },
-                    profiles) { homeRows = it }
+                HubPage.HomeRows -> {
+                    SectionTitle("Phones and tablets")
+                    SettingsCard {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Show the home as rows")
+                                Text(
+                                    "On: side-scrolling rows, like the TV. Off: a grid of " +
+                                        "tiles that scrolls down. TVs always show rows.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(checked = phoneHomeRows, onCheckedChange = { phoneHomeRows = it })
+                        }
+                    }
+                    SectionTitle("Rows")
+                    HomeRowSettings(homeRows,
+                        entries.map { if (it.label == null) it.copy(label = resolvedNames[it.url]) else it },
+                        profiles) { homeRows = it }
+                }
                 HubPage.ContentGroups -> ContentGroupSettings(contentGroups,
                     entries.map { if (it.label == null) it.copy(label = resolvedNames[it.url]) else it },
                     networkCatalogs, profiles) { contentGroups = it }
@@ -914,7 +937,7 @@ private fun AdminScreen(
 private enum class HubPage(val title: String) {
     ContentSources("Content Sources"),
     ContentGroups("Content groups"),
-    HomeRows("TV home rows"),
+    HomeRows("Home layout"),
     Network("Network shares"),
     Podcasts("Podcasts"),
     Kids("Kids"),

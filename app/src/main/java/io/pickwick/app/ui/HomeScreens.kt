@@ -79,11 +79,32 @@ private fun KeepWatchingRow(
     }
 }
 
+/** Streams on air now. They leave their channels for this, on every device. */
+@Composable
+private fun LiveRow(videos: List<VideoItem>, onPlay: (VideoItem) -> Unit) {
+    androidx.compose.foundation.lazy.LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+        modifier = Modifier.dpadHeldScrollThrottle(keys = DPAD_HORIZONTAL)
+    ) {
+        items(videos.size, key = { videos[it].video.url }) { i ->
+            Box(Modifier.width(240.dp)) {
+                VideoTile(
+                    videos[i], null, onPlay, null,
+                    downloadPending = emptySet(), downloaded = emptySet(),
+                    showDownloadStatus = false
+                )
+            }
+        }
+    }
+}
+
 @Composable
 internal fun ChannelGrid(
     channels: List<Source>,
     newBadges: Set<String> = emptySet(),
     keepWatching: List<VideoItem> = emptyList(),
+    liveVideos: List<VideoItem> = emptyList(),
     onPlay: (VideoItem) -> Unit = {},
     onDismissKeepWatching: (VideoItem) -> Unit = {},
     onOpen: (Source) -> Unit,
@@ -105,7 +126,7 @@ internal fun ChannelGrid(
     onSwitchProfile: (() -> Unit)? = null,
     onSearch: (String) -> Unit = {}
 ) {
-    if (channels.isEmpty() && !hasNetworkCatalogs && podcasts.isEmpty()) {
+    if (channels.isEmpty() && !hasNetworkCatalogs && podcasts.isEmpty() && liveVideos.isEmpty()) {
         EmptyHome(onOpenSettings)
         return
     }
@@ -132,6 +153,19 @@ internal fun ChannelGrid(
             }
             item(key = "kw-row", span = { GridItemSpan(maxLineSpan) }) {
                 KeepWatchingRow(keepWatching, onPlay = onPlay, onDismiss = onDismissKeepWatching)
+            }
+        }
+        if (liveVideos.isNotEmpty()) {
+            item(key = "live-title", span = { GridItemSpan(maxLineSpan) }) {
+                Text(
+                    "Live",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                    )
+                )
+            }
+            item(key = "live-row", span = { GridItemSpan(maxLineSpan) }) {
+                LiveRow(liveVideos, onPlay)
             }
         }
         // First tile: Surprise — same size and shape as a channel tile.
@@ -415,11 +449,12 @@ private fun HomeHeader(
  * The ten-foot home: a vertical stack of horizontal rows — Keep watching,
  * parent-made rows, Channels (most-watched first), Explore — with the focused tile pinned near
  * the left edge of its row. The row structure plus the pivot scroll specs is
- * what gives streaming apps their steady, predictable D-pad motion.
+ * what gives streaming apps their steady, predictable D-pad motion. Phones and
+ * tablets get it too when a parent picks rows, minus the D-pad handling.
  */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-internal fun TvHomeRows(
+internal fun HomeRows(
     channels: List<Source>,
     homeRows: List<io.pickwick.app.data.HomeRow> = emptyList(),
     newBadges: Set<String>,
@@ -440,17 +475,22 @@ internal fun TvHomeRows(
     onOpenWatchLater: () -> Unit = {},
     hasQueue: Boolean = false,
     onOpenQueue: () -> Unit = {},
+    hasDownloads: Boolean = false,
+    onOpenDownloads: () -> Unit = {},
     onOpenSettings: () -> Unit,
     activeProfile: io.pickwick.app.data.Profile? = null,
     onSwitchProfile: (() -> Unit)? = null,
     onSearch: (String) -> Unit = {}
 ) {
-    if (channels.isEmpty() && !hasNetworkCatalogs && podcasts.isEmpty()) {
+    if (channels.isEmpty() && !hasNetworkCatalogs && podcasts.isEmpty() && liveVideos.isEmpty()) {
         EmptyHome(onOpenSettings)
         return
     }
     val firstTileFocus = remember { androidx.compose.ui.focus.FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { firstTileFocus.requestFocus() } }
+    // Remote only: on a touch screen nothing needs focus, and landing it on the
+    // first row would scroll the header away.
+    val grabFocus = isTvDevice()
+    LaunchedEffect(Unit) { if (grabFocus) runCatching { firstTileFocus.requestFocus() } }
     val layout = remember(channels, homeRows) { io.pickwick.app.data.arrangeHome(channels, homeRows) }
 
     androidx.compose.foundation.lazy.LazyColumn(
@@ -466,7 +506,7 @@ internal fun TvHomeRows(
                 Column {
                     TvRowTitle("Keep watching")
                     CompositionLocalProvider(
-                        androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides TvRowPivot
+                        androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides homeRowPivot()
                     ) {
                         KeepWatchingRow(keepWatching, onPlay = onPlay, onDismiss = onDismissKeepWatching)
                     }
@@ -491,7 +531,7 @@ internal fun TvHomeRows(
             Column {
                 TvRowTitle("Podcasts")
                 CompositionLocalProvider(
-                    androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides TvRowPivot
+                    androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides homeRowPivot()
                 ) {
                     androidx.compose.foundation.lazy.LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -515,23 +555,9 @@ internal fun TvHomeRows(
             Column {
                 TvRowTitle("Live")
                 CompositionLocalProvider(
-                    androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides TvRowPivot
+                    androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides homeRowPivot()
                 ) {
-                    androidx.compose.foundation.lazy.LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
-                        modifier = Modifier.dpadHeldScrollThrottle(keys = DPAD_HORIZONTAL)
-                    ) {
-                        items(liveVideos.size, key = { liveVideos[it].video.url }) { i ->
-                            Box(Modifier.width(240.dp)) {
-                                VideoTile(
-                                    liveVideos[i], null, onPlayLive, null,
-                                    downloadPending = emptySet(), downloaded = emptySet(),
-                                    showDownloadStatus = false
-                                )
-                            }
-                        }
-                    }
+                    LiveRow(liveVideos, onPlayLive)
                 }
             }
         }
@@ -540,7 +566,7 @@ internal fun TvHomeRows(
             Column {
                 TvRowTitle("Explore")
                 CompositionLocalProvider(
-                    androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides TvRowPivot
+                    androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides homeRowPivot()
                 ) {
                     androidx.compose.foundation.lazy.LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -571,12 +597,30 @@ internal fun TvHomeRows(
                                 WatchLaterTile(Modifier.width(150.dp), onOpenWatchLater)
                             }
                         }
+                        if (hasDownloads) {
+                            item(key = "downloads") {
+                                SpecialTile(
+                                    emoji = "⬇️",
+                                    label = "Downloads",
+                                    circleColor = DownloadsTileTeal,
+                                    modifier = Modifier.width(150.dp),
+                                    onClick = onOpenDownloads
+                                )
+                            }
+                        }
                     }
                 }
             }
         }
     }
 }
+
+/** The D-pad's pinned tile, on TV; a keyboard on a tablet keeps the normal scroll. */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun homeRowPivot() =
+    if (isTvDevice()) TvRowPivot
+    else androidx.compose.foundation.gestures.LocalBringIntoViewSpec.current
 
 // One spelling per special tile: the phone grid and the TV row draw the same
 // ones, and a repaint of one layout must not drift from the other.
@@ -676,7 +720,7 @@ private fun TvChannelRow(
     Column {
         TvRowTitle(title)
         CompositionLocalProvider(
-            androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides TvRowPivot
+            androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides homeRowPivot()
         ) {
             androidx.compose.foundation.lazy.LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
